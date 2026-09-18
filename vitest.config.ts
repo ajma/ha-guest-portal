@@ -1,16 +1,37 @@
 import { defineConfig } from 'vitest/config'
 import { resolve } from 'node:path'
 
+const sharedAlias = {
+  '@shared': resolve(import.meta.dirname, './src/shared'),
+}
+
 export default defineConfig({
   test: {
-    include: ['test/unit/**/*.test.ts', 'test/unit/**/*.test.tsx', 'test/integration/**/*.test.ts'],
     exclude: ['test/e2e/**/*'],
-    environment: 'node',
-    environmentMatchGlobs: [['test/unit/**/*.tsx', 'happy-dom']],
+    projects: [
+      {
+        test: {
+          name: 'node',
+          include: ['test/unit/**/*.test.ts', 'test/integration/**/*.test.ts'],
+          environment: 'node',
+        },
+        resolve: {
+          alias: sharedAlias,
+        },
+      },
+      {
+        test: {
+          name: 'happy-dom',
+          include: ['test/unit/**/*.test.tsx'],
+          environment: 'happy-dom',
+        },
+        resolve: {
+          alias: sharedAlias,
+        },
+      },
+    ],
   },
   resolve: {
-    alias: {
-      '@shared': resolve(import.meta.dirname, './src/shared'),
-    },
+    alias: sharedAlias,
   },
 })
