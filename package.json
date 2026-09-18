@@ -1,0 +1,43 @@
+{
+  "name": "ha-guest-portal",
+  "version": "0.0.1",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "vite --port 5173 & node --watch --experimental-strip-types src/server/index.ts",
+    "build": "vite build && tsc -p tsconfig.server.json",
+    "start": "node dist/server/index.js",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "lint": "biome lint .",
+    "format": "biome format --write ."
+  },
+  "dependencies": {
+    "hono": "^4.7.11",
+    "@hono/node-server": "^1.14.3",
+    "zod": "^4.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "vitest": "^5.0.1",
+    "@playwright/test": "^1.63.0",
+    "@biomejs/biome": "^2.5.14",
+    "tailwindcss": "^4.3.3",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.13.5",
+    "@types/react": "^19.0.6",
+    "@types/react-dom": "^19.0.3",
+    "@types/ws": "^8.5.13",
+    "happy-dom": "^20.14.5",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.5.2"
+  }
+}
