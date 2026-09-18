@@ -3,7 +3,7 @@
   "compilerOptions": {
     "noEmit": false,
     "allowImportingTsExtensions": false,
-    "outDir": "./dist/server",
+    "outDir": "./dist",
     "rootDir": "./src"
   },
   "include": ["src/server/**/*", "src/shared/**/*"]
