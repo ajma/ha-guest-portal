@@ -151,4 +151,40 @@ describe('PortalToggle', () => {
     await waitFor(() => screen.getByRole('button', { name: /retry/i }))
     expect(screen.getByText('Failed to load portal state')).toBeTruthy()
   })
+
+  it('refreshes toggle state on window focus', async () => {
+    vi.mocked(api.getAdminPortal).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        enabled: true,
+        integrationToken: 'a'.repeat(64),
+        portalId: '11111111-1111-1111-1111-111111111111',
+      },
+    })
+
+    render(<PortalToggle />)
+
+    await waitFor(() => {
+      expect((screen.getByTestId('portal-toggle') as HTMLInputElement).checked).toBe(true)
+    })
+    expect(screen.queryByTestId('portal-disabled-banner')).toBeNull()
+
+    // Change the mock to return disabled
+    vi.mocked(api.getAdminPortal).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        enabled: false,
+        integrationToken: 'a'.repeat(64),
+        portalId: '11111111-1111-1111-1111-111111111111',
+      },
+    })
+
+    // Dispatch focus event
+    window.dispatchEvent(new Event('focus'))
+
+    await waitFor(() => {
+      expect((screen.getByTestId('portal-toggle') as HTMLInputElement).checked).toBe(false)
+    })
+    expect(screen.getByTestId('portal-disabled-banner')).toBeTruthy()
+  })
 })

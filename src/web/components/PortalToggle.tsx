@@ -24,6 +24,29 @@ export function PortalToggle(): ReactElement {
     void load()
   }, [load])
 
+  // Refresh toggle state when the admin page regains focus. This handles the
+  // case where an owner disables the portal from Home Assistant (the switch,
+  // a dashboard, or an automation) while the admin page is open.
+  useEffect(() => {
+    const handleVisibilityChange = (): void => {
+      if (!document.hidden) {
+        void load()
+      }
+    }
+
+    const handleFocus = (): void => {
+      void load()
+    }
+
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [load])
+
   async function handleToggle(): Promise<void> {
     if (enabled === null || saving) return
 

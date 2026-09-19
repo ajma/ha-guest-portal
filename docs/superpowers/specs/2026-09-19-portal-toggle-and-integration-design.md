@@ -149,10 +149,14 @@ const PortalFrameSchema = z.object({
 })
 ```
 
-Broadcast to every connected client on change, so admin screens update live too.
-Guest streams are then closed. The close is belt-and-braces: if the frame is
-missed, the client's existing stream-drop recheck hits `/api/session`, reads
-`portalEnabled: false`, and renders the disabled screen by the same path.
+Broadcast to every connected client on change. This serves guest clients
+(who maintain an SSE connection). Guest streams are then closed. The close is
+belt-and-braces: if the frame is missed, the client's existing stream-drop
+recheck hits `/api/session`, reads `portalEnabled: false`, and renders the
+disabled screen by the same path.
+
+The admin surface does not maintain an SSE connection — it refreshes its
+toggle state when the window regains focus rather than by live push.
 
 This requires `SseHub` to track a `Role` per connection, which it does not
 currently do. `hub.add(res)` becomes `hub.add(res, role)`, and the hub gains

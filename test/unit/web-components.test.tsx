@@ -397,10 +397,13 @@ describe('App component', () => {
 
       // Mock getAdminPortal (called by PortalToggle)
       vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ enabled: false, integrationToken: 'test', portalId: 'test' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
+        new Response(
+          JSON.stringify({ enabled: false, integrationToken: 'test', portalId: 'test' }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
       )
 
       // Simulate /admin path
@@ -456,10 +459,13 @@ describe('App component', () => {
 
       // Mock getAdminPortal (called by PortalToggle)
       vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ enabled: false, integrationToken: 'test', portalId: 'test' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
+        new Response(
+          JSON.stringify({ enabled: false, integrationToken: 'test', portalId: 'test' }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
       )
 
       // Simulate /admin path so admin screen renders
@@ -597,6 +603,69 @@ describe('App component', () => {
 
       // getSession should not have been called because the timer was cleared
       expect(getSessionSpy).not.toHaveBeenCalled()
+
+      vi.mocked(storeModule.useDeviceStore).mockRestore()
+      vi.useRealTimers()
+    })
+
+    it('guest screen recovers unaided when portal is re-enabled', async () => {
+      // This test proves the 15s polling interval actually restores the guest surface
+      // when the owner re-enables the portal. Without the interval callback working,
+      // this test would fail.
+      const storeModule = await import('../../src/web/store.js')
+      const { App } = await import('../../src/web/App.js')
+
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+
+      // Initial session check: guest with portalEnabled=false
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ role: 'guest', portalEnabled: false }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+
+      // Mock store to initially return portalEnabled=false, then true
+      let portalEnabled = false
+      vi.spyOn(storeModule, 'useDeviceStore').mockImplementation(() => ({
+        devices: [],
+        connected: portalEnabled,
+        portalEnabled,
+        stale: false,
+      }))
+
+      const { rerender } = render(<App />)
+
+      await vi.runOnlyPendingTimersAsync()
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('portal-disabled-screen')).not.toBeNull()
+      })
+
+      // Mock the next getSession to return portalEnabled=true
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+
+      // Update the store state
+      portalEnabled = true
+
+      // Advance time by 15 seconds to trigger the poll
+      await vi.advanceTimersByTimeAsync(15_000)
+
+      // Re-render to apply the new store state
+      rerender(<App />)
+
+      await vi.runOnlyPendingTimersAsync()
+
+      // The guest screen should appear without any user interaction
+      await waitFor(() => {
+        expect(screen.queryByTestId('guest-screen')).not.toBeNull()
+      })
+      expect(screen.queryByTestId('portal-disabled-screen')).toBeNull()
 
       vi.mocked(storeModule.useDeviceStore).mockRestore()
       vi.useRealTimers()

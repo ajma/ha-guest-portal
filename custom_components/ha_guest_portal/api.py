@@ -62,12 +62,18 @@ def _parse_interaction(raw: Any) -> Interaction | None:
 
 
 def _parse_state(raw: Any) -> PortalState:
+    # Missing or invalid version is treated as 0.0.0, which will fail the
+    # minimum-version check and raise a repair issue rather than retrying forever.
+    version = raw.get("version", "0.0.0")
+    if not isinstance(version, str):
+        version = "0.0.0"
+
     return PortalState(
         portal_id=str(raw["portalId"]),
         enabled=bool(raw["enabled"]),
         ha_stale=bool(raw["haStale"]),
         device_count=int(raw["deviceCount"]),
-        version=str(raw["version"]),
+        version=version,
         last_interaction=_parse_interaction(raw["lastInteraction"]),
     )
 

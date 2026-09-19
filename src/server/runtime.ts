@@ -167,7 +167,7 @@ export function createRuntime(deps: Deps): Runtime {
         return
       }
 
-      if (role === 'guest' && !settings.getPortalEnabled()) {
+      if (settings.blocksGuest(role)) {
         res.writeHead(403, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ error: 'portal_disabled' }))
         return

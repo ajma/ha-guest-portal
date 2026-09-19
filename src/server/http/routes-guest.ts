@@ -1,6 +1,6 @@
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { validateAction } from '../../shared/devices.js'
-import { DevicesResponse, LoginRequest, SessionResponse, type Role } from '../../shared/api.js'
+import { DevicesResponse, LoginRequest, SessionResponse } from '../../shared/api.js'
 import type { HaClient } from '../ha/client.js'
 import type { AllowlistStore } from '../store/allowlist.js'
 import type { AuditLog } from '../store/auditlog.js'
@@ -51,10 +51,6 @@ const FAILURE_STATUS = {
 export function createRoutes(deps: Deps) {
   const { cfg, ha, allowlist, audit, settings, interactions, sessions, limiter } = deps
 
-  function portalBlocked(role: Role): boolean {
-    return role === 'guest' && !settings.getPortalEnabled()
-  }
-
   return {
     // POST /api/login
     async login(c: HonoContext) {
@@ -95,7 +91,7 @@ export function createRoutes(deps: Deps) {
       // Deliberately does NOT call limiter.recordFailure() — the password was
       // correct, and counting it would let a disabled portal lock out a guest
       // who keeps retrying, leaving them locked out after re-enabling.
-      if (role === 'guest' && !settings.getPortalEnabled()) {
+      if (settings.blocksGuest(role)) {
         return c.json({ error: 'portal_disabled' }, 403)
       }
 
@@ -178,7 +174,7 @@ export function createRoutes(deps: Deps) {
         return c.json({ error: 'Unauthorized' }, 401)
       }
 
-      if (portalBlocked(role)) {
+      if (settings.blocksGuest(role)) {
         return c.json({ error: 'portal_disabled' }, 403)
       }
 
@@ -198,7 +194,7 @@ export function createRoutes(deps: Deps) {
         return c.json({ error: 'Unauthorized' }, 401)
       }
 
-      if (portalBlocked(role)) {
+      if (settings.blocksGuest(role)) {
         return c.json({ error: 'portal_disabled' }, 403)
       }
 

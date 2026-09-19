@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from awesomeversion import AwesomeVersion
+from awesomeversion import AwesomeVersion, AwesomeVersionCompareException
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
@@ -35,7 +35,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: GuestPortalConfigEntry) 
     # parse failure the user cannot act on.
     issue_id = f"portal_too_old_{entry.entry_id}"
 
-    if AwesomeVersion(coordinator.data.version) < AwesomeVersion(MIN_PORTAL_VERSION):
+    # Treat an unparseable version (AwesomeVersionCompareException) as too old,
+    # showing the repair issue rather than failing setup with a traceback.
+    try:
+        version_too_old = AwesomeVersion(coordinator.data.version) < AwesomeVersion(
+            MIN_PORTAL_VERSION
+        )
+    except AwesomeVersionCompareException:
+        version_too_old = True
+
+    if version_too_old:
         ir.async_create_issue(
             hass,
             DOMAIN,

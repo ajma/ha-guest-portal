@@ -33,11 +33,6 @@
     }
   },
   "entity": {
-    "switch": {
-      "portal": {
-        "name": "Guest portal"
-      }
-    },
     "sensor": {
       "last_interaction": {
         "name": "Last interaction"

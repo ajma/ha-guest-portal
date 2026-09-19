@@ -26,7 +26,6 @@ class GuestPortalSwitch(GuestPortalEntity, SwitchEntity):
     """Turns the guest surface on and off."""
 
     _attr_name = None
-    _attr_translation_key = "portal"
 
     def __init__(self, coordinator: GuestPortalCoordinator) -> None:
         """Set up the switch."""
@@ -58,6 +57,10 @@ class GuestPortalSwitch(GuestPortalEntity, SwitchEntity):
             await self.coordinator.api.async_set_enabled(enabled)
         finally:
             self._optimistic = None
+            # Write state after clearing optimistic so the entity falls back to
+            # the coordinator's truth immediately on failure, rather than showing
+            # the wrong position until the next poll (up to 10s).
+            self.async_write_ha_state()
 
         await self.coordinator.async_request_refresh()
 

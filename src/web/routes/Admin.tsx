@@ -186,7 +186,13 @@ export function Admin({ onLogout }: AdminProps): ReactElement {
   }
 
   if (loading) {
-    return <div data-testid="admin-screen">Loading...</div>
+    return (
+      <div data-testid="admin-screen">
+        <h1>Admin Portal</h1>
+        <PortalToggle />
+        <p>Loading...</p>
+      </div>
+    )
   }
 
   if (error) {
@@ -216,7 +222,13 @@ export function Admin({ onLogout }: AdminProps): ReactElement {
   }
 
   if (!catalog) {
-    return <div data-testid="admin-screen">No catalog data</div>
+    return (
+      <div data-testid="admin-screen">
+        <h1>Admin Portal</h1>
+        <PortalToggle />
+        <p>No catalog data</p>
+      </div>
+    )
   }
 
   const excludedIds = devices.map((d) => d.entityId)

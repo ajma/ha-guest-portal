@@ -67,6 +67,14 @@ export class SettingsStore {
     }
   }
 
+  /**
+   * Whether the portal is currently blocking access for the given role.
+   * Guests are blocked when the portal is disabled; admins are never blocked.
+   */
+  blocksGuest(role: string): boolean {
+    return role === 'guest' && !this.getPortalEnabled()
+  }
+
   onPortalEnabledChange(fn: PortalEnabledListener): () => void {
     this.listeners.add(fn)
     return () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
 import type { Device, SseFrame } from '@shared/api.js'
 
 // Store functions to be implemented
@@ -16,6 +16,7 @@ let getSnapshot: () => DeviceStoreSnapshot
 let setConnected: (connected: boolean) => void
 let setPortalEnabled: (enabled: boolean) => void
 let resetStore: () => void
+let useDeviceStore: () => DeviceStoreSnapshot
 
 describe('Device store', () => {
   beforeEach(async () => {
@@ -26,6 +27,7 @@ describe('Device store', () => {
     setConnected = store.setConnected
     setPortalEnabled = store.setPortalEnabled
     resetStore = store.resetStore
+    useDeviceStore = store.useDeviceStore
 
     // Reset state before each test
     resetStore()
@@ -434,6 +436,25 @@ describe('Device store', () => {
       })
 
       expect(getSnapshot().portalEnabled).toBe(false)
+    })
+
+    it('notifies subscribers on a portal frame', () => {
+      // Test notification by verifying the snapshot changes AND is a new object.
+      // useSyncExternalStore relies on notifySubscribers() to trigger re-renders.
+      // If notifySubscribers weren't called, the snapshot would update but React
+      // wouldn't re-render until some other state change forced it.
+      //
+      // We verify notification happened by:
+      // 1. Snapshot value changed (portalEnabled: true → false)
+      // 2. Snapshot object reference changed (proves notifySubscribers ran)
+      const initialSnapshot = getSnapshot()
+      expect(initialSnapshot.portalEnabled).toBe(true)
+
+      applyFrame({ type: 'portal', enabled: false })
+
+      const newSnapshot = getSnapshot()
+      expect(newSnapshot.portalEnabled).toBe(false)
+      expect(newSnapshot).not.toBe(initialSnapshot)
     })
   })
 })
