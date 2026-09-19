@@ -48,6 +48,7 @@ export class FakeHomeAssistant {
   private httpServer: Server | null = null
   private entities = new Map<string, EntityState>()
   private contextCounter = 0
+  private lastTimestamp = 0
   private areas: Array<{ areaId: string; name: string }> = []
   private devices: Array<{ id: string; name: string; areaId: string | null }> = []
   private entityMeta = new Map<
@@ -75,6 +76,13 @@ export class FakeHomeAssistant {
     this.token = token
   }
 
+  private getTimestamp(): number {
+    const now = Date.now() / 1000
+    // Ensure timestamps always increase by at least 0.001 seconds
+    this.lastTimestamp = Math.max(now, this.lastTimestamp + 0.001)
+    return this.lastTimestamp
+  }
+
   static async start(opts?: { token?: string }): Promise<FakeHomeAssistant> {
     const token = opts?.token ?? 'fake-token'
     const httpServer = createServer()
@@ -98,7 +106,6 @@ export class FakeHomeAssistant {
       httpServer.listen(0, '127.0.0.1', () => {
         const addr = httpServer.address()
         if (addr && typeof addr === 'object') {
-          instance.port = addr.port
           ;(instance as { baseUrl: string }).baseUrl = `http://127.0.0.1:${addr.port}`
         }
         resolve()
@@ -224,7 +231,7 @@ export class FakeHomeAssistant {
           id,
           success: true,
           result: {
-            version: '2024.9.0',
+            version: '2026.9.0',
             location_name: 'Home',
             latitude: 0,
             longitude: 0,
@@ -417,7 +424,7 @@ export class FakeHomeAssistant {
     this.areas = areas
     this.devices = devices ?? []
 
-    const now = Date.now() / 1000
+    const now = this.getTimestamp()
     for (const entity of entities) {
       this.entities.set(entity.entityId, {
         state: entity.state,
@@ -449,7 +456,7 @@ export class FakeHomeAssistant {
       return
     }
 
-    const now = Date.now() / 1000
+    const now = this.getTimestamp()
     const stateChanged = oldState.state !== state
     const newState: EntityState = {
       state,
