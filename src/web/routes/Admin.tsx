@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { AllowlistRow, CatalogEntry } from '@shared/api.js'
 import { DOMAIN_ACTIONS, parseDomain } from '@shared/devices.js'
 import { EntityPicker } from '../components/EntityPicker.js'
+import { PortalToggle } from '../components/PortalToggle.js'
 import * as api from '../api.js'
 
 type AdminProps = {
@@ -192,6 +193,7 @@ export function Admin({ onLogout }: AdminProps): ReactElement {
     return (
       <div data-testid="admin-screen">
         <h1>Admin Portal</h1>
+        <PortalToggle />
         <p style={{ color: '#d9534f', fontWeight: 500 }}>{error}</p>
         <button
           type="button"
@@ -222,7 +224,14 @@ export function Admin({ onLogout }: AdminProps): ReactElement {
   return (
     <div data-testid="admin-screen" style={{ padding: '24px', minHeight: '100vh' }}>
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '24px',
+          }}
+        >
           <h1 style={{ fontSize: '28px', fontWeight: 700, margin: 0 }}>Admin Portal</h1>
           <button
             type="button"
@@ -246,192 +255,194 @@ export function Admin({ onLogout }: AdminProps): ReactElement {
           </button>
         </div>
 
+        <PortalToggle />
+
         <section style={{ marginBottom: '24px' }}>
           <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>Add Entity</h2>
-        <EntityPicker entities={catalog} exclude={excludedIds} onSelect={handleAdd} />
-      </section>
+          <EntityPicker entities={catalog} exclude={excludedIds} onSelect={handleAdd} />
+        </section>
 
         <section>
           <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>
             Allowed Devices ({devices.length})
           </h2>
 
-        {devices.length === 0 ? (
-          <p style={{ color: '#666', fontSize: '14px' }}>
-            No devices configured. Use the picker above to add entities.
-          </p>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {devices.map((device, index) => {
-              const domain = parseDomain(device.entityId)
-              const actions = domain ? DOMAIN_ACTIONS[domain] : []
-              const isOrphaned = orphaned.includes(device.entityId)
+          {devices.length === 0 ? (
+            <p style={{ color: '#666', fontSize: '14px' }}>
+              No devices configured. Use the picker above to add entities.
+            </p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {devices.map((device, index) => {
+                const domain = parseDomain(device.entityId)
+                const actions = domain ? DOMAIN_ACTIONS[domain] : []
+                const isOrphaned = orphaned.includes(device.entityId)
 
-              return (
-                <div
-                  key={device.entityId}
-                  data-testid={`allowlist-row-${index}`}
-                  style={{
-                    border: isOrphaned ? '2px solid #d9534f' : '1px solid #ccc',
-                    borderRadius: '4px',
-                    padding: '12px',
-                    backgroundColor: isOrphaned ? '#fff5f5' : 'white',
-                  }}
-                >
-                  {isOrphaned && (
-                    <div
-                      style={{
-                        color: '#d9534f',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        marginBottom: '8px',
-                      }}
-                    >
-                      ⚠ Orphaned: Entity was renamed or removed in Home Assistant
-                    </div>
-                  )}
+                return (
+                  <div
+                    key={device.entityId}
+                    data-testid={`allowlist-row-${index}`}
+                    style={{
+                      border: isOrphaned ? '2px solid #d9534f' : '1px solid #ccc',
+                      borderRadius: '4px',
+                      padding: '12px',
+                      backgroundColor: isOrphaned ? '#fff5f5' : 'white',
+                    }}
+                  >
+                    {isOrphaned && (
+                      <div
+                        style={{
+                          color: '#d9534f',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          marginBottom: '8px',
+                        }}
+                      >
+                        ⚠ Orphaned: Entity was renamed or removed in Home Assistant
+                      </div>
+                    )}
 
-                  <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ marginBottom: '8px' }}>
-                        <label
-                          htmlFor={`label-${device.entityId}`}
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ marginBottom: '8px' }}>
+                          <label
+                            htmlFor={`label-${device.entityId}`}
+                            style={{
+                              display: 'block',
+                              fontSize: '12px',
+                              fontWeight: 500,
+                              marginBottom: '4px',
+                            }}
+                          >
+                            Label:
+                          </label>
+                          <input
+                            id={`label-${device.entityId}`}
+                            type="text"
+                            value={device.label}
+                            onChange={(e) => handleLabelChange(index, e.target.value)}
+                            style={{
+                              padding: '6px 8px',
+                              fontSize: '14px',
+                              border: '1px solid #ccc',
+                              borderRadius: '4px',
+                              width: '100%',
+                            }}
+                          />
+                        </div>
+
+                        <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
+                          {device.entityId}
+                        </div>
+
+                        <div>
+                          <div
+                            style={{
+                              fontSize: '12px',
+                              fontWeight: 500,
+                              marginBottom: '4px',
+                            }}
+                          >
+                            Allowed Actions:
+                          </div>
+                          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                            {actions.map((action) => (
+                              <label
+                                key={action}
+                                style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={device.allowedActions.includes(action)}
+                                  onChange={() => handleActionToggle(index, action)}
+                                />
+                                <span style={{ fontSize: '13px' }}>{action}</span>
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleMoveUp(index)}
+                          disabled={index === 0}
                           style={{
-                            display: 'block',
+                            padding: '4px 8px',
                             fontSize: '12px',
-                            fontWeight: 500,
-                            marginBottom: '4px',
+                            cursor: index === 0 ? 'not-allowed' : 'pointer',
+                            opacity: index === 0 ? 0.5 : 1,
                           }}
                         >
-                          Label:
-                        </label>
-                        <input
-                          id={`label-${device.entityId}`}
-                          type="text"
-                          value={device.label}
-                          onChange={(e) => handleLabelChange(index, e.target.value)}
+                          ↑ Up
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMoveDown(index)}
+                          disabled={index === devices.length - 1}
                           style={{
-                            padding: '6px 8px',
-                            fontSize: '14px',
-                            border: '1px solid #ccc',
+                            padding: '4px 8px',
+                            fontSize: '12px',
+                            cursor: index === devices.length - 1 ? 'not-allowed' : 'pointer',
+                            opacity: index === devices.length - 1 ? 0.5 : 1,
+                          }}
+                        >
+                          ↓ Down
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemove(index)}
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '12px',
+                            cursor: 'pointer',
+                            backgroundColor: '#d9534f',
+                            color: 'white',
+                            border: 'none',
                             borderRadius: '4px',
-                            width: '100%',
-                          }}
-                        />
-                      </div>
-
-                      <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px' }}>
-                        {device.entityId}
-                      </div>
-
-                      <div>
-                        <div
-                          style={{
-                            fontSize: '12px',
-                            fontWeight: 500,
-                            marginBottom: '4px',
                           }}
                         >
-                          Allowed Actions:
-                        </div>
-                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                          {actions.map((action) => (
-                            <label
-                              key={action}
-                              style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={device.allowedActions.includes(action)}
-                                onChange={() => handleActionToggle(index, action)}
-                              />
-                              <span style={{ fontSize: '13px' }}>{action}</span>
-                            </label>
-                          ))}
-                        </div>
+                          Remove
+                        </button>
                       </div>
-                    </div>
-
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <button
-                        type="button"
-                        onClick={() => handleMoveUp(index)}
-                        disabled={index === 0}
-                        style={{
-                          padding: '4px 8px',
-                          fontSize: '12px',
-                          cursor: index === 0 ? 'not-allowed' : 'pointer',
-                          opacity: index === 0 ? 0.5 : 1,
-                        }}
-                      >
-                        ↑ Up
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleMoveDown(index)}
-                        disabled={index === devices.length - 1}
-                        style={{
-                          padding: '4px 8px',
-                          fontSize: '12px',
-                          cursor: index === devices.length - 1 ? 'not-allowed' : 'pointer',
-                          opacity: index === devices.length - 1 ? 0.5 : 1,
-                        }}
-                      >
-                        ↓ Down
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRemove(index)}
-                        style={{
-                          padding: '4px 8px',
-                          fontSize: '12px',
-                          cursor: 'pointer',
-                          backgroundColor: '#d9534f',
-                          color: 'white',
-                          border: 'none',
-                          borderRadius: '4px',
-                        }}
-                      >
-                        Remove
-                      </button>
                     </div>
                   </div>
-                </div>
-              )
-            })}
-          </div>
+                )
+              })}
+            </div>
           )}
         </section>
 
         <section style={{ marginTop: '24px' }}>
-        <button
-          type="button"
-          onClick={handleSave}
-          style={{
-            padding: '10px 20px',
-            fontSize: '14px',
-            fontWeight: 600,
-            backgroundColor: '#5cb85c',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: 'pointer',
-          }}
-        >
-          Save
-        </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            style={{
+              padding: '10px 20px',
+              fontSize: '14px',
+              fontWeight: 600,
+              backgroundColor: '#5cb85c',
+              color: 'white',
+              border: 'none',
+              borderRadius: '4px',
+              cursor: 'pointer',
+            }}
+          >
+            Save
+          </button>
 
-        {saveStatus === 'success' && (
-          <span style={{ marginLeft: '12px', color: '#5cb85c', fontSize: '14px' }}>
-            {saveMessage}
-          </span>
-        )}
+          {saveStatus === 'success' && (
+            <span style={{ marginLeft: '12px', color: '#5cb85c', fontSize: '14px' }}>
+              {saveMessage}
+            </span>
+          )}
 
-        {saveStatus === 'error' && (
-          <span style={{ marginLeft: '12px', color: '#d9534f', fontSize: '14px' }}>
-            {saveMessage}
-          </span>
-        )}
+          {saveStatus === 'error' && (
+            <span style={{ marginLeft: '12px', color: '#d9534f', fontSize: '14px' }}>
+              {saveMessage}
+            </span>
+          )}
         </section>
       </div>
     </div>

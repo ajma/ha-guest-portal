@@ -41,6 +41,15 @@ describe('Admin Screen', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    // Default mock for the PortalToggle component
+    vi.spyOn(api, 'getAdminPortal').mockResolvedValue({
+      ok: true,
+      data: {
+        enabled: true,
+        integrationToken: 'a'.repeat(64),
+        portalId: '11111111-1111-1111-1111-111111111111',
+      },
+    })
   })
 
   afterEach(() => {
@@ -303,12 +312,10 @@ describe('Admin Screen', () => {
     getCatalogSpy.mockResolvedValue({ ok: true, data: mockCatalog })
 
     const getAllowlistSpy = vi.spyOn(api, 'getAllowlist')
-    getAllowlistSpy
-      .mockResolvedValueOnce({ ok: false, status: 500 })
-      .mockResolvedValueOnce({
-        ok: true,
-        data: { devices: getMockAllowlist(), orphaned: [] },
-      })
+    getAllowlistSpy.mockResolvedValueOnce({ ok: false, status: 500 }).mockResolvedValueOnce({
+      ok: true,
+      data: { devices: getMockAllowlist(), orphaned: [] },
+    })
 
     render(<Admin onLogout={async () => {}} />)
 
@@ -352,9 +359,7 @@ describe('Admin Screen', () => {
       },
     })
 
-    const putSpy = vi
-      .spyOn(api, 'putAllowlist')
-      .mockResolvedValue({ ok: true, data: undefined })
+    const putSpy = vi.spyOn(api, 'putAllowlist').mockResolvedValue({ ok: true, data: undefined })
 
     render(<Admin onLogout={async () => {}} />)
 
@@ -435,7 +440,12 @@ describe('Admin Screen', () => {
         ok: true,
         data: {
           devices: [
-            { entityId: 'light.test', label: 'Untrimmed', allowedActions: ['turn_on'], sortOrder: 0 },
+            {
+              entityId: 'light.test',
+              label: 'Untrimmed',
+              allowedActions: ['turn_on'],
+              sortOrder: 0,
+            },
           ],
           orphaned: [],
         },
