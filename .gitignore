@@ -10,3 +10,6 @@ playwright-report/
 __pycache__/
 .pytest_cache/
 .ruff_cache/
+
+# Interactive dev stack (pnpm dev:demo)
+.dev-data/
