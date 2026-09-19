@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import WebSocket from 'ws'
-import { FakeHomeAssistant } from '../fake-ha.ts'
-import {
-  InboundFrame,
-  type EntityEvent,
-  type CompressedState,
-} from '../../src/server/ha/schemas.ts'
 import type { z } from 'zod'
+import {
+  type CompressedState,
+  type EntityEvent,
+  InboundFrame,
+} from '../../src/server/ha/schemas.ts'
+import { FakeHomeAssistant } from '../fake-ha.ts'
 
 type TestWebSocket = WebSocket & { messageQueue: unknown[] }
 type InboundFrameType = z.infer<typeof InboundFrame>

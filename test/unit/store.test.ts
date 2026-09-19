@@ -1,11 +1,12 @@
 // test/unit/store.test.ts
-import { describe, expect, it, vi } from 'vitest'
+
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { openDb } from '../../src/server/store/db.ts'
+import { describe, expect, it, vi } from 'vitest'
 import { AllowlistStore } from '../../src/server/store/allowlist.ts'
 import { AuditLog } from '../../src/server/store/auditlog.ts'
+import { openDb } from '../../src/server/store/db.ts'
 import type { AllowlistRow } from '../../src/shared/api.ts'
 
 describe('openDb', () => {

@@ -1,17 +1,17 @@
-import { WebSocketServer } from 'ws'
-import type WebSocket from 'ws'
-import { createServer } from 'node:http'
 import type { Server } from 'node:http'
+import { createServer } from 'node:http'
+import type WebSocket from 'ws'
+import { WebSocketServer } from 'ws'
 import { z } from 'zod'
 import {
-  AuthRequired,
-  AuthOk,
   AuthInvalid,
-  ResultFrame,
-  PongFrame,
-  EventFrame,
+  AuthOk,
+  AuthRequired,
   type CompressedState,
   type EntityEvent,
+  EventFrame,
+  PongFrame,
+  ResultFrame,
 } from '../src/server/ha/schemas.ts'
 
 // Client command schema for inbound message validation

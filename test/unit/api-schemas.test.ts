@@ -6,8 +6,8 @@ import {
   DevicesResponse,
   LoginRequest,
   SessionResponse,
-  SseFrameSchema,
   type SseFrame,
+  SseFrameSchema,
 } from '../../src/shared/api.ts'
 
 describe('LoginRequest', () => {

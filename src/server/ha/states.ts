@@ -23,6 +23,7 @@ export class StateCache {
   private conn: HaConnection
   private unsubscribeFromEvents: (() => Promise<void>) | null = null
   private pendingSetEntityIds: Promise<void> = Promise.resolve()
+  private desiredEntityIds: string[] | null = null
 
   constructor(conn: HaConnection) {
     this.conn = conn
@@ -50,24 +51,30 @@ export class StateCache {
     // Serialize setEntityIds calls to prevent orphaned subscriptions
     // Chain this operation onto any pending operation
     const operation = this.pendingSetEntityIds.then(async () => {
+      // Record desired entity IDs (even if not ready yet)
+      this.desiredEntityIds = ids
+
       // Unsubscribe from old subscription
       if (this.unsubscribeFromEvents) {
         await this.unsubscribeFromEvents()
         this.unsubscribeFromEvents = null
       }
 
-      // Subscribe with new entity IDs
-      const result = await this.conn.subscribe(
-        {
-          type: 'subscribe_entities',
-          entity_ids: ids,
-        },
-        (event) => {
-          this.handleEvent(event)
-        },
-      )
+      // Subscribe only if connection is ready
+      // If not ready, handleStatusChange will subscribe when it becomes ready
+      if (this.conn.status === 'ready') {
+        const result = await this.conn.subscribe(
+          {
+            type: 'subscribe_entities',
+            entity_ids: ids,
+          },
+          (event) => {
+            this.handleEvent(event)
+          },
+        )
 
-      this.unsubscribeFromEvents = result.unsubscribe
+        this.unsubscribeFromEvents = result.unsubscribe
+      }
     })
 
     this.pendingSetEntityIds = operation
@@ -225,6 +232,37 @@ export class StateCache {
     if (status === 'disconnected' && !this.stale_) {
       this.stale_ = true
       this.notifyStaleListeners(true)
+    }
+
+    // If becoming ready and we have desired IDs but no active subscription, subscribe now
+    // This handles the case where setEntityIds was called before the connection was ready
+    // On reconnect, unsubscribeFromEvents remains set, so we won't double-subscribe
+    if (
+      status === 'ready' &&
+      this.desiredEntityIds !== null &&
+      this.unsubscribeFromEvents === null
+    ) {
+      // Chain onto pendingSetEntityIds to maintain serialization
+      this.pendingSetEntityIds = this.pendingSetEntityIds.then(async () => {
+        // Re-check conditions (they may have changed while waiting)
+        if (
+          this.conn.status === 'ready' &&
+          this.desiredEntityIds !== null &&
+          this.unsubscribeFromEvents === null
+        ) {
+          const result = await this.conn.subscribe(
+            {
+              type: 'subscribe_entities',
+              entity_ids: this.desiredEntityIds,
+            },
+            (event) => {
+              this.handleEvent(event)
+            },
+          )
+
+          this.unsubscribeFromEvents = result.unsubscribe
+        }
+      })
     }
   }
 

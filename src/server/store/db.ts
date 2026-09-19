@@ -1,7 +1,8 @@
 // src/server/store/db.ts
-import { DatabaseSync } from 'node:sqlite'
+
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS exposed_device (

@@ -1,6 +1,6 @@
 import WebSocket from 'ws'
 import type { z } from 'zod'
-import { InboundFrame, type EntityEvent } from './schemas.js'
+import { type EntityEvent, InboundFrame } from './schemas.js'
 
 export type ConnectionStatus = 'connecting' | 'ready' | 'disconnected'
 
@@ -97,7 +97,22 @@ export class HaConnection {
 
     if (this.ws) {
       this.ws.removeAllListeners()
-      this.ws.close()
+      // Re-attach error handler to prevent uncaught exceptions during teardown
+      this.ws.on('error', () => {
+        // Suppress errors during shutdown
+      })
+
+      // Check readyState before closing to avoid ws library errors
+      // CONNECTING = 0, OPEN = 1, CLOSING = 2, CLOSED = 3
+      if (this.ws.readyState === WebSocket.CONNECTING || this.ws.readyState === WebSocket.CLOSING) {
+        // terminate() aborts immediately without clean handshake
+        this.ws.terminate()
+      } else if (this.ws.readyState === WebSocket.OPEN) {
+        // close() sends a clean close frame
+        this.ws.close()
+      }
+      // If CLOSED, do nothing
+
       this.ws = null
     }
 

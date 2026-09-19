@@ -1,7 +1,7 @@
-import { describe, it, expect, afterEach } from 'vitest'
-import { FakeHomeAssistant } from '../fake-ha.ts'
-import { HaConnection } from '../../src/server/ha/connection.ts'
+import { afterEach, describe, expect, it } from 'vitest'
 import { fetchCatalog } from '../../src/server/ha/catalog.ts'
+import { HaConnection } from '../../src/server/ha/connection.ts'
+import { FakeHomeAssistant } from '../fake-ha.ts'
 
 describe('fetchCatalog', () => {
   let fake: FakeHomeAssistant | null = null

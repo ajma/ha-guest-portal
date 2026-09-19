@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import {
-  AuthRequired,
-  AuthOk,
   AuthInvalid,
-  ResultFrame,
-  PongFrame,
-  EventFrame,
-  InboundFrame,
-  RegistryEntity,
-  RegistryDevice,
-  RegistryArea,
+  AuthOk,
+  AuthRequired,
   type CompressedState,
   type EntityEvent,
+  EventFrame,
+  InboundFrame,
+  PongFrame,
+  RegistryArea,
+  RegistryDevice,
+  RegistryEntity,
+  ResultFrame,
 } from '../../src/server/ha/schemas.ts'
 
 describe('Home Assistant frame schemas', () => {

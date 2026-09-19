@@ -1,6 +1,6 @@
-import { describe, it, expect, afterEach } from 'vitest'
-import { FakeHomeAssistant } from '../fake-ha.ts'
+import { afterEach, describe, expect, it } from 'vitest'
 import { HaConnection } from '../../src/server/ha/connection.ts'
+import { FakeHomeAssistant } from '../fake-ha.ts'
 
 describe('HaConnection', () => {
   let fake: FakeHomeAssistant | null = null

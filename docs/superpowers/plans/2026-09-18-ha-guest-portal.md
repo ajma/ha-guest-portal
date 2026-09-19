@@ -660,7 +660,7 @@ Cover, at minimum:
     async stop(): Promise<void>
     get stale(): boolean
     async getCatalog(): Promise<CatalogEntry[]>
-    getStates(): Map<string, CachedState>
+    getStates(): ReadonlyMap<string, Readonly<CachedState>>   // superseded: see Task 9 immutability ruling
     async setWatchedEntities(ids: string[]): Promise<void>
     async callAction(domain: SupportedDomain, service: DeviceAction, entityId: string): Promise<ActionResult>
     onChange(fn: StateChangeListener): () => void

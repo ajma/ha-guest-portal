@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import type { HaConnection } from './connection.js'
-import { RegistryEntity, RegistryDevice, RegistryArea } from './schemas.js'
 import type { CatalogEntry } from '../../shared/api.js'
 import { isSupportedEntity } from '../../shared/devices.js'
+import type { HaConnection } from './connection.js'
+import { RegistryArea, RegistryDevice, RegistryEntity } from './schemas.js'
 
 export async function fetchCatalog(conn: HaConnection): Promise<CatalogEntry[]> {
   // Fetch all three registries concurrently
