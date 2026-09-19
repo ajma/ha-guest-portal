@@ -351,6 +351,239 @@ describe('HaConnection', () => {
 
     await conn.stop()
   })
+
+  it('subscription survives reconnect', async () => {
+    fake = await FakeHomeAssistant.start()
+    fake.seed(
+      [{ entityId: 'light.test', state: 'off' }],
+      []
+    )
+
+    const wsUrl = `${fake.baseUrl.replace('http://', 'ws://')}/api/websocket`
+
+    const conn = new HaConnection({
+      baseUrl: fake.baseUrl,
+      token: fake.token,
+      wsUrl,
+      reconnectBaseMs: 100,
+      reconnectMaxMs: 1000,
+      pingIntervalMs: 5000,
+    })
+
+    conn.start()
+    await waitFor(() => conn.status === 'ready', 2000)
+
+    const events: unknown[] = []
+    await conn.subscribe(
+      { type: 'subscribe_entities' },
+      (event) => events.push(event)
+    )
+
+    // Wait for initial snapshot
+    await waitFor(() => events.length > 0, 2000)
+    const eventsBeforeDrop = events.length
+
+    // Drop connection
+    fake.drop()
+
+    // Wait for reconnect
+    await waitFor(() => conn.status === 'ready', 3000)
+
+    // Change state - should receive event after reconnect
+    fake.setState('light.test', 'on')
+
+    // Assert event count increases
+    await waitFor(() => events.length > eventsBeforeDrop, 2000)
+    expect(events.length).toBeGreaterThan(eventsBeforeDrop)
+
+    await conn.stop()
+  })
+
+  it('fresh snapshot after reconnect', async () => {
+    fake = await FakeHomeAssistant.start()
+    fake.seed(
+      [{ entityId: 'light.test', state: 'off' }],
+      []
+    )
+
+    const wsUrl = `${fake.baseUrl.replace('http://', 'ws://')}/api/websocket`
+
+    const conn = new HaConnection({
+      baseUrl: fake.baseUrl,
+      token: fake.token,
+      wsUrl,
+      reconnectBaseMs: 100,
+      reconnectMaxMs: 1000,
+      pingIntervalMs: 5000,
+    })
+
+    conn.start()
+    await waitFor(() => conn.status === 'ready', 2000)
+
+    const events: unknown[] = []
+    await conn.subscribe(
+      { type: 'subscribe_entities' },
+      (event) => events.push(event)
+    )
+
+    // Wait for initial snapshot
+    await waitFor(() => events.length > 0, 2000)
+
+    // Clear events
+    events.length = 0
+
+    // Drop connection
+    fake.drop()
+
+    // Wait for reconnect
+    await waitFor(() => conn.status === 'ready', 3000)
+
+    // Wait for post-reconnect snapshot
+    await waitFor(() => events.length > 0, 2000)
+
+    // First event after reconnect should be an object with "a" section
+    const firstEvent = events[0]
+    expect(typeof firstEvent).toBe('object')
+    expect(firstEvent).not.toBeNull()
+
+    // Should include "a" (added) section with snapshot
+    expect(firstEvent).toHaveProperty('a')
+
+    await conn.stop()
+  })
+
+  it('unsubscribe still works after reconnect', async () => {
+    fake = await FakeHomeAssistant.start()
+    fake.seed(
+      [{ entityId: 'light.test', state: 'off' }],
+      []
+    )
+
+    const wsUrl = `${fake.baseUrl.replace('http://', 'ws://')}/api/websocket`
+
+    const conn = new HaConnection({
+      baseUrl: fake.baseUrl,
+      token: fake.token,
+      wsUrl,
+      reconnectBaseMs: 100,
+      reconnectMaxMs: 1000,
+      pingIntervalMs: 5000,
+    })
+
+    conn.start()
+    await waitFor(() => conn.status === 'ready', 2000)
+
+    const events: unknown[] = []
+    const sub = await conn.subscribe(
+      { type: 'subscribe_entities' },
+      (event) => events.push(event)
+    )
+
+    // Wait for initial snapshot
+    await waitFor(() => events.length > 0, 2000)
+
+    // Drop connection
+    fake.drop()
+
+    // Wait for reconnect
+    await waitFor(() => conn.status === 'ready', 3000)
+
+    // Clear events received during reconnect
+    events.length = 0
+
+    // Unsubscribe
+    await sub.unsubscribe()
+
+    // Change state - should NOT receive event
+    fake.setState('light.test', 'on')
+
+    // Wait to ensure no events arrive
+    await sleep(300)
+
+    expect(events.length).toBe(0)
+
+    await conn.stop()
+  })
+
+  it('start() twice is safe', async () => {
+    fake = await FakeHomeAssistant.start()
+    const wsUrl = `${fake.baseUrl.replace('http://', 'ws://')}/api/websocket`
+
+    const conn = new HaConnection({
+      baseUrl: fake.baseUrl,
+      token: fake.token,
+      wsUrl,
+      reconnectBaseMs: 100,
+      reconnectMaxMs: 1000,
+      pingIntervalMs: 5000,
+    })
+
+    // Call start twice
+    conn.start()
+    conn.start()
+
+    // Should reach ready
+    await waitFor(() => conn.status === 'ready', 2000)
+
+    // Wait to ensure stays ready
+    await sleep(300)
+    expect(conn.status).toBe('ready')
+
+    await conn.stop()
+  })
+
+  it('no orphaned sockets after multiple reconnects', async () => {
+    fake = await FakeHomeAssistant.start()
+    fake.seed(
+      [{ entityId: 'light.test', state: 'off' }],
+      []
+    )
+
+    const wsUrl = `${fake.baseUrl.replace('http://', 'ws://')}/api/websocket`
+
+    const conn = new HaConnection({
+      baseUrl: fake.baseUrl,
+      token: fake.token,
+      wsUrl,
+      reconnectBaseMs: 50,
+      reconnectMaxMs: 200,
+      pingIntervalMs: 5000,
+    })
+
+    conn.start()
+    await waitFor(() => conn.status === 'ready', 2000)
+
+    const events: unknown[] = []
+    await conn.subscribe(
+      { type: 'subscribe_entities' },
+      (event) => events.push(event)
+    )
+
+    // Wait for initial snapshot
+    await waitFor(() => events.length > 0, 2000)
+
+    // Multiple drop/reconnect cycles
+    for (let i = 0; i < 3; i++) {
+      events.length = 0
+      fake.drop()
+      await waitFor(() => conn.status === 'ready', 2000)
+      await waitFor(() => events.length > 0, 2000)
+    }
+
+    // Clear events and test for duplicates
+    events.length = 0
+
+    // Send one state change
+    fake.setState('light.test', 'on')
+
+    // Wait for event
+    await waitFor(() => events.length > 0, 2000)
+
+    // Should receive exactly one event, not duplicates
+    expect(events.length).toBe(1)
+
+    await conn.stop()
+  })
 })
 
 describe('loadConfig', () => {

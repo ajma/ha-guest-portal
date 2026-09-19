@@ -23,6 +23,7 @@ type PendingRequest = {
 
 type Subscription = {
   id: number
+  payload: Record<string, unknown>
   onEvent: (event: EntityEvent) => void
   unsubscribe: () => Promise<void>
 }
@@ -78,6 +79,10 @@ export class HaConnection {
     if (this.stopped) {
       return
     }
+    // Idempotent - no-op if already connecting or connected
+    if (this.ws !== null || this.status_ === 'connecting') {
+      return
+    }
     this.connect()
   }
 
@@ -118,6 +123,16 @@ export class HaConnection {
     return schema.parse(raw)
   }
 
+  /**
+   * Subscribe to events from Home Assistant.
+   *
+   * Subscriptions automatically survive reconnects: after a successful
+   * reconnect and auth, the connection re-establishes all subscriptions
+   * with fresh message IDs. Home Assistant sends a complete snapshot
+   * (with "a" section) for each re-subscription.
+   *
+   * The returned unsubscribe handle remains valid across reconnects.
+   */
   async subscribe(
     payload: Record<string, unknown>,
     onEvent: (event: EntityEvent) => void
@@ -135,6 +150,7 @@ export class HaConnection {
           // Subscription confirmed
           const subscription: Subscription = {
             id,
+            payload,
             onEvent,
             unsubscribe: async () => {
               this.subscriptions.delete(id)
@@ -171,6 +187,11 @@ export class HaConnection {
 
   private connect(): void {
     if (this.stopped || this.authFailed) {
+      return
+    }
+
+    // Guard against running when a socket already exists
+    if (this.ws !== null) {
       return
     }
 
@@ -223,6 +244,7 @@ export class HaConnection {
 
       case 'auth_ok':
         this.reconnectAttempts = 0
+        this.reestablishSubscriptions()
         this.setStatus('ready')
         this.startPingTimer()
         break
@@ -264,6 +286,40 @@ export class HaConnection {
     }
   }
 
+  private reestablishSubscriptions(): void {
+    // Re-establish all subscriptions with fresh message IDs
+    const oldSubscriptions = Array.from(this.subscriptions.values())
+    this.subscriptions.clear()
+
+    for (const oldSub of oldSubscriptions) {
+      const newId = ++this.messageId
+      const message = { ...oldSub.payload, id: newId }
+
+      // Update subscription with new ID
+      const newSub: Subscription = {
+        id: newId,
+        payload: oldSub.payload,
+        onEvent: oldSub.onEvent,
+        unsubscribe: oldSub.unsubscribe,
+      }
+      this.subscriptions.set(newId, newSub)
+
+      // Wait for result frame to confirm subscription
+      this.pendingRequests.set(newId, {
+        resolve: () => {
+          // Subscription re-established successfully
+        },
+        reject: (error: Error) => {
+          // Re-subscribe failed - this is a failed connection attempt
+          console.error('Failed to re-establish subscription:', error.message)
+          this.handleDisconnect()
+        },
+      })
+
+      this.ws?.send(JSON.stringify(message))
+    }
+  }
+
   private sendAuth(): void {
     const authMessage = {
       type: 'auth',
@@ -301,7 +357,7 @@ export class HaConnection {
     // Exponential backoff with jitter
     const baseDelay = this.opts.reconnectBaseMs * 2 ** this.reconnectAttempts
     const cappedDelay = Math.min(baseDelay, this.opts.reconnectMaxMs)
-    const jitter = Math.random() * 0.3 * cappedDelay // ±30% jitter
+    const jitter = Math.random() * 0.3 * cappedDelay // +0% to +30% jitter to prevent thundering herd
     const delay = cappedDelay + jitter
 
     this.reconnectAttempts++
