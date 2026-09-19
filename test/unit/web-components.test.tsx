@@ -146,8 +146,25 @@ describe('App component', () => {
   it('renders admin screen only for admin role at /admin', async () => {
     const { App } = await import('../../src/web/App.js')
 
+    // Mock session check
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ role: 'admin' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    // Mock getCatalog
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ entities: [] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    // Mock getAllowlist
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(JSON.stringify({ devices: [], orphaned: [] }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }),
