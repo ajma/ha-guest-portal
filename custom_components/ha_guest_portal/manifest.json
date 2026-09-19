@@ -1,0 +1,12 @@
+{
+  "domain": "ha_guest_portal",
+  "name": "Home Assistant Guest Portal",
+  "codeowners": ["@ajma"],
+  "config_flow": true,
+  "documentation": "https://github.com/ajma/ha-guest-portal",
+  "integration_type": "service",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/ajma/ha-guest-portal/issues",
+  "requirements": [],
+  "version": "0.0.1"
+}

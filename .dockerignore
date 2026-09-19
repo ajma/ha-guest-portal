@@ -40,3 +40,15 @@ Thumbs.db
 data
 *.db
 *.db-journal
+
+# Home Assistant integration — runs inside HA core, never in this container
+custom_components
+brand
+hacs.json
+pyproject.toml
+uv.lock
+tests
+.venv
+__pycache__
+.pytest_cache
+.ruff_cache

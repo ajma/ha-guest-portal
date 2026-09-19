@@ -7,7 +7,16 @@
   },
   "files": {
     "ignoreUnknown": false,
-    "includes": ["**", "!**/node_modules", "!**/dist", "!**/.git"]
+    "includes": [
+      "**",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/.git",
+      "!custom_components",
+      "!brand",
+      "!.venv",
+      "!tests"
+    ]
   },
   "formatter": {
     "enabled": true,

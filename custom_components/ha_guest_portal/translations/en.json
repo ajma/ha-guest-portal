@@ -1,0 +1,46 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to the Guest Portal",
+        "description": "Enter the address of the Guest Portal add-on and the integration token shown on its admin page.",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "token": "Integration token"
+        }
+      },
+      "hassio_confirm": {
+        "title": "Guest Portal add-on discovered",
+        "description": "Set up the Home Assistant Guest Portal add-on?"
+      },
+      "reauth_confirm": {
+        "title": "Reconnect to the Guest Portal",
+        "description": "The integration token was rejected. Enter the current token from the portal's admin page.",
+        "data": {
+          "token": "Integration token"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach the Guest Portal at that address.",
+      "invalid_auth": "The Guest Portal rejected that token."
+    },
+    "abort": {
+      "already_configured": "This Guest Portal is already set up.",
+      "reauth_successful": "Reconnected to the Guest Portal."
+    }
+  },
+  "entity": {
+    "switch": {
+      "portal": {
+        "name": "Guest portal"
+      }
+    },
+    "sensor": {
+      "last_interaction": {
+        "name": "Last interaction"
+      }
+    }
+  }
+}
