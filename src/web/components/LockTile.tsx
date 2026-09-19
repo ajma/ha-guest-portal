@@ -91,9 +91,7 @@ export function LockTile({ device, disabled }: LockTileProps): ReactElement {
     <div className="p-6 border-2 border-orange-500 dark:border-orange-600 rounded-lg bg-white dark:bg-gray-800 shadow-md">
       <div className="mb-4">
         <div className="font-bold text-xl">{device.label}</div>
-        <div className="text-base text-gray-700 dark:text-gray-300">
-          {getStateText()}
-        </div>
+        <div className="text-base text-gray-700 dark:text-gray-300">{getStateText()}</div>
       </div>
 
       {unlockConfirmPending ? (
@@ -163,7 +161,10 @@ export function LockTile({ device, disabled }: LockTileProps): ReactElement {
 
       {isStale && <StaleBadge />}
       {error !== null && (
-        <div id={`${device.entityId}-error`} className="text-sm text-red-600 dark:text-red-400 mt-2">
+        <div
+          id={`${device.entityId}-error`}
+          className="text-sm text-red-600 dark:text-red-400 mt-2"
+        >
           {error}
         </div>
       )}

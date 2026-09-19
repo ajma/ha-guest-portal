@@ -166,12 +166,7 @@ async function waitForServer(baseUrl: string, timeoutMs = 10000): Promise<void> 
       const response = await fetch(`${baseUrl}/api/health`)
       if (response.ok) {
         const data: unknown = await response.json()
-        if (
-          typeof data === 'object' &&
-          data !== null &&
-          'ok' in data &&
-          data.ok === true
-        ) {
+        if (typeof data === 'object' && data !== null && 'ok' in data && data.ok === true) {
           return
         }
       }

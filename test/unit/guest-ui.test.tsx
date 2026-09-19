@@ -36,7 +36,9 @@ describe('Guest UI', () => {
   describe('ToggleTile', () => {
     it('shows on state and pressing calls performAction with turn_off', async () => {
       const user = userEvent.setup()
-      const performActionSpy = vi.spyOn(api, 'performAction').mockResolvedValue({ ok: true, data: undefined })
+      const performActionSpy = vi
+        .spyOn(api, 'performAction')
+        .mockResolvedValue({ ok: true, data: undefined })
 
       const device: Device = {
         entityId: 'light.living_room',
@@ -68,7 +70,9 @@ describe('Guest UI', () => {
 
     it('shows off state and pressing calls performAction with turn_on', async () => {
       const user = userEvent.setup()
-      const performActionSpy = vi.spyOn(api, 'performAction').mockResolvedValue({ ok: true, data: undefined })
+      const performActionSpy = vi
+        .spyOn(api, 'performAction')
+        .mockResolvedValue({ ok: true, data: undefined })
 
       const device: Device = {
         entityId: 'switch.fan',
@@ -179,8 +183,6 @@ describe('Guest UI', () => {
       await waitFor(() => {
         expect(tile.textContent).toMatch(/off/i)
       })
-
-      
     })
 
     it('shows pending state during in-flight action and prevents double-firing', async () => {
@@ -218,7 +220,7 @@ describe('Guest UI', () => {
       await user.click(tile)
 
       // Should be disabled while pending
-      expect("disabled" in tile ? tile.disabled : false).toBe(true)
+      expect('disabled' in tile ? tile.disabled : false).toBe(true)
 
       // Try to click again
       await user.click(tile)
@@ -230,7 +232,7 @@ describe('Guest UI', () => {
       resolveAction?.()
 
       await waitFor(() => {
-        expect("disabled" in tile ? tile.disabled : false).toBe(false)
+        expect('disabled' in tile ? tile.disabled : false).toBe(false)
       })
     })
 
@@ -256,7 +258,7 @@ describe('Guest UI', () => {
       const tile = screen.getByRole('button', { name: /garage light/i })
 
       // Should NOT be disabled
-      expect("disabled" in tile ? tile.disabled : false).toBe(false)
+      expect('disabled' in tile ? tile.disabled : false).toBe(false)
 
       // Should show Unknown state
       expect(tile.textContent).toMatch(/unknown/i)
@@ -284,10 +286,9 @@ describe('Guest UI', () => {
       const tile = screen.getByRole('button', { name: /patio light/i })
 
       // Should be disabled
-      expect("disabled" in tile ? tile.disabled : false).toBe(true)
+      expect('disabled' in tile ? tile.disabled : false).toBe(true)
 
       // Should show disconnected indicator
-
     })
 
     it('shows Unknown state instead of actual state when stale', () => {
@@ -419,7 +420,9 @@ describe('Guest UI', () => {
 
     it('respects allowedActions with toggle only', async () => {
       const user = userEvent.setup()
-      const performActionSpy = vi.spyOn(api, 'performAction').mockResolvedValue({ ok: true, data: undefined })
+      const performActionSpy = vi
+        .spyOn(api, 'performAction')
+        .mockResolvedValue({ ok: true, data: undefined })
 
       const device: Device = {
         entityId: 'light.toggle_only',
@@ -491,10 +494,6 @@ describe('Guest UI', () => {
       store.setConnected(true)
 
       render(<Guest onLogout={async () => {}} />)
-
-      
-      
-      
     })
 
     it('renders opening state distinctly from open', () => {
@@ -557,13 +556,13 @@ describe('Guest UI', () => {
       store.setConnected(true)
 
       render(<Guest onLogout={async () => {}} />)
-
-      
     })
 
     it('calls performAction with correct action when buttons are clicked', async () => {
       const user = userEvent.setup()
-      const performActionSpy = vi.spyOn(api, 'performAction').mockResolvedValue({ ok: true, data: undefined })
+      const performActionSpy = vi
+        .spyOn(api, 'performAction')
+        .mockResolvedValue({ ok: true, data: undefined })
 
       const device: Device = {
         entityId: 'cover.shades',
@@ -616,7 +615,6 @@ describe('Guest UI', () => {
 
       expect(screen.queryByRole('button', { name: /^open$/i })).toBeNull()
       expect(screen.queryByRole('button', { name: /stop/i })).toBeNull()
-
     })
 
     it('shows Unknown state instead of actual state when stale', () => {
@@ -651,7 +649,9 @@ describe('Guest UI', () => {
 
   describe('LockTile', () => {
     it('lock action fires immediately on first press', async () => {
-      const performActionSpy = vi.spyOn(api, 'performAction').mockResolvedValue({ ok: true, data: undefined })
+      const performActionSpy = vi
+        .spyOn(api, 'performAction')
+        .mockResolvedValue({ ok: true, data: undefined })
 
       const device: Device = {
         entityId: 'lock.front_door',
@@ -681,7 +681,9 @@ describe('Guest UI', () => {
 
     it('unlock requires confirmation before performAction is called', async () => {
       const user = userEvent.setup()
-      const performActionSpy = vi.spyOn(api, 'performAction').mockResolvedValue({ ok: true, data: undefined })
+      const performActionSpy = vi
+        .spyOn(api, 'performAction')
+        .mockResolvedValue({ ok: true, data: undefined })
 
       const device: Device = {
         entityId: 'lock.back_door',
@@ -708,7 +710,6 @@ describe('Guest UI', () => {
       expect(performActionSpy).not.toHaveBeenCalled()
 
       // Should show confirmation state
-      
 
       // Second click on confirm - should call performAction
       await user.click(screen.getByRole('button', { name: /confirm/i }))
@@ -717,7 +718,9 @@ describe('Guest UI', () => {
 
     it('unlock confirmation can be cancelled', async () => {
       const user = userEvent.setup()
-      const performActionSpy = vi.spyOn(api, 'performAction').mockResolvedValue({ ok: true, data: undefined })
+      const performActionSpy = vi
+        .spyOn(api, 'performAction')
+        .mockResolvedValue({ ok: true, data: undefined })
 
       const device: Device = {
         entityId: 'lock.side_door',
@@ -741,20 +744,21 @@ describe('Guest UI', () => {
 
       // First click to enter confirmation state
       await user.click(unlockButton)
-      
 
       // Click cancel
       await user.click(screen.getByRole('button', { name: /cancel/i }))
 
       // Should return to initial state
       expect(screen.queryByRole('button', { name: /confirm/i })).toBeNull()
-      
+
       expect(performActionSpy).not.toHaveBeenCalled()
     })
 
     it('unlock confirmation times out after a few seconds', async () => {
       vi.useFakeTimers()
-      const performActionSpy = vi.spyOn(api, 'performAction').mockResolvedValue({ ok: true, data: undefined })
+      const performActionSpy = vi
+        .spyOn(api, 'performAction')
+        .mockResolvedValue({ ok: true, data: undefined })
 
       const device: Device = {
         entityId: 'lock.garage_entry',
@@ -814,7 +818,6 @@ describe('Guest UI', () => {
       render(<Guest onLogout={async () => {}} />)
 
       expect(screen.queryByRole('button', { name: /^lock$/i })).toBeNull()
-
     })
 
     it('renders jammed state correctly', () => {
@@ -938,8 +941,6 @@ describe('Guest UI', () => {
       store.setConnected(true)
 
       render(<Guest onLogout={async () => {}} />)
-
-      
     })
   })
 })

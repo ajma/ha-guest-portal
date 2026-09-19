@@ -10,7 +10,10 @@ describe('appPath', () => {
 
   it('strips the base prefix when present', () => {
     expect(
-      appPath('http://host/api/hassio_ingress/TOKEN/', 'http://host/api/hassio_ingress/TOKEN/admin'),
+      appPath(
+        'http://host/api/hassio_ingress/TOKEN/',
+        'http://host/api/hassio_ingress/TOKEN/admin',
+      ),
     ).toBe('/admin')
     expect(
       appPath('http://host/api/hassio_ingress/TOKEN/', 'http://host/api/hassio_ingress/TOKEN/'),

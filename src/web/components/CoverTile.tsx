@@ -121,7 +121,10 @@ export function CoverTile({ device, disabled }: CoverTileProps): ReactElement {
 
       {isStale && <StaleBadge />}
       {error !== null && (
-        <div id={`${device.entityId}-error`} className="text-sm text-red-600 dark:text-red-400 mt-1">
+        <div
+          id={`${device.entityId}-error`}
+          className="text-sm text-red-600 dark:text-red-400 mt-1"
+        >
           {error}
         </div>
       )}

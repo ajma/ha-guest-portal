@@ -53,10 +53,12 @@ export function ToggleTile({ device, disabled }: ToggleTileProps): ReactElement 
 
   // Don't render if no valid actions
   if (!canTurnOn && !canTurnOff && !canToggle) {
-    return <div className="p-4 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
-      <div className="font-semibold text-lg">{device.label}</div>
-      <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">No actions available</div>
-    </div>
+    return (
+      <div className="p-4 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
+        <div className="font-semibold text-lg">{device.label}</div>
+        <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">No actions available</div>
+      </div>
+    )
   }
 
   async function handleClick(): Promise<void> {
@@ -128,7 +130,10 @@ export function ToggleTile({ device, disabled }: ToggleTileProps): ReactElement 
       </button>
       {isStale && <StaleBadge />}
       {error !== null && (
-        <div id={`${device.entityId}-error`} className="text-sm text-red-600 dark:text-red-400 mt-1">
+        <div
+          id={`${device.entityId}-error`}
+          className="text-sm text-red-600 dark:text-red-400 mt-1"
+        >
           {error}
         </div>
       )}
