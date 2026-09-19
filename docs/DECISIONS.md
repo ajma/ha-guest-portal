@@ -73,10 +73,13 @@ they cannot supply is Node 24 — `apk add nodejs` yields Node 18–22 depending
 and `node:sqlite` (the allowlist and audit log) does not exist before Node 22.5. An add-on
 is just a container the Supervisor manages; nothing requires it to descend from that base.
 
-**Ingress is deliberately not used.** Ingress serves an add-on through Home Assistant's own
-authenticated session, which would require every guest to hold a Home Assistant account —
-the exact thing this project exists to avoid. The add-on exposes a direct port and keeps
-its own password authentication.
+**Ingress is enabled for the admin surface only.** Ingress requests are authenticated by
+Home Assistant before they reach the add-on and arrive only from the Supervisor at
+`172.30.32.2`, so a guest without a Home Assistant account has no route in — ingress alone
+would defeat the point. The add-on therefore listens on two ports: the ingress port (admin,
+no password, Supervisor-only) and the published port (guests, portal password). The
+source-address check on the ingress listener uses the raw socket address and never a
+header, because that listener grants admin without a password.
 
 **Compose uses a named volume, not a bind mount.** A `chown` in a Dockerfile has no effect
 on a bind-mounted path — Docker replaces the directory with the host's, ownership included

@@ -356,10 +356,38 @@ override, which is the only accommodation the application itself needs.
 them as the same environment variables Target A uses, then execs the server.
 The add-on's `/data` is already persistent, so the SQLite path is unchanged.
 
-**Ingress is deliberately not used.** Ingress serves an add-on through Home
-Assistant's own authenticated session, which would require every guest to hold a
-Home Assistant account — the precise thing this project exists to avoid. The
-add-on exposes a direct port and keeps its own password authentication.
+### Ingress — hybrid, admin only
+
+**Ingress is enabled for the admin surface only; guests use the direct port.**
+
+Ingress serves an add-on through Home Assistant's own authenticated session:
+requests arrive only from the Supervisor at `172.30.32.2`, already authenticated,
+and the docs are explicit that "users are previously authenticated via Home
+Assistant". There is therefore no unauthenticated route in — a guest without a
+Home Assistant account cannot reach an ingress-only add-on at all. Using ingress
+as the sole entry point would defeat the project's purpose.
+
+The add-on therefore listens on **two ports**:
+
+| Port | Source | Treated as | Auth |
+|---|---|---|---|
+| `ingress_port` (8099) | Supervisor only (`172.30.32.2`) | admin | none — HA already authenticated |
+| published port (8080) | the LAN | guest or admin | portal password |
+
+The owner opens the portal from the Home Assistant sidebar with no password.
+Guests use the LAN address and the guest password, exactly as before.
+
+**The source-address check on the ingress listener is load-bearing.** It uses the
+raw socket address, never a header, because a header would be trivially spoofable
+and the ingress listener grants admin without a password. Any connection to the
+ingress port from an address other than the Supervisor is refused. The ingress
+port is never published in `ports:`.
+
+**Base-path handling.** Under ingress the app is served beneath
+`/api/hassio_ingress/<token>/`, not `/`. The server reads the `X-Ingress-Path`
+header and injects a matching `<base href>` into the served `index.html`; the SPA
+derives its own base from `document.baseURI` and strips it before route matching.
+Vite builds with relative asset paths so bundles resolve under either prefix.
 
 The Supervisor token is not entity-scoped, so it confers no least-privilege
 advantage over a dedicated non-admin user's token; this application remains the
