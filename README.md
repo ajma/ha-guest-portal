@@ -22,6 +22,20 @@ Use your Home Assistant server's LAN IP address (e.g., `http://192.168.1.100:812
 
 ## Installation
 
+### Home Assistant Add-On
+
+**For HA OS or HA Supervised installations only** (HA Container does not support add-ons).
+
+1. Copy this repository into `/addons/ha-guest-portal/` on your Home Assistant host
+2. Refresh the Add-on Store (Settings → Add-ons → ⋮ → Check for updates) or restart the Supervisor
+3. Install "Home Assistant Guest Portal" from the Local add-ons section
+4. Configure the add-on with `guest_password` and `admin_password` (both ≥8 characters, must differ)
+5. Optionally set the `port` (default: 8080)
+6. Start the add-on
+7. Navigate to `http://homeassistant.local:8080` (or your HA instance IP)
+
+No Home Assistant token is needed — the Supervisor provides it automatically. See `addon/DOCS.md` for detailed add-on documentation.
+
 ### Docker Compose (Recommended)
 
 1. Clone this repository or download the files

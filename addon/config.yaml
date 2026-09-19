@@ -1,0 +1,24 @@
+name: Guest Portal
+version: 0.0.1
+slug: ha_guest_portal
+description: >-
+  Expose a curated subset of Home Assistant devices to guests via a shared password.
+  Designed for short-term rentals and vacation homes.
+arch:
+  - amd64
+  - aarch64
+init: false
+homeassistant_api: true
+# ingress deliberately disabled: Ingress would require every guest to hold a Home
+# Assistant account, which defeats the purpose of this portal. The add-on exposes
+# a direct port and maintains its own password authentication.
+ports:
+  8080/tcp: 8080
+options:
+  guest_password: ""
+  admin_password: ""
+  port: 8080
+schema:
+  guest_password: password
+  admin_password: password
+  port: int
