@@ -2,6 +2,7 @@ import { WebSocketServer } from 'ws'
 import type WebSocket from 'ws'
 import { createServer } from 'node:http'
 import type { Server } from 'node:http'
+import { z } from 'zod'
 import {
   AuthRequired,
   AuthOk,
@@ -12,6 +13,18 @@ import {
   type CompressedState,
   type EntityEvent,
 } from '../src/server/ha/schemas.ts'
+
+// Client command schema for inbound message validation
+const ClientCommand = z.union([
+  z.object({ type: z.literal('auth'), access_token: z.string() }),
+  z.object({ type: z.literal('ping'), id: z.number() }),
+  z.object({ type: z.literal('get_config'), id: z.number() }),
+  z.object({ type: z.literal('config/area_registry/list'), id: z.number() }),
+  z.object({ type: z.literal('config/device_registry/list'), id: z.number() }),
+  z.object({ type: z.literal('config/entity_registry/list'), id: z.number() }),
+  z.object({ type: z.literal('subscribe_entities'), id: z.number(), entity_ids: z.array(z.string()).optional() }),
+  z.object({ type: z.string(), id: z.number().optional() }), // Catch-all for unknown commands
+])
 
 export type FakeEntity = {
   entityId: string
@@ -66,10 +79,13 @@ export class FakeHomeAssistant {
   private subscriptions = new Map<WebSocket, Subscription>()
   private latestSubscription: Subscription | null = null
   private _serviceCalls: ServiceCall[] = []
-  private rejectNextAuth = false
+  private authRejectionEnabled = false
   private nextServiceCallStatus: number | null = null
+  private _baseUrl = ''
 
-  readonly baseUrl!: string
+  get baseUrl(): string {
+    return this._baseUrl
+  }
   readonly token: string
 
   private constructor(token: string) {
@@ -106,7 +122,7 @@ export class FakeHomeAssistant {
       httpServer.listen(0, '127.0.0.1', () => {
         const addr = httpServer.address()
         if (addr && typeof addr === 'object') {
-          ;(instance as { baseUrl: string }).baseUrl = `http://127.0.0.1:${addr.port}`
+          instance._baseUrl = `http://127.0.0.1:${addr.port}`
         }
         resolve()
       })
@@ -189,10 +205,39 @@ export class FakeHomeAssistant {
   }
 
   private handleMessage(ws: WebSocket, data: WebSocket.RawData): void {
-    const msg = JSON.parse(data.toString()) as { type: string; id?: number; access_token?: string; entity_ids?: string[] }
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(data.toString())
+    } catch {
+      // Malformed JSON, ignore silently
+      return
+    }
+
+    const parseResult = ClientCommand.safeParse(parsed)
+    if (!parseResult.success) {
+      // Malformed frame, try to respond if we can extract an id
+      const maybeId = typeof parsed === 'object' && parsed !== null && 'id' in parsed && typeof parsed.id === 'number' ? parsed.id : null
+      if (maybeId !== null) {
+        this.sendValidated(ws, {
+          type: 'result',
+          id: maybeId,
+          success: false,
+          error: {
+            code: 'invalid_format',
+            message: 'Invalid message format',
+          },
+        }, ResultFrame)
+      }
+      return
+    }
+
+    const msg = parseResult.data
 
     if (msg.type === 'auth') {
-      if (this.rejectNextAuth || msg.access_token !== this.token) {
+      if (!('access_token' in msg)) {
+        return
+      }
+      if (this.authRejectionEnabled || msg.access_token !== this.token) {
         this.sendValidated(ws, {
           type: 'auth_invalid',
           message: 'Invalid access token',
@@ -215,10 +260,11 @@ export class FakeHomeAssistant {
       return
     }
 
-    const id = msg.id
-    if (id === undefined) {
+    if (!('id' in msg) || msg.id === undefined) {
       return
     }
+
+    const id = msg.id
 
     switch (msg.type) {
       case 'ping':
@@ -292,7 +338,7 @@ export class FakeHomeAssistant {
         break
 
       case 'subscribe_entities': {
-        const entityIds = msg.entity_ids ?? null
+        const entityIds = ('entity_ids' in msg && msg.entity_ids) ? msg.entity_ids : null
         const subscription: Subscription = { id, entityIds }
         this.subscriptions.set(ws, subscription)
         this.latestSubscription = subscription
@@ -367,7 +413,6 @@ export class FakeHomeAssistant {
 
   private buildDiff(_entityId: string, oldState: EntityState, newState: EntityState): CompressedState {
     const plus: CompressedState = {}
-    const minus: { a?: string[] } = {}
 
     // Check if state changed
     if (oldState.state !== newState.state) {
@@ -386,14 +431,6 @@ export class FakeHomeAssistant {
     // Check for attribute changes
     const oldAttrs = oldState.attributes
     const newAttrs = newState.attributes
-    const removedAttrs: string[] = []
-
-    // Find removed attributes
-    for (const key of Object.keys(oldAttrs)) {
-      if (!(key in newAttrs)) {
-        removedAttrs.push(key)
-      }
-    }
 
     // Find added or changed attributes
     const changedAttrs: Record<string, unknown> = {}
@@ -405,10 +442,6 @@ export class FakeHomeAssistant {
 
     if (Object.keys(changedAttrs).length > 0) {
       plus.a = changedAttrs
-    }
-
-    if (removedAttrs.length > 0) {
-      minus.a = removedAttrs
     }
 
     return plus
@@ -555,7 +588,7 @@ export class FakeHomeAssistant {
   }
 
   rejectAuth(on: boolean): void {
-    this.rejectNextAuth = on
+    this.authRejectionEnabled = on
   }
 
   async stop(): Promise<void> {

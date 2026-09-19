@@ -111,6 +111,46 @@ describe('FakeHomeAssistant', () => {
       })
     })
 
+    it('should reject malformed JSON silently', async () => {
+      await connect()
+      await receiveMessage(currentWs!) // auth_required
+
+      // Send malformed JSON
+      currentWs!.send('not valid json{{{')
+
+      // Complete auth (should still work)
+      sendMessage(currentWs!, { type: 'auth', access_token: 'test-token' })
+      const authOk = await receiveMessage(currentWs!)
+      expect(authOk).toMatchObject({ type: 'auth_ok' })
+    })
+
+    it('should reject wrong-shape frames with error result', async () => {
+      await connect()
+      await receiveMessage(currentWs!) // auth_required
+      sendMessage(currentWs!, { type: 'auth', access_token: 'test-token' })
+      await receiveMessage(currentWs!) // auth_ok
+
+      // Send well-formed JSON but wrong shape (id field exists but value is wrong type)
+      currentWs!.send(JSON.stringify({ type: 'ping', id: 123 }))
+      // This should succeed (valid ping)
+      const pong = await receiveMessage(currentWs!)
+      expect(pong).toMatchObject({ type: 'pong', id: 123 })
+
+      // Send frame with number id but completely wrong structure
+      currentWs!.send(JSON.stringify({ id: 456, totally: 'wrong', structure: true }))
+
+      const error = await receiveMessage(currentWs!)
+      expect(error).toMatchObject({
+        type: 'result',
+        id: 456,
+        success: false,
+        error: {
+          code: 'invalid_format',
+          message: 'Invalid message format',
+        },
+      })
+    })
+
     it('should not honor commands sent before auth', async () => {
       await connect()
 
