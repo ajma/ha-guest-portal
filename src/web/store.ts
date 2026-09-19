@@ -106,24 +106,30 @@ export function connectDeviceStore(): () => void {
 
   // Create EventSource on 0→1 transition
   if (connectionRefCount === 1) {
-    eventSource = new EventSource('/api/stream', { withCredentials: true })
-
-    eventSource.addEventListener('message', (event) => {
-      try {
-        const data = JSON.parse(event.data)
-        applyFrame(data)
-      } catch {
-        // Malformed JSON - ignore
-      }
-    })
-
-    eventSource.addEventListener('error', () => {
+    // Check if EventSource is available (not available in some test environments)
+    if (typeof EventSource === 'undefined') {
+      // In test environment without EventSource, just set disconnected
       setConnected(false)
-    })
+    } else {
+      eventSource = new EventSource('/api/stream', { withCredentials: true })
 
-    eventSource.addEventListener('open', () => {
-      setConnected(true)
-    })
+      eventSource.addEventListener('message', (event) => {
+        try {
+          const data = JSON.parse(event.data)
+          applyFrame(data)
+        } catch {
+          // Malformed JSON - ignore
+        }
+      })
+
+      eventSource.addEventListener('error', () => {
+        setConnected(false)
+      })
+
+      eventSource.addEventListener('open', () => {
+        setConnected(true)
+      })
+    }
   }
 
   // Return teardown that decrements and is idempotent
