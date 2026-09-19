@@ -8,6 +8,7 @@ import { SessionStore, LoginRateLimiter } from './http/auth.js'
 import { SseHub } from './http/sse.js'
 import { HaClient } from './ha/client.js'
 import { createRuntime } from './runtime.js'
+import { publishDiscovery } from './hassio/discovery.js'
 
 async function main() {
   // Load configuration
@@ -60,6 +61,18 @@ async function main() {
   if (cfg.ingressPort && runtime.servers[1]) {
     runtime.servers[1].listen(cfg.ingressPort)
     console.log(`Ingress port listening on ${cfg.ingressPort}`)
+  }
+
+  // Announce to the Supervisor so HA can discover the companion integration.
+  // Add-on mode only; SUPERVISOR_TOKEN is never set under plain Docker.
+  const supervisorToken = process.env.SUPERVISOR_TOKEN
+  if (supervisorToken) {
+    void publishDiscovery({
+      supervisorToken,
+      portalId: settings.getPortalId(),
+      token: settings.getIntegrationToken(),
+      port: cfg.port,
+    })
   }
 
   // Graceful shutdown on SIGTERM and SIGINT

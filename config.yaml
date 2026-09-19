@@ -9,6 +9,11 @@ arch:
   - aarch64
 init: false
 homeassistant_api: true
+# Announces the add-on to the Supervisor so Home Assistant offers the companion
+# custom integration. The service name must match manifest.json's domain.
+# /discovery* requires no hassio_api privilege.
+discovery:
+  - ha_guest_portal
 # Hybrid ingress setup: Admin access via HA sidebar (ingress), guest access via direct port.
 # The ingress port (8099) is used ONLY for admin access from the HA Supervisor and must
 # NEVER be published in the ports section below (that would expose passwordless admin to the LAN).
