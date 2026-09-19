@@ -154,7 +154,7 @@ export function createRuntime(deps: Deps): Runtime {
       }
 
       // Session valid - handle SSE
-      hub.add(res)
+      hub.add(res, role)
 
       // Send initial snapshot immediately
       const allowlistRows = allowlist.list()
@@ -205,7 +205,7 @@ export function createRuntime(deps: Deps): Runtime {
     // Intercept /api/stream before Hono sees it
     if (pathname === '/api/stream' && req.method === 'GET') {
       // Supervisor-authenticated request - grant admin access without session
-      hub.add(res)
+      hub.add(res, 'admin')
 
       // Send initial snapshot immediately
       const allowlistRows = allowlist.list()

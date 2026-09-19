@@ -12,7 +12,7 @@ describe('SseHub', () => {
     hub = new SseHub()
     server = createServer((req: IncomingMessage, res: ServerResponse) => {
       if (req.url === '/events') {
-        hub.add(res)
+        hub.add(res, 'guest')
       }
     })
 
@@ -140,14 +140,16 @@ describe('SseHub', () => {
 
     const frame: SseFrame = {
       type: 'snapshot',
-      devices: [{
-        entityId: 'switch.outlet',
-        label: 'Outlet',
-        domain: 'switch',
-        allowedActions: ['turn_on'],
-        sortOrder: 0,
-        state: { state: 'off', attributes: {}, stale: false },
-      }],
+      devices: [
+        {
+          entityId: 'switch.outlet',
+          label: 'Outlet',
+          domain: 'switch',
+          allowedActions: ['turn_on'],
+          sortOrder: 0,
+          state: { state: 'off', attributes: {}, stale: false },
+        },
+      ],
       stale: true,
     }
 
@@ -270,7 +272,7 @@ describe('SseHub', () => {
     const removerPromise = new Promise<() => void>((resolve) => {
       const customServer = createServer((req: IncomingMessage, res: ServerResponse) => {
         if (req.url === '/events') {
-          const remover = hub.add(res)
+          const remover = hub.add(res, 'guest')
           resolve(remover)
         }
       })
@@ -300,7 +302,7 @@ describe('SseHub', () => {
     const shortHub = new SseHub({ heartbeatMs: 100 })
     const customServer = createServer((req: IncomingMessage, res: ServerResponse) => {
       if (req.url === '/events') {
-        shortHub.add(res)
+        shortHub.add(res, 'guest')
       }
     })
 
@@ -366,7 +368,7 @@ describe('SseHub', () => {
     const shortHub = new SseHub({ heartbeatMs: 100 })
     const customServer = createServer((req: IncomingMessage, res: ServerResponse) => {
       if (req.url === '/events') {
-        shortHub.add(res)
+        shortHub.add(res, 'guest')
       }
     })
 
@@ -407,7 +409,7 @@ describe('SseHub', () => {
     const cappedHub = new SseHub({ maxBufferBytes: 1024 })
     const customServer = createServer((req: IncomingMessage, res: ServerResponse) => {
       if (req.url === '/events') {
-        cappedHub.add(res)
+        cappedHub.add(res, 'guest')
       }
     })
 
@@ -563,7 +565,7 @@ describe('SseHub', () => {
     const removerPromise = new Promise<() => void>((resolve) => {
       const customServer = createServer((req: IncomingMessage, res: ServerResponse) => {
         if (req.url === '/events') {
-          const remover = hub.add(res)
+          const remover = hub.add(res, 'guest')
           resolve(remover)
         }
       })
@@ -585,5 +587,101 @@ describe('SseHub', () => {
     remover()
 
     expect(hub.clientCount).toBe(0)
+  })
+
+  describe('closeRole', () => {
+    let roleServer: Server
+    let rolePort: number
+
+    beforeEach(async () => {
+      // Create a server that assigns roles based on query parameter
+      roleServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+        const url = new URL(req.url ?? '/', `http://localhost`)
+        const role = url.searchParams.get('role')
+        if (url.pathname === '/events' && (role === 'guest' || role === 'admin')) {
+          hub.add(res, role as 'guest' | 'admin')
+        }
+      })
+
+      rolePort = await new Promise<number>((resolve) => {
+        roleServer.listen(0, () => {
+          const addr = roleServer.address()
+          if (addr && typeof addr === 'object') {
+            resolve(addr.port)
+          }
+        })
+      })
+    })
+
+    afterEach(async () => {
+      await new Promise<void>((resolve, reject) => {
+        roleServer.close((err) => {
+          if (err) reject(err)
+          else resolve()
+        })
+      })
+    })
+
+    it('closes only connections with the named role', async () => {
+      const guestClient = await fetch(`http://localhost:${rolePort}/events?role=guest`)
+      const adminClient = await fetch(`http://localhost:${rolePort}/events?role=admin`)
+
+      const guestReader = guestClient.body?.getReader()
+      const adminReader = adminClient.body?.getReader()
+
+      if (!guestReader || !adminReader) throw new Error('No readers')
+
+      expect(hub.clientCount).toBe(2)
+
+      hub.closeRole('guest')
+
+      expect(hub.clientCount).toBe(1)
+
+      // Guest stream should end
+      const guestResult = await guestReader.read()
+      expect(guestResult.done).toBe(true)
+
+      // Admin stream should still be open
+      await adminReader.cancel()
+    })
+
+    it('still broadcasts to the surviving role', async () => {
+      const guestClient = await fetch(`http://localhost:${rolePort}/events?role=guest`)
+      const adminClient = await fetch(`http://localhost:${rolePort}/events?role=admin`)
+
+      const guestReader = guestClient.body?.getReader()
+      const adminReader = adminClient.body?.getReader()
+
+      if (!guestReader || !adminReader) throw new Error('No readers')
+
+      hub.closeRole('guest')
+
+      const frame: SseFrame = { type: 'portal', enabled: false }
+      hub.broadcast(frame)
+
+      // Admin should receive the broadcast
+      const adminResult = await adminReader.read()
+      const adminText = new TextDecoder().decode(adminResult.value)
+
+      expect(adminText).toContain('"type":"portal"')
+      expect(adminText).toContain('"enabled":false')
+
+      await guestReader.cancel()
+      await adminReader.cancel()
+    })
+
+    it('is a no-op when no connection has that role', async () => {
+      const adminClient = await fetch(`http://localhost:${rolePort}/events?role=admin`)
+      const adminReader = adminClient.body?.getReader()
+
+      if (!adminReader) throw new Error('No reader')
+
+      expect(hub.clientCount).toBe(1)
+
+      expect(() => hub.closeRole('guest')).not.toThrow()
+      expect(hub.clientCount).toBe(1)
+
+      await adminReader.cancel()
+    })
   })
 })

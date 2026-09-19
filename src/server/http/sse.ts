@@ -1,8 +1,8 @@
 import type { ServerResponse } from 'node:http'
-import type { SseFrame } from '../../shared/api.js'
+import type { Role, SseFrame } from '../../shared/api.js'
 
 export class SseHub {
-  private readonly clients = new Set<ServerResponse>()
+  private readonly clients = new Map<ServerResponse, Role>()
   private readonly heartbeatMs: number
   private readonly maxBufferBytes: number
   private heartbeatTimer: NodeJS.Timeout | null = null
@@ -12,12 +12,12 @@ export class SseHub {
     this.maxBufferBytes = opts?.maxBufferBytes ?? 1_048_576 // 1 MB default
   }
 
-  add(res: ServerResponse): () => void {
+  add(res: ServerResponse, role: Role): () => void {
     // Write SSE headers
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
-      'Connection': 'keep-alive',
+      Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
     })
 
@@ -25,7 +25,7 @@ export class SseHub {
     res.flushHeaders()
 
     // Add to clients
-    this.clients.add(res)
+    this.clients.set(res, role)
 
     // Start heartbeat if this is the first client
     if (this.clients.size === 1 && this.heartbeatTimer === null) {
@@ -70,7 +70,7 @@ export class SseHub {
       return
     }
 
-    for (const client of this.clients) {
+    for (const client of this.clients.keys()) {
       try {
         if (client.writableEnded) {
           continue
@@ -88,6 +88,31 @@ export class SseHub {
         // Remove dead client silently
         this.clients.delete(client)
       }
+    }
+  }
+
+  /**
+   * End every stream held by the named role, leaving others connected.
+   * Used by the kill-switch: disabling the portal must drop guest streams
+   * without disturbing an admin watching the same hub over ingress.
+   */
+  closeRole(role: Role): void {
+    for (const [client, clientRole] of this.clients) {
+      if (clientRole !== role) continue
+
+      this.clients.delete(client)
+
+      try {
+        if (!client.writableEnded) {
+          client.end()
+        }
+      } catch {
+        // Already torn down; nothing to clean up.
+      }
+    }
+
+    if (this.clients.size === 0) {
+      this.stopHeartbeat()
     }
   }
 
@@ -115,7 +140,7 @@ export class SseHub {
 
   close(): void {
     // End all responses
-    for (const client of this.clients) {
+    for (const client of this.clients.keys()) {
       if (!client.writableEnded) {
         client.end()
       }
@@ -132,7 +157,7 @@ export class SseHub {
     this.heartbeatTimer = setInterval(() => {
       const ping = ': ping\n\n'
 
-      for (const client of this.clients) {
+      for (const client of this.clients.keys()) {
         try {
           if (client.writableEnded) {
             continue
