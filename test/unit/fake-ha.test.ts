@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import WebSocket from 'ws'
 import { FakeHomeAssistant } from '../fake-ha.ts'
-import type { EntityEvent } from '../../src/server/ha/schemas.ts'
+import { InboundFrame, type EntityEvent } from '../../src/server/ha/schemas.ts'
+import type { z } from 'zod'
 
 type TestWebSocket = WebSocket & { messageQueue: unknown[] }
 
@@ -44,10 +45,11 @@ describe('FakeHomeAssistant', () => {
     return client
   }
 
-  async function receiveMessage(client: TestWebSocket): Promise<unknown> {
+  async function receiveMessage(client: TestWebSocket): Promise<z.infer<typeof InboundFrame>> {
     // If there's a queued message, return it immediately
     if (client.messageQueue.length > 0) {
-      return client.messageQueue.shift()
+      const msg = client.messageQueue.shift()
+      return InboundFrame.parse(msg)
     }
 
     // Otherwise wait for the next message
@@ -57,7 +59,12 @@ describe('FakeHomeAssistant', () => {
       const checkQueue = (): void => {
         if (client.messageQueue.length > 0) {
           clearTimeout(timeout)
-          resolve(client.messageQueue.shift())
+          const msg = client.messageQueue.shift()
+          try {
+            resolve(InboundFrame.parse(msg))
+          } catch (err) {
+            reject(err)
+          }
         } else {
           // Check again in a bit
           setImmediate(checkQueue)

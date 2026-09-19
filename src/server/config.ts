@@ -3,6 +3,7 @@ import { z } from 'zod'
 const schema = z
   .object({
     HA_BASE_URL: z.url().transform((s) => s.replace(/\/+$/, '')),
+    HA_WS_URL: z.url().optional(),
     HA_TOKEN: z.string().min(1),
     GUEST_PASSWORD: z.string().min(8),
     ADMIN_PASSWORD: z.string().min(8),
@@ -13,9 +14,19 @@ const schema = z
   .refine((v) => v.GUEST_PASSWORD !== v.ADMIN_PASSWORD, {
     message: 'GUEST_PASSWORD and ADMIN_PASSWORD must differ',
   })
+  .refine(
+    (v) => {
+      const url = new URL(v.HA_BASE_URL)
+      return !url.hostname.endsWith('.local')
+    },
+    {
+      message: 'mDNS hostnames (.local) do not resolve inside containers. Use a LAN IP address instead.',
+    }
+  )
 
 export type Config = {
   haBaseUrl: string
+  haWsUrl: string | undefined
   haToken: string
   guestPassword: string
   adminPassword: string
@@ -30,6 +41,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
   const v = r.data
   return {
     haBaseUrl: v.HA_BASE_URL,
+    haWsUrl: v.HA_WS_URL,
     haToken: v.HA_TOKEN,
     guestPassword: v.GUEST_PASSWORD,
     adminPassword: v.ADMIN_PASSWORD,

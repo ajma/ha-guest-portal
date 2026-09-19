@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { loadConfig } from '../../src/server/config.ts'
 
 const valid = {
-  HA_BASE_URL: 'http://ha.local:8123',
+  HA_BASE_URL: 'http://192.168.1.100:8123',
   HA_TOKEN: 'tok',
   GUEST_PASSWORD: 'guest-pw',
   ADMIN_PASSWORD: 'admin-pw',
@@ -17,8 +17,8 @@ describe('loadConfig', () => {
   })
 
   it('strips a trailing slash from HA_BASE_URL', () => {
-    expect(loadConfig({ ...valid, HA_BASE_URL: 'http://ha.local:8123/' }).haBaseUrl).toBe(
-      'http://ha.local:8123',
+    expect(loadConfig({ ...valid, HA_BASE_URL: 'http://192.168.1.100:8123/' }).haBaseUrl).toBe(
+      'http://192.168.1.100:8123',
     )
   })
 
