@@ -46,8 +46,8 @@ type Subscription = {
 export class FakeHomeAssistant {
   private wss: WebSocketServer | null = null
   private httpServer: Server | null = null
-  private port = 0
   private entities = new Map<string, EntityState>()
+  private contextCounter = 0
   private areas: Array<{ areaId: string; name: string }> = []
   private devices: Array<{ id: string; name: string; areaId: string | null }> = []
   private entityMeta = new Map<
@@ -177,7 +177,7 @@ export class FakeHomeAssistant {
     // Send auth_required immediately (WebSocket is already open at this point)
     this.sendValidated(ws, {
       type: 'auth_required',
-      ha_version: '2024.9.0',
+      ha_version: '2026.9.0',
     }, AuthRequired)
   }
 
@@ -198,7 +198,7 @@ export class FakeHomeAssistant {
       this.authenticatedConnections.add(ws)
       this.sendValidated(ws, {
         type: 'auth_ok',
-        ha_version: '2024.9.0',
+        ha_version: '2026.9.0',
       }, AuthOk)
       return
     }
@@ -339,12 +339,20 @@ export class FakeHomeAssistant {
         continue
       }
 
-      added[entityId] = {
+      const contextId = `context-${this.contextCounter++}`
+      const compressed: CompressedState = {
         s: state.state,
         a: state.attributes,
+        c: contextId,
         lc: state.lastChanged,
-        lu: state.lastUpdated,
       }
+
+      // Only include lu when it differs from lc
+      if (state.lastUpdated !== state.lastChanged) {
+        compressed.lu = state.lastUpdated
+      }
+
+      added[entityId] = compressed
     }
 
     return { a: added }
@@ -357,11 +365,16 @@ export class FakeHomeAssistant {
     // Check if state changed
     if (oldState.state !== newState.state) {
       plus.s = newState.state
-      plus.lc = newState.lastChanged
     }
 
-    // Always include lu when anything changed
-    plus.lu = newState.lastUpdated
+    // Send lc XOR lu, never both
+    // When last_changed moved (state changed), send lc only
+    // When only last_updated moved (attribute change), send lu only
+    if (oldState.lastChanged !== newState.lastChanged) {
+      plus.lc = newState.lastChanged
+    } else if (oldState.lastUpdated !== newState.lastUpdated) {
+      plus.lu = newState.lastUpdated
+    }
 
     // Check for attribute changes
     const oldAttrs = oldState.attributes
@@ -404,7 +417,7 @@ export class FakeHomeAssistant {
     this.areas = areas
     this.devices = devices ?? []
 
-    const now = Date.now()
+    const now = Date.now() / 1000
     for (const entity of entities) {
       this.entities.set(entity.entityId, {
         state: entity.state,
@@ -436,7 +449,7 @@ export class FakeHomeAssistant {
       return
     }
 
-    const now = Date.now()
+    const now = Date.now() / 1000
     const stateChanged = oldState.state !== state
     const newState: EntityState = {
       state,

@@ -516,6 +516,7 @@ names under `-`.`lc` is sent only when the state value itself changed.
   export type ConnectionStatus = 'connecting' | 'ready' | 'disconnected'
   export type HaConnectionOptions = {
     baseUrl: string; token: string
+    wsUrl?: string             // explicit override; default `${baseUrl}/api/websocket` with http->ws
     reconnectBaseMs?: number   // default 500
     reconnectMaxMs?: number    // default 30_000
     pingIntervalMs?: number    // default 20_000
@@ -530,6 +531,22 @@ names under `-`.`lc` is sent only when the state value itself changed.
     onStatus(fn: (s: ConnectionStatus) => void): () => void
   }
   ```
+
+**Also in this task — the dual-deployment accommodation.** Add an optional
+`HA_WS_URL` to `src/server/config.ts` and its Zod schema (`z.url().optional()`),
+surfaced as `Config.haWsUrl: string | undefined`. When unset, the connection
+derives the WebSocket URL from `baseUrl` as `${baseUrl}/api/websocket`, upgrading
+the scheme `http`→`ws` and `https`→`wss`. When set, it is used verbatim.
+
+This exists because the Home Assistant add-on deployment (Task 20) reaches HA
+through the Supervisor proxy at `ws://supervisor/core/websocket`, which does
+**not** follow the `${base}/api/websocket` convention a direct connection uses.
+An explicit override beats scheme detection or path heuristics.
+
+Also add to `loadConfig`: reject an `HA_BASE_URL` whose hostname ends in
+`.local` with a message stating that mDNS does not resolve inside containers and
+that a LAN IP should be used. Test it. This turns the single most likely
+first-run failure into a named error instead of a connection timeout.
 
 **Requirements:** monotonically increasing message IDs; a pending-request map
 rejecting all in-flight promises on disconnect; exponential backoff with jitter,
@@ -917,6 +934,89 @@ This crosses cookie auth, the allowlist check, the REST action, the WS subscript
 - [ ] **Step 3: Fix whatever integration bugs it exposes.** Do not weaken the test.
 - [ ] **Step 4: Verify** — `pnpm typecheck && pnpm test && pnpm test:e2e` all green.
 - [ ] **Step 5: Commit** — `git commit -m "test: add end-to-end portal smoke test"`
+
+---
+
+### Task 20: Home Assistant add-on packaging
+
+**Files:**
+- Create: `addon/config.yaml`, `addon/Dockerfile`, `addon/run.sh`, `addon/DOCS.md`, `repository.yaml`
+- Modify: `README.md` (add-on install path alongside the Docker path)
+- Test: `test/unit/addon-config.test.ts`
+
+**Interfaces:**
+- Consumes: Task 7's `HA_WS_URL` support; Task 18's build.
+- Produces: no runtime code. The application is unchanged — this task adds packaging only.
+
+**The governing constraint: one image, one code path.** The server reads
+environment variables and must remain entirely unaware that add-ons exist. All
+add-on specifics live in `run.sh`. If this task finds itself editing anything
+under `src/`, something has gone wrong — stop and report it.
+
+`addon/config.yaml` must set: `slug: ha_guest_portal`; `name`; `version` matching
+`package.json`; `arch: [amd64, aarch64]`; `homeassistant_api: true` (this is what
+makes the Supervisor inject `SUPERVISOR_TOKEN` and proxy the Core API);
+`ports` publishing the portal port; `init: false`; and an `options`/`schema` pair
+for `guest_password` (`password`), `admin_password` (`password`) and `port`
+(`int`). Do **not** enable `ingress` — see below.
+
+`addon/run.sh` reads the add-on options from `/data/options.json`, exports them
+as the same environment variables the Docker target uses, and `exec`s the
+server. The mapping is:
+
+```
+HA_BASE_URL   = http://supervisor/core
+HA_WS_URL     = ws://supervisor/core/websocket
+HA_TOKEN      = $SUPERVISOR_TOKEN
+GUEST_PASSWORD, ADMIN_PASSWORD, PORT  ← from /data/options.json
+DB_PATH       = /data/portal.db        (add-on /data is already persistent)
+```
+
+Parse `options.json` with `jq` (present in HA base images) or `node -e`; do not
+hand-roll JSON parsing in shell. `exec` the server so it receives signals as PID 1.
+
+**Ingress is deliberately disabled.** Ingress serves the add-on behind Home
+Assistant's own authenticated session, which would require every guest to hold a
+Home Assistant account — the exact thing this project exists to avoid. Add a
+comment in `config.yaml` saying so, or a future maintainer will "helpfully"
+enable it.
+
+**Local add-on, no registry.** The user copies the repository into
+`/addons/ha-guest-portal/` and installs from the add-on store's local section,
+so `addon/Dockerfile` builds from source and `config.yaml` has no `image:` key.
+This avoids requiring a container-registry account. `repository.yaml` supports
+the custom-repository path for anyone who prefers it.
+
+- [ ] **Step 1: Write the failing test**
+
+`test/unit/addon-config.test.ts` parses `addon/config.yaml` and `addon/run.sh` as
+text and asserts the contract that silently breaks otherwise: `homeassistant_api`
+is `true`; `ingress` is absent or `false`; the `version` equals `package.json`'s;
+every key in `options` has a matching entry in `schema`; `arch` includes `amd64`;
+and `run.sh` sets all six environment variables listed above, with `HA_WS_URL`
+pointing at `/core/websocket` (not `/api/websocket`) and `HA_TOKEN` derived from
+`SUPERVISOR_TOKEN`. No YAML dependency is permitted — extract with a small regex
+or `JSON.parse` of a `node -e` conversion, or assert on the raw text.
+
+- [ ] **Step 2: Run the test and verify it fails**
+
+Run: `pnpm vitest run test/unit/addon-config.test.ts`
+Expected: FAIL — `addon/config.yaml` does not exist.
+
+- [ ] **Step 3: Write the add-on files**
+
+- [ ] **Step 4: Verify**
+
+Run: `pnpm typecheck && pnpm test && pnpm lint && pnpm build`, then
+`sh -n addon/run.sh` to syntax-check the shell script, and
+`docker build -f addon/Dockerfile .` to confirm the add-on image builds.
+Expected: all exit 0.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A && git commit -m "feat: add Home Assistant add-on packaging"
+```
 
 ---
 

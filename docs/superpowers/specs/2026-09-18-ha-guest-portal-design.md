@@ -303,7 +303,8 @@ path in the app should not rest on unverified framework behaviour.
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
-| `HA_BASE_URL` | yes | — | e.g. `http://homeassistant.local:8123` |
+| `HA_BASE_URL` | yes | — | REST base, e.g. `http://192.168.1.10:8123` |
+| `HA_WS_URL` | no | `${HA_BASE_URL}/api/websocket` (ws/wss) | Explicit WebSocket URL override |
 | `HA_TOKEN` | yes | — | Long-lived token for a **non-admin** HA user |
 | `GUEST_PASSWORD` | yes | — | Guest UI password |
 | `ADMIN_PASSWORD` | yes | — | Admin UI password; must differ from guest |
@@ -315,6 +316,13 @@ Config is Zod-parsed at boot and the process exits on invalid input.
 
 ## Deployment
 
+Two supported targets, **one image and one code path**. The application reads
+its configuration from environment variables only and knows nothing about
+Home Assistant add-ons; each target is a thin wrapper that supplies those
+variables.
+
+### Target A — plain Docker (amd64)
+
 Multi-stage build on `node:24-alpine`, running non-root, with `/data` mounted
 for SQLite. Compose binds the published port to a specific LAN interface
 (`192.168.x.x:8080:8080`) rather than `0.0.0.0`, so the container is
@@ -323,6 +331,39 @@ unreachable from outside the network even if the router is later misconfigured.
 Setup requires creating a dedicated **non-admin** Home Assistant user and
 generating its long-lived access token; the README documents this, including why
 the token must not belong to an admin or owner account.
+
+> **mDNS does not resolve inside containers.** `http://homeassistant.local:8123`
+> works from a browser and fails from Alpine, which has no mDNS resolver. The
+> README leads with using a LAN IP, and `loadConfig` rejects a `.local` host with
+> a message naming this cause rather than letting it surface as a generic
+> connection timeout.
+
+### Target B — Home Assistant add-on (HA OS / Supervised)
+
+Add-ons require HA OS or HA Supervised; HA Container installs cannot use them.
+Packaged as a **local add-on** built from source, so no container registry
+account is required: the user copies the repository into `/addons/ha-guest-portal/`
+and installs it from the add-on store's local section.
+
+With `homeassistant_api: true`, the Supervisor injects `SUPERVISOR_TOKEN` and
+proxies Home Assistant at `http://supervisor/core/api/` and
+`ws://supervisor/core/websocket`. This removes both the long-lived token and the
+mDNS/IP problem entirely. Note the WebSocket path differs from a direct HA
+connection (`/core/websocket`, not `/api/websocket`) — hence the `HA_WS_URL`
+override, which is the only accommodation the application itself needs.
+
+`addon/run.sh` reads the add-on options from `/data/options.json` and exports
+them as the same environment variables Target A uses, then execs the server.
+The add-on's `/data` is already persistent, so the SQLite path is unchanged.
+
+**Ingress is deliberately not used.** Ingress serves an add-on through Home
+Assistant's own authenticated session, which would require every guest to hold a
+Home Assistant account — the precise thing this project exists to avoid. The
+add-on exposes a direct port and keeps its own password authentication.
+
+The Supervisor token is not entity-scoped, so it confers no least-privilege
+advantage over a dedicated non-admin user's token; this application remains the
+security boundary under both targets.
 
 ## Accepted risks
 

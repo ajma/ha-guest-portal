@@ -281,12 +281,13 @@ describe('FakeHomeAssistant', () => {
       expect(snapshot.type).toBe('event')
       expect(snapshot.id).toBe(1)
       expect(snapshot.event.a).toBeDefined()
-      expect(snapshot.event.a?.['light.living_room']).toMatchObject({
-        s: 'on',
-        a: { brightness: 100 },
-        lc: expect.any(Number),
-        lu: expect.any(Number),
-      })
+      const compressed = snapshot.event.a?.['light.living_room']
+      expect(compressed?.s).toBe('on')
+      expect(compressed?.a).toEqual({ brightness: 100 })
+      expect(compressed?.lc).toEqual(expect.any(Number))
+      expect(compressed?.c).toEqual(expect.any(String))
+      // lu should NOT be present when lc === lu
+      expect(compressed?.lu).toBeUndefined()
       expect(snapshot.event.a?.['light.bedroom']).toBeUndefined()
     })
 
@@ -314,7 +315,7 @@ describe('FakeHomeAssistant', () => {
       await receiveMessage(currentWs!) // result
       await receiveMessage(currentWs!) // snapshot
 
-      const beforeTime = Date.now()
+      const beforeTime = Date.now() / 1000
       fake.setState('light.living_room', 'off')
 
       const diff = (await receiveMessage(currentWs!)) as {
@@ -329,12 +330,13 @@ describe('FakeHomeAssistant', () => {
       const change = diff.event.c?.['light.living_room']
       expect(change?.['+']?.s).toBe('off')
       expect(change?.['+']?.lc).toBeGreaterThanOrEqual(beforeTime)
-      expect(change?.['+']?.lu).toBeGreaterThanOrEqual(beforeTime)
+      // Protocol fidelity: state change sends lc only, not lu
+      expect(change?.['+']?.lu).toBeUndefined()
       // Should NOT include attributes when they didn't change
       expect(change?.['+']?.a).toBeUndefined()
     })
 
-    it('should send lc only when state changes, lu always', async () => {
+    it('should send lu only when attributes change (not lc)', async () => {
       sendMessage(currentWs!, { type: 'subscribe_entities', id: 1 })
       await receiveMessage(currentWs!) // result
       await receiveMessage(currentWs!) // snapshot
@@ -569,6 +571,192 @@ describe('FakeHomeAssistant', () => {
       fake.drop()
 
       await closed
+    })
+  })
+
+  describe('protocol fidelity', () => {
+    beforeEach(async () => {
+      await connect()
+      await receiveMessage(currentWs!) // auth_required
+      sendMessage(currentWs!, { type: 'auth', access_token: 'test-token' })
+      await receiveMessage(currentWs!) // auth_ok
+    })
+
+    it('snapshot contains s, a, c, lc and NO lu when last_changed equals last_updated', async () => {
+      fake.seed(
+        [{ entityId: 'light.test', state: 'on', attributes: { brightness: 100 } }],
+        []
+      )
+
+      sendMessage(currentWs!, { type: 'subscribe_entities', id: 1 })
+      await receiveMessage(currentWs!) // result
+
+      const snapshot = (await receiveMessage(currentWs!)) as {
+        type: string
+        id: number
+        event: EntityEvent
+      }
+
+      const compressed = snapshot.event.a?.['light.test']
+      expect(compressed).toBeDefined()
+      expect(compressed?.s).toBe('on')
+      expect(compressed?.a).toEqual({ brightness: 100 })
+      expect(compressed?.c).toEqual(expect.any(String))
+      expect(compressed?.lc).toEqual(expect.any(Number))
+      expect(compressed?.lu).toBeUndefined() // Must NOT be present when lc === lu
+    })
+
+    it('snapshot contains lu when last_updated differs from last_changed', async () => {
+      fake.seed(
+        [{ entityId: 'light.test', state: 'on', attributes: { brightness: 100 } }],
+        []
+      )
+
+      sendMessage(currentWs!, { type: 'subscribe_entities', id: 1 })
+      await receiveMessage(currentWs!) // result
+      await receiveMessage(currentWs!) // snapshot
+
+      // Change only attributes, not state
+      fake.setState('light.test', 'on', { brightness: 50 })
+
+      const diff1 = (await receiveMessage(currentWs!)) as {
+        type: string
+        id: number
+        event: EntityEvent
+      }
+
+      // Now subscribe again to get a fresh snapshot where lu !== lc
+      sendMessage(currentWs!, { type: 'subscribe_entities', id: 2 })
+      await receiveMessage(currentWs!) // result
+
+      const snapshot = (await receiveMessage(currentWs!)) as {
+        type: string
+        id: number
+        event: EntityEvent
+      }
+
+      const compressed = snapshot.event.a?.['light.test']
+      expect(compressed?.lc).toEqual(expect.any(Number))
+      expect(compressed?.lu).toEqual(expect.any(Number))
+      expect(compressed?.lu).not.toBe(compressed?.lc)
+    })
+
+    it('context in snapshot is a string', async () => {
+      fake.seed(
+        [{ entityId: 'light.test', state: 'on', attributes: {} }],
+        []
+      )
+
+      sendMessage(currentWs!, { type: 'subscribe_entities', id: 1 })
+      await receiveMessage(currentWs!) // result
+
+      const snapshot = (await receiveMessage(currentWs!)) as {
+        type: string
+        id: number
+        event: EntityEvent
+      }
+
+      const compressed = snapshot.event.a?.['light.test']
+      expect(typeof compressed?.c).toBe('string')
+    })
+
+    it('timestamps are float seconds not milliseconds', async () => {
+      fake.seed(
+        [{ entityId: 'light.test', state: 'on', attributes: {} }],
+        []
+      )
+
+      sendMessage(currentWs!, { type: 'subscribe_entities', id: 1 })
+      await receiveMessage(currentWs!) // result
+
+      const snapshot = (await receiveMessage(currentWs!)) as {
+        type: string
+        id: number
+        event: EntityEvent
+      }
+
+      const compressed = snapshot.event.a?.['light.test']
+      const now = Date.now() / 1000
+
+      // lc should be within 2 seconds of now (float seconds)
+      // A millisecond timestamp would be ~1.8e12
+      expect(compressed?.lc).toBeGreaterThan(now - 2)
+      expect(compressed?.lc).toBeLessThan(now + 2)
+    })
+
+    it('state-change diff contains lc and NOT lu', async () => {
+      fake.seed(
+        [{ entityId: 'light.test', state: 'on', attributes: { brightness: 100 } }],
+        []
+      )
+
+      sendMessage(currentWs!, { type: 'subscribe_entities', id: 1 })
+      await receiveMessage(currentWs!) // result
+      await receiveMessage(currentWs!) // snapshot
+
+      // Change state
+      fake.setState('light.test', 'off', { brightness: 100 })
+
+      const diff = (await receiveMessage(currentWs!)) as {
+        type: string
+        id: number
+        event: EntityEvent
+      }
+
+      const change = diff.event.c?.['light.test']
+      expect(change?.['+']?.s).toBe('off')
+      expect(change?.['+']?.lc).toEqual(expect.any(Number))
+      expect(change?.['+']?.lu).toBeUndefined() // Must NOT be present
+    })
+
+    it('attribute-only diff contains lu and NOT lc', async () => {
+      fake.seed(
+        [{ entityId: 'light.test', state: 'on', attributes: { brightness: 100 } }],
+        []
+      )
+
+      sendMessage(currentWs!, { type: 'subscribe_entities', id: 1 })
+      await receiveMessage(currentWs!) // result
+      await receiveMessage(currentWs!) // snapshot
+
+      // Change only attributes
+      fake.setState('light.test', 'on', { brightness: 50 })
+
+      const diff = (await receiveMessage(currentWs!)) as {
+        type: string
+        id: number
+        event: EntityEvent
+      }
+
+      const change = diff.event.c?.['light.test']
+      expect(change?.['+']?.s).toBeUndefined()
+      expect(change?.['+']?.lc).toBeUndefined() // Must NOT be present
+      expect(change?.['+']?.lu).toEqual(expect.any(Number))
+      expect(change?.['+']?.a).toEqual({ brightness: 50 })
+    })
+
+    it('newly added attribute appears under +.a', async () => {
+      fake.seed(
+        [{ entityId: 'light.test', state: 'on', attributes: { brightness: 100 } }],
+        []
+      )
+
+      sendMessage(currentWs!, { type: 'subscribe_entities', id: 1 })
+      await receiveMessage(currentWs!) // result
+      await receiveMessage(currentWs!) // snapshot
+
+      // Add a new attribute
+      fake.setState('light.test', 'on', { brightness: 100, color_temp: 4000 })
+
+      const diff = (await receiveMessage(currentWs!)) as {
+        type: string
+        id: number
+        event: EntityEvent
+      }
+
+      const change = diff.event.c?.['light.test']
+      // Only the new attribute should appear
+      expect(change?.['+']?.a).toEqual({ color_temp: 4000 })
     })
   })
 })
