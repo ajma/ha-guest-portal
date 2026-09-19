@@ -12,7 +12,7 @@ services:
     # the network if the router is later misconfigured or port-forwarded.
     # Replace 192.168.1.10 with your server's actual LAN IP address.
     ports:
-      - "192.168.1.10:8080:8080"
+      - "192.168.1.10:9123:9123"
 
     volumes:
       - portal-data:/data
@@ -21,7 +21,7 @@ services:
       - .env
 
     environment:
-      - PORT=8080
+      - PORT=9123
       - DB_PATH=/data/portal.db
 
 volumes:

@@ -17,16 +17,14 @@ discovery:
 # Hybrid ingress setup: Admin access via HA sidebar (ingress), guest access via direct port.
 # The ingress port (8099) is used ONLY for admin access from the HA Supervisor and must
 # NEVER be published in the ports section below (that would expose passwordless admin to the LAN).
-# Guests use the published port (8080) with password authentication.
+# Guests use the published port (9123) with password authentication.
 ingress: true
 ingress_port: 8099
 ports:
-  8080/tcp: 8080
+  9123/tcp: 9123
 options:
   guest_password: ""
   admin_password: ""
-  port: 8080
 schema:
   guest_password: password
   admin_password: password
-  port: int

@@ -4,7 +4,7 @@ from datetime import timedelta
 
 DOMAIN = "ha_guest_portal"
 
-DEFAULT_PORT = 8080
+DEFAULT_PORT = 9123
 SCAN_INTERVAL = timedelta(seconds=10)
 
 CONF_TOKEN = "token"

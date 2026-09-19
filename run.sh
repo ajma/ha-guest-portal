@@ -13,7 +13,10 @@ if [ -n "$SUPERVISOR_TOKEN" ]; then
 
   GUEST_PASSWORD=$(jq -r '.guest_password' /data/options.json)
   ADMIN_PASSWORD=$(jq -r '.admin_password' /data/options.json)
-  PORT=$(jq -r '.port' /data/options.json)
+  # Port is fixed in add-on mode to match the container side of config.yaml's
+  # ports mapping (9123/tcp: 9123). To change the host port, use the Supervisor's
+  # Configuration → Network panel.
+  PORT=9123
 
   # Validate required passwords are present and not null
   if [ -z "$GUEST_PASSWORD" ] || [ "$GUEST_PASSWORD" = "null" ]; then
@@ -43,7 +46,7 @@ if [ -n "$SUPERVISOR_TOKEN" ]; then
   echo "Starting Home Assistant Guest Portal in add-on mode on port ${PORT}"
 else
   # Plain Docker mode: environment is already configured
-  echo "Starting Home Assistant Guest Portal in Docker mode on port ${PORT:-8080}"
+  echo "Starting Home Assistant Guest Portal in Docker mode on port ${PORT:-9123}"
 fi
 
 # Start the server as PID 1 so it receives signals

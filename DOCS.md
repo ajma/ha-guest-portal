@@ -33,17 +33,25 @@ Password for administrators to configure which devices are exposed.
 - Must be at least 8 characters
 - Must differ from `guest_password`
 
-### `port` (optional, default: 8080)
-HTTP port the portal will listen on.
-
 Example configuration:
 ```yaml
 guest_password: your-secure-guest-password
 admin_password: your-secure-admin-password
-port: 8080
 ```
 
 **No Home Assistant token is needed** — the Supervisor automatically provides it.
+
+## Changing the Port
+
+The add-on listens on port 9123 inside the container. To change the port exposed on your Home Assistant host:
+
+1. Open the add-on's page in Home Assistant
+2. Go to **Configuration → Network**
+3. Change the host port (the number on the left of the colon in `9123/tcp`)
+
+The container port (right side) must remain 9123 and should not be modified.
+
+**Upgrade note:** If your saved configuration still contains a `port:` line from an earlier version, remove it — the option no longer exists.
 
 ## Turning the guest portal on and off
 
@@ -71,7 +79,7 @@ From there, click "Admin" to configure which devices guests can access.
 
 ### Guest Access via Direct Port
 
-Share the LAN address with your guests: `http://homeassistant.local:8080` (or your configured port). Guests log in with the **guest password** and can control only the devices you've exposed.
+Share the LAN address with your guests: `http://homeassistant.local:9123`. Guests log in with the **guest password** and can control only the devices you've exposed.
 
 **Admins can also use the direct port** by logging in with the admin password instead of the guest password.
 
@@ -85,7 +93,7 @@ Share the LAN address with your guests: `http://homeassistant.local:8080` (or yo
    - Select which actions are permitted (e.g., unlock but not lock)
 4. Click "Save"
 5. Share the direct port URL and guest password with your guests:
-   - URL: `http://homeassistant.local:8080` (or your LAN IP)
+   - URL: `http://homeassistant.local:9123` (or your LAN IP)
    - Password: The guest password you configured
 
 ## Security Model

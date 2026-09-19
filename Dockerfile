@@ -59,12 +59,12 @@ RUN chmod +x /run.sh
 RUN mkdir -p /data && chown node:node /data
 
 # Expose the default port
-EXPOSE 8080
+EXPOSE 9123
 
 # Configure healthcheck
 # Reports process health, not HA connectivity - see GET /api/health comment
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://localhost:' + (process.env.PORT || '8080') + '/api/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
+  CMD node -e "fetch('http://localhost:' + (process.env.PORT || '9123') + '/api/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
 
 # Start script
 CMD ["/run.sh"]

@@ -30,8 +30,7 @@ Use your Home Assistant server's LAN IP address (e.g., `http://192.168.1.100:812
 2. Refresh the Add-on Store (Settings → Add-ons → ⋮ → Check for updates) or restart the Supervisor
 3. Install "Home Assistant Guest Portal" from the Local add-ons section
 4. Configure the add-on with `guest_password` and `admin_password` (both ≥8 characters, must differ)
-5. Optionally set the `port` (default: 8080)
-6. Start the add-on
+5. Start the add-on
 
 #### Accessing the Portal
 
@@ -39,7 +38,9 @@ The add-on supports two access methods:
 
 - **Admin access via HA sidebar**: After starting the add-on, click "Home Assistant Guest Portal" in your Home Assistant sidebar. This opens the portal with admin privileges automatically (no password required).
 
-- **Guest access via direct port**: Share the LAN address with guests: `http://homeassistant.local:8080` (or your HA instance IP). Guests log in with the guest password.
+- **Guest access via direct port**: Share the LAN address with guests: `http://homeassistant.local:9123` (or your HA instance IP). Guests log in with the guest password.
+
+To change the published port, use the add-on's **Configuration → Network** panel in the Home Assistant UI. The container port must remain 9123.
 
 No Home Assistant token is needed — the Supervisor provides it automatically. See `DOCS.md` for detailed add-on documentation.
 
@@ -120,7 +121,7 @@ Home Assistant learns about an interaction within about 10 seconds.
    ADMIN_PASSWORD=your-secure-admin-password
 
    # Optional settings
-   PORT=8080
+   PORT=9123
    DB_PATH=/data/portal.db
    # TRUST_PROXY=loopback
    ```
@@ -161,7 +162,7 @@ docker volume create portal-data
 docker run -d \
   --name ha-guest-portal \
   --restart unless-stopped \
-  -p 192.168.1.10:8080:8080 \
+  -p 192.168.1.10:9123:9123 \
   -v portal-data:/data \
   --env-file .env \
   ha-guest-portal
@@ -172,7 +173,7 @@ Using a bind mount (requires `mkdir -p ./data && sudo chown 1000:1000 ./data` fi
 docker run -d \
   --name ha-guest-portal \
   --restart unless-stopped \
-  -p 192.168.1.10:8080:8080 \
+  -p 192.168.1.10:9123:9123 \
   -v ./data:/data \
   --env-file .env \
   ha-guest-portal
@@ -182,7 +183,7 @@ Replace `192.168.1.10` with your server's LAN IP address.
 
 ## First-Run Setup
 
-1. Navigate to `http://<your-server-ip>:8080` in a web browser
+1. Navigate to `http://<your-server-ip>:9123` in a web browser
 2. Log in using the admin password you configured
 3. Click the "Admin" link or navigate to `/admin`
 4. Select which devices to expose to guests:
@@ -202,7 +203,7 @@ Guests can now control only the devices you've explicitly allowed.
 | `HA_TOKEN` | Yes | — | Long-lived access token from a non-admin HA user |
 | `GUEST_PASSWORD` | Yes | — | Guest login password (≥8 characters) |
 | `ADMIN_PASSWORD` | Yes | — | Admin login password (≥8 characters, must differ from guest) |
-| `PORT` | No | 8080 | HTTP port to listen on |
+| `PORT` | No | 9123 | HTTP port to listen on |
 | `DB_PATH` | No | `/data/portal.db` | SQLite database path |
 | `HA_WS_URL` | No | — | Override WebSocket URL (advanced) |
 | `TRUST_PROXY` | No | — | Trust proxy headers (e.g., `loopback`) |

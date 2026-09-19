@@ -7,7 +7,7 @@ const schema = z
     HA_TOKEN: z.string().min(1),
     GUEST_PASSWORD: z.string().min(8),
     ADMIN_PASSWORD: z.string().min(8),
-    PORT: z.coerce.number().int().positive().default(8080),
+    PORT: z.coerce.number().int().positive().default(9123),
     INGRESS_PORT: z.coerce.number().int().positive().optional(),
     DB_PATH: z.string().default('/data/portal.db'),
     TRUST_PROXY: z.string().optional(),

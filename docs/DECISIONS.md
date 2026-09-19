@@ -131,6 +131,23 @@ connection timeout.
 `haStale: true` when HA is unreachable. Marking the container unhealthy would make Docker
 restart it, which fixes nothing and drops every guest's session.
 
+**The default port is 9123, not 8080.** The UniFi Network Application add-on publishes
+`8080/tcp: 8080` to the host, and qBittorrent also declares 8080, making 8080 the most
+contended port in the Home Assistant add-on ecosystem. 9123 is clear of every port found
+across the official and community add-on repositories, sits outside Linux's ephemeral
+range (32768–60999) so the kernel cannot transiently hold it, and is mnemonically tied to
+Home Assistant's own 8123 — which matters because it is a number a host reads out to a
+guest. Reversal cost: changing it again moves existing users and invalidates documented
+setup instructions.
+
+**The add-on's `port` option was removed rather than fixed.** `config.yaml`'s `ports:`
+mapping is static and cannot be templated from an option, so an in-container port that
+disagrees with it is unreachable — and the healthcheck follows `$PORT`, so the add-on
+reports healthy while being dark. The Supervisor's Configuration → Network panel is the
+correct control for changing the host port. Reversal cost: restoring the option means
+either templating the port mapping (not supported by the Supervisor) or accepting the
+silent-failure mode again.
+
 ## Dependencies
 
 **`@types/node` is pinned to the `^24` line rather than latest.** The runtime target is
@@ -163,3 +180,8 @@ because a native module needs musl prebuilds or a full toolchain in Alpine.
   nor the integration route records who disabled the portal or when. `action_log` covers
   guest device actions only. This is consistent across both paths so it is not a
   regression, but "who turned this off?" is currently unanswerable.
+- **Upgrading from 0.1.x may require manual config cleanup.** If a user's saved add-on
+  configuration still contains `port: 8080` from before the option was removed, the
+  Supervisor flags it as an unknown option and the user must delete that line from their
+  configuration. The error is visible and recoverable — unlike the silent failure the
+  option caused when it existed.

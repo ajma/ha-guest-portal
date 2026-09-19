@@ -11,7 +11,7 @@ const valid = {
 describe('loadConfig', () => {
   it('applies defaults for optional values', () => {
     const c = loadConfig({ ...valid })
-    expect(c.port).toBe(8080)
+    expect(c.port).toBe(9123)
     expect(c.dbPath).toBe('/data/portal.db')
     expect(c.trustProxy).toBeUndefined()
     expect(c.ingressPort).toBeUndefined()
