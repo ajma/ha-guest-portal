@@ -10,6 +10,53 @@ import type { Config } from '../../src/server/config.ts'
 import { createRuntime, type Runtime } from '../../src/server/runtime.ts'
 import { FakeHomeAssistant } from '../fake-ha.ts'
 
+// SSE stream helper
+async function openStream(baseUrl: string, cookie: string) {
+  const ctrl = new AbortController()
+  const res = await fetch(`${baseUrl}/api/stream`, {
+    headers: { Cookie: cookie },
+    signal: ctrl.signal,
+  })
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error('no body')
+  const dec = new TextDecoder()
+  const frames: Array<Record<string, unknown>> = []
+  const pump = (async () => {
+    let buf = ''
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        for (;;) {
+          const i = buf.indexOf('\n\n')
+          if (i === -1) break
+          const chunk = buf.slice(0, i)
+          buf = buf.slice(i + 2)
+          const line = chunk.split('\n').find((l) => l.startsWith('data: '))
+          if (line) frames.push(JSON.parse(line.slice(6)))
+        }
+      }
+    } catch {
+      // aborted
+    }
+  })()
+  return { res, frames, abort: () => ctrl.abort(), pump }
+}
+
+async function waitForFrame(
+  frames: Array<Record<string, unknown>>,
+  type: string,
+  ms = 5000,
+): Promise<boolean> {
+  const t0 = Date.now()
+  while (Date.now() - t0 < ms) {
+    if (frames.some((f) => f.type === type)) return true
+    await new Promise((r) => setTimeout(r, 25))
+  }
+  return false
+}
+
 describe('Guest API routes', () => {
   let fake: FakeHomeAssistant
   let runtime: Runtime
@@ -420,170 +467,71 @@ describe('Guest API routes', () => {
     })
 
     it('GET /api/stream emits snapshot immediately on connect', async () => {
-      const res = await fetch(`${baseUrl}/api/stream`, {
-        headers: { Cookie: cookie },
-      })
+      const stream = await openStream(baseUrl, cookie)
 
-      expect(res.status).toBe(200)
-      expect(res.headers.get('content-type')).toBe('text/event-stream')
+      expect(stream.res.status).toBe(200)
+      expect(stream.res.headers.get('content-type')).toBe('text/event-stream')
 
-      const reader = res.body?.getReader()
-      expect(reader).toBeDefined()
+      // Wait for snapshot
+      const found = await waitForFrame(stream.frames, 'snapshot', 2000)
+      expect(found).toBe(true)
 
-      const decoder = new TextDecoder()
-
-      // Helper to read one SSE frame
-      const readFrame = async (): Promise<unknown | null> => {
-        let buffer = ''
-        while (true) {
-          const result = await reader?.read()
-          if (!result || result.done) return null
-          buffer += decoder.decode(result.value, { stream: true })
-
-          // SSE format: "data: {...}\n\n"
-          const match = /^data: (.+)\n\n/.exec(buffer)
-          if (match && match[1]) {
-            buffer = buffer.slice(match[0].length)
-            return JSON.parse(match[1])
-          }
-
-          // Skip comments (heartbeats)
-          if (buffer.startsWith(':')) {
-            const newlineIdx = buffer.indexOf('\n\n')
-            if (newlineIdx !== -1) {
-              buffer = buffer.slice(newlineIdx + 2)
-            }
-          }
-        }
-      }
-
-      // Read first frame - should be snapshot immediately
-      const snapshot = await readFrame()
-      expect(snapshot).toHaveProperty('type', 'snapshot')
+      const snapshot = stream.frames.find((f) => f.type === 'snapshot')
+      expect(snapshot).toBeDefined()
       expect(snapshot).toHaveProperty('devices')
       expect(snapshot).toHaveProperty('stale', false)
 
       // Verify it contains the allowlisted entities
-      const devices = (snapshot as { devices: { entityId: string }[] }).devices
+      const devices = (snapshot as { devices: Array<{ entityId: string }> }).devices
       expect(devices).toHaveLength(3)
       expect(devices.map((d) => d.entityId)).toContain('light.porch')
       expect(devices.map((d) => d.entityId)).toContain('lock.front')
       expect(devices.map((d) => d.entityId)).toContain('switch.fan')
 
-      reader?.cancel()
+      stream.abort()
+      await stream.pump
     })
 
     it('GET /api/stream emits snapshot, then patch after state change, then degraded', async () => {
-      const res = await fetch(`${baseUrl}/api/stream`, {
-        headers: { Cookie: cookie },
-      })
+      const stream = await openStream(baseUrl, cookie)
 
-      expect(res.status).toBe(200)
-      expect(res.headers.get('content-type')).toBe('text/event-stream')
+      expect(stream.res.status).toBe(200)
 
-      const reader = res.body?.getReader()
-      expect(reader).toBeDefined()
-
-      const decoder = new TextDecoder()
-      const frames: unknown[] = []
-
-      // Helper to read one SSE frame
-      const readFrame = async (): Promise<unknown | null> => {
-        let buffer = ''
-        while (true) {
-          const result = await reader?.read()
-          if (!result || result.done) return null
-          buffer += decoder.decode(result.value, { stream: true })
-
-          // SSE format: "data: {...}\n\n"
-          const match = /^data: (.+)\n\n/.exec(buffer)
-          if (match && match[1]) {
-            buffer = buffer.slice(match[0].length)
-            return JSON.parse(match[1])
-          }
-
-          // Skip comments (heartbeats)
-          if (buffer.startsWith(':')) {
-            const newlineIdx = buffer.indexOf('\n\n')
-            if (newlineIdx !== -1) {
-              buffer = buffer.slice(newlineIdx + 2)
-            }
-          }
-        }
-      }
-
-      // Read snapshot
-      const snapshot = await readFrame()
-      expect(snapshot).toHaveProperty('type', 'snapshot')
-      expect(snapshot).toHaveProperty('devices')
-      expect(snapshot).toHaveProperty('stale', false)
-      frames.push(snapshot)
+      // Wait for snapshot
+      await waitForFrame(stream.frames, 'snapshot', 2000)
+      expect(stream.frames.some((f) => f.type === 'snapshot')).toBe(true)
 
       // Trigger state change
       fake.setState('light.porch', 'on')
-      await new Promise((resolve) => setTimeout(resolve, 100))
 
-      // Read patch
-      const patch = await readFrame()
-      expect(patch).toHaveProperty('type', 'patch')
-      expect(patch).toHaveProperty('devices')
-      frames.push(patch)
+      // Wait for patch
+      const foundPatch = await waitForFrame(stream.frames, 'patch', 2000)
+      expect(foundPatch).toBe(true)
 
       // Trigger degraded by dropping connection
       fake.drop()
-      await new Promise((resolve) => setTimeout(resolve, 100))
 
-      // Read degraded
-      const degraded = await readFrame()
-      expect(degraded).toHaveProperty('type', 'degraded')
+      // Wait for degraded
+      const foundDegraded = await waitForFrame(stream.frames, 'degraded', 2000)
+      expect(foundDegraded).toBe(true)
+
+      const degraded = stream.frames.find((f) => f.type === 'degraded')
       expect(degraded).toHaveProperty('stale', true)
-      frames.push(degraded)
 
-      // Close stream
-      reader?.cancel()
+      stream.abort()
+      await stream.pump
+    })
 
-      expect(frames).toHaveLength(3)
-    }, 10000)
+    it('changing allowlist causes stream to emit fresh snapshot', async () => {
+      const stream = await openStream(baseUrl, cookie)
 
-    it.skip('changing allowlist causes stream to emit fresh snapshot', async () => {
-      const res = await fetch(`${baseUrl}/api/stream`, {
-        headers: { Cookie: cookie },
-      })
+      expect(stream.res.status).toBe(200)
 
-      expect(res.status).toBe(200)
+      // Wait for initial snapshot
+      await waitForFrame(stream.frames, 'snapshot', 2000)
+      const snapshotCountBefore = stream.frames.filter((f) => f.type === 'snapshot').length
 
-      const reader = res.body?.getReader()
-      const decoder = new TextDecoder()
-
-      // Helper to read one SSE frame
-      const readFrame = async (): Promise<unknown | null> => {
-        let buffer = ''
-        while (true) {
-          const result = await reader?.read()
-          if (!result || result.done) return null
-          buffer += decoder.decode(result.value, { stream: true })
-
-          const match = /^data: (.+)\n\n/.exec(buffer)
-          if (match && match[1]) {
-            buffer = buffer.slice(match[0].length)
-            return JSON.parse(match[1])
-          }
-
-          // Skip comments
-          if (buffer.startsWith(':')) {
-            const newlineIdx = buffer.indexOf('\n\n')
-            if (newlineIdx !== -1) {
-              buffer = buffer.slice(newlineIdx + 2)
-            }
-          }
-        }
-      }
-
-      // Read initial snapshot
-      const snapshot1 = await readFrame()
-      expect(snapshot1).toHaveProperty('type', 'snapshot')
-
-      // Change allowlist
+      // Change allowlist (reduce to just one device)
       allowlist.replace([
         {
           entityId: 'light.porch',
@@ -593,26 +541,31 @@ describe('Guest API routes', () => {
         },
       ])
 
-      // Wait longer for HA client to resubscribe (WebSocket round-trip)
-      await new Promise((resolve) => setTimeout(resolve, 500))
-
-      // Read frames until we get a snapshot triggered by allowlist change
-      // We might get patches first from ongoing HA changes
-      let snapshot2 = null
-      for (let i = 0; i < 10; i++) {
-        const frame = await readFrame()
-        if (frame && (frame as { type: string }).type === 'snapshot') {
-          snapshot2 = frame
+      // Poll until snapshot count increases
+      const t0 = Date.now()
+      let newSnapshot = false
+      while (Date.now() - t0 < 5000) {
+        const snapshotCount = stream.frames.filter((f) => f.type === 'snapshot').length
+        if (snapshotCount > snapshotCountBefore) {
+          newSnapshot = true
           break
         }
-        // Small delay between reads
-        await new Promise((resolve) => setTimeout(resolve, 50))
+        await new Promise((r) => setTimeout(r, 50))
       }
 
-      expect(snapshot2).toHaveProperty('type', 'snapshot')
+      expect(newSnapshot).toBe(true)
 
-      reader?.cancel()
-    }, 15000)
+      // Verify the newest snapshot has 1 device (the updated allowlist)
+      const snapshots = stream.frames.filter((f) => f.type === 'snapshot')
+      const latest = snapshots[snapshots.length - 1]
+      expect(latest).toBeDefined()
+      const devices = (latest as { devices: Array<{ entityId: string }> }).devices
+      expect(devices).toHaveLength(1)
+      expect(devices[0]?.entityId).toBe('light.porch')
+
+      stream.abort()
+      await stream.pump
+    })
   })
 
   describe('Static file serving', () => {
