@@ -5,6 +5,7 @@ import type { HttpBindings } from '@hono/node-server'
 import type { Role } from '../shared/api.js'
 import { createRoutes, type Deps } from './http/routes-guest.js'
 import { mountAdminRoutes } from './http/routes-admin.js'
+import { mountIntegrationRoutes } from './http/routes-integration.js'
 import { checkSession, isFromSupervisor } from './runtime.js'
 
 export type Env = {
@@ -63,6 +64,9 @@ export function createApp(deps: Deps) {
   app.post('/api/logout', routes.logout)
   app.get('/api/health', routes.health)
 
+  // Integration routes (bearer token, no session)
+  mountIntegrationRoutes(app, deps)
+
   // Session-protected routes
   app.get('/api/session', requireSession, routes.session)
   app.get('/api/devices', requireSession, routes.devices)
@@ -91,7 +95,7 @@ export function createApp(deps: Deps) {
       // Inject <base href> based on whether this is an ingress request
       const remoteAddress = c.env.incoming.socket.remoteAddress
       const isIngress = deps.cfg.ingressPort && isFromSupervisor(remoteAddress)
-      const baseHref = isIngress ? c.req.header('x-ingress-path') ?? '/' : '/'
+      const baseHref = isIngress ? (c.req.header('x-ingress-path') ?? '/') : '/'
 
       // Ensure base href ends with /
       const normalizedBase = baseHref.endsWith('/') ? baseHref : `${baseHref}/`
