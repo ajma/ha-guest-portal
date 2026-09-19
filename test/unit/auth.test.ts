@@ -16,6 +16,7 @@ const mockConfig: Config = {
   guestPassword: 'guest-pw',
   adminPassword: 'admin-pw',
   port: 8080,
+  ingressPort: undefined,
   dbPath: '/data/portal.db',
   trustProxy: undefined,
 }

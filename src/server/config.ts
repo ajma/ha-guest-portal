@@ -8,6 +8,7 @@ const schema = z
     GUEST_PASSWORD: z.string().min(8),
     ADMIN_PASSWORD: z.string().min(8),
     PORT: z.coerce.number().int().positive().default(8080),
+    INGRESS_PORT: z.coerce.number().int().positive().optional(),
     DB_PATH: z.string().default('/data/portal.db'),
     TRUST_PROXY: z.string().optional(),
   })
@@ -32,6 +33,7 @@ export type Config = {
   guestPassword: string
   adminPassword: string
   port: number
+  ingressPort: number | undefined
   dbPath: string
   trustProxy: string | undefined
 }
@@ -47,6 +49,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     guestPassword: v.GUEST_PASSWORD,
     adminPassword: v.ADMIN_PASSWORD,
     port: v.PORT,
+    ingressPort: v.INGRESS_PORT,
     dbPath: v.DB_PATH,
     trustProxy: v.TRUST_PROXY,
   }

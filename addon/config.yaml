@@ -9,9 +9,12 @@ arch:
   - aarch64
 init: false
 homeassistant_api: true
-# ingress deliberately disabled: Ingress would require every guest to hold a Home
-# Assistant account, which defeats the purpose of this portal. The add-on exposes
-# a direct port and maintains its own password authentication.
+# Hybrid ingress setup: Admin access via HA sidebar (ingress), guest access via direct port.
+# The ingress port (8099) is used ONLY for admin access from the HA Supervisor and must
+# NEVER be published in the ports section below (that would expose passwordless admin to the LAN).
+# Guests use the published port (8080) with password authentication.
+ingress: true
+ingress_port: 8099
 ports:
   8080/tcp: 8080
 options:

@@ -32,7 +32,14 @@ Use your Home Assistant server's LAN IP address (e.g., `http://192.168.1.100:812
 4. Configure the add-on with `guest_password` and `admin_password` (both ≥8 characters, must differ)
 5. Optionally set the `port` (default: 8080)
 6. Start the add-on
-7. Navigate to `http://homeassistant.local:8080` (or your HA instance IP)
+
+#### Accessing the Portal
+
+The add-on supports two access methods:
+
+- **Admin access via HA sidebar**: After starting the add-on, click "Home Assistant Guest Portal" in your Home Assistant sidebar. This opens the portal with admin privileges automatically (no password required).
+
+- **Guest access via direct port**: Share the LAN address with guests: `http://homeassistant.local:8080` (or your HA instance IP). Guests log in with the guest password.
 
 No Home Assistant token is needed — the Supervisor provides it automatically. See `addon/DOCS.md` for detailed add-on documentation.
 

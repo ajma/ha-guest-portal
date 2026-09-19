@@ -35,7 +35,7 @@ async function main() {
   // Start HA client
   ha.start()
 
-  // Create runtime (wires all the event handlers and creates server)
+  // Create runtime (wires all the event handlers and creates servers)
   const runtime = createRuntime({
     cfg,
     ha,
@@ -46,10 +46,15 @@ async function main() {
     hub,
   })
 
-  // Start listening
-  runtime.server.listen(cfg.port)
+  // Start listening on direct port
+  runtime.servers[0]?.listen(cfg.port)
+  console.log(`Direct port listening on ${cfg.port}`)
 
-  console.log(`Server listening on port ${cfg.port}`)
+  // Start listening on ingress port if configured
+  if (cfg.ingressPort && runtime.servers[1]) {
+    runtime.servers[1].listen(cfg.ingressPort)
+    console.log(`Ingress port listening on ${cfg.ingressPort}`)
+  }
 
   // Graceful shutdown on SIGTERM and SIGINT
   const shutdown = async () => {

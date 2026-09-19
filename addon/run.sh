@@ -11,6 +11,9 @@ export HA_BASE_URL="http://supervisor/core"
 export HA_WS_URL="ws://supervisor/core/websocket"
 export HA_TOKEN="$SUPERVISOR_TOKEN"
 
+# Set ingress port (admin access via HA sidebar)
+export INGRESS_PORT=8099
+
 # Set database path to add-on's persistent /data directory
 export DB_PATH="/data/portal.db"
 

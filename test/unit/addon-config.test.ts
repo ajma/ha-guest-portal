@@ -19,11 +19,18 @@ describe("Home Assistant add-on configuration", () => {
 		expect(config).toMatch(/homeassistant_api:\s*true/);
 	});
 
-	it("ingress is absent or false", () => {
+	it("ingress is enabled for hybrid admin/guest access", () => {
 		const config = readFileSync(configPath, "utf-8");
 		const ingressMatch = config.match(/^ingress:\s*(.+)$/m);
+		expect(ingressMatch).toBeTruthy();
 		if (ingressMatch?.[1]) {
-			expect(ingressMatch[1].trim()).toBe("false");
+			expect(ingressMatch[1].trim()).toBe("true");
+		}
+		// Also verify ingress_port is set
+		const ingressPortMatch = config.match(/^ingress_port:\s*(.+)$/m);
+		expect(ingressPortMatch).toBeTruthy();
+		if (ingressPortMatch?.[1]) {
+			expect(ingressPortMatch[1].trim()).toBe("8099");
 		}
 	});
 

@@ -14,6 +14,12 @@ describe('loadConfig', () => {
     expect(c.port).toBe(8080)
     expect(c.dbPath).toBe('/data/portal.db')
     expect(c.trustProxy).toBeUndefined()
+    expect(c.ingressPort).toBeUndefined()
+  })
+
+  it('accepts INGRESS_PORT when provided', () => {
+    const c = loadConfig({ ...valid, INGRESS_PORT: '8099' })
+    expect(c.ingressPort).toBe(8099)
   })
 
   it('strips a trailing slash from HA_BASE_URL', () => {

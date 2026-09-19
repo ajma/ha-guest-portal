@@ -127,6 +127,7 @@ describe('Guest API routes', () => {
       guestPassword: 'guest-pass-12345678',
       adminPassword: 'admin-pass-87654321',
       port: 8080,
+      ingressPort: undefined,
       dbPath: ':memory:',
       trustProxy: undefined,
     }
@@ -155,7 +156,9 @@ describe('Guest API routes', () => {
       hub,
     })
 
-    server = runtime.server
+    const directServer = runtime.servers[0]
+    if (!directServer) throw new Error('No server created')
+    server = directServer
 
     // Start listening
     await new Promise<void>((resolve) => {

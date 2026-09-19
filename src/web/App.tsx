@@ -5,6 +5,7 @@ import { Admin } from './routes/Admin.js'
 import { Guest } from './routes/Guest.js'
 import { Login } from './routes/Login.js'
 import { useDeviceStore } from './store.js'
+import { appPath } from './path.js'
 
 export function App(): ReactElement {
   const [role, setRole] = useState<Role | null | 'loading'>('loading')
@@ -67,7 +68,22 @@ export function App(): ReactElement {
   }
 
   // Routing logic
-  const isAdminPath = window.location.pathname === '/admin'
+  // In production, use appPath to handle base href properly
+  // In test environment, fall back to pathname
+  let currentPath = '/'
+  if (window.location.href && document.baseURI) {
+    try {
+      currentPath = appPath(document.baseURI, window.location.href)
+    } catch {
+      // Invalid URLs - use pathname directly
+      currentPath = window.location.pathname || '/'
+    }
+  } else {
+    // Test environment without full location object
+    currentPath = window.location.pathname || '/'
+  }
+
+  const isAdminPath = currentPath === '/admin'
 
   if (isAdminPath && role === 'admin') {
     return <Admin onLogout={handleLogout} />

@@ -37,7 +37,7 @@ describe('Server process smoke test', () => {
 
     proc.stdout?.on('data', (data) => {
       output += data.toString()
-      if (data.toString().includes('Server listening')) {
+      if (data.toString().includes('Direct port listening')) {
         listening = true
       }
     })
@@ -117,6 +117,7 @@ describe('Server process smoke test', () => {
         guestPassword: 'guest-pass',
         adminPassword: 'admin-pass',
         port: 18999,
+        ingressPort: undefined,
         dbPath: ':memory:',
         trustProxy: undefined,
       },
@@ -129,8 +130,10 @@ describe('Server process smoke test', () => {
     })
 
     // Start server
+    const directServer = runtime.servers[0]
+    if (!directServer) throw new Error('No server created')
     await new Promise<void>((resolve) => {
-      runtime.server.listen(18999, '127.0.0.1', () => resolve())
+      directServer.listen(18999, '127.0.0.1', () => resolve())
     })
 
     // First close should succeed

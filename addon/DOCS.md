@@ -45,27 +45,44 @@ port: 8080
 
 **No Home Assistant token is needed** — the Supervisor automatically provides it.
 
+## Access Methods
+
+The portal supports two ways to access it:
+
+### Admin Access via Home Assistant Sidebar
+
+After installing the add-on, a "Home Assistant Guest Portal" entry appears in your Home Assistant sidebar. Click it to open the portal **with admin privileges, no password required**. This uses Home Assistant's ingress feature and authenticates you automatically.
+
+From there, click "Admin" to configure which devices guests can access.
+
+### Guest Access via Direct Port
+
+Share the LAN address with your guests: `http://homeassistant.local:8080` (or your configured port). Guests log in with the **guest password** and can control only the devices you've exposed.
+
+**Admins can also use the direct port** by logging in with the admin password instead of the guest password.
+
 ## First-Run Setup
 
 1. Start the add-on
-2. Navigate to the portal (default: `http://homeassistant.local:8080`)
-3. Log in using the admin password
-4. Click "Admin" or navigate to `/admin`
-5. Select which devices to expose to guests:
+2. Open the portal from the Home Assistant sidebar (admin access, no password)
+3. Click "Admin" to configure exposed devices:
    - Choose entities from your Home Assistant instance
    - Set friendly labels
    - Select which actions are permitted (e.g., unlock but not lock)
-6. Click "Save"
-7. Share the guest portal URL and guest password with your guests
+4. Click "Save"
+5. Share the direct port URL and guest password with your guests:
+   - URL: `http://homeassistant.local:8080` (or your LAN IP)
+   - Password: The guest password you configured
 
 ## Security Model
 
 This portal is designed for deployment on a trusted home network.
 
-- **Two shared passwords**: one for guests (device control), one for admins (device selection)
+- **Hybrid ingress**: Admins use the HA sidebar (ingress, no password); guests use the direct port with password authentication
+- **Two shared passwords**: one for guests (device control), one for admins (device selection) — both apply only to the direct port
 - **Server-side allowlist**: Only explicitly approved entities and actions are permitted
 - **Network isolation**: LAN-only; no TLS (relies on physical network boundary)
-- **Direct port exposure**: Does not use Home Assistant ingress (by design — guests should not need HA accounts)
+- **Source address enforcement**: The ingress port only accepts connections from the Home Assistant Supervisor
 
 ## Accepted Risks
 
