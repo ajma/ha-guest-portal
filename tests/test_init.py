@@ -141,3 +141,40 @@ async def test_a_current_portal_raises_no_repair_issue(hass: HomeAssistant, entr
 
     registry = ir.async_get(hass)
     assert registry.async_get_issue(DOMAIN, f"portal_too_old_{entry.entry_id}") is None
+
+
+async def test_upgrading_the_portal_clears_the_repair_issue(
+    hass: HomeAssistant, entry: MockConfigEntry
+):
+    from dataclasses import replace
+
+    from homeassistant.helpers import issue_registry as ir
+
+    entry.add_to_hass(hass)
+
+    # Start with an old portal version that raises a repair issue
+    with patch(
+        "custom_components.ha_guest_portal.PortalApi.async_get_state",
+        AsyncMock(return_value=replace(STATE, version="0.9.0")),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    registry = ir.async_get(hass)
+    issue_id = f"portal_too_old_{entry.entry_id}"
+    assert registry.async_get_issue(DOMAIN, issue_id) is not None
+
+    # Unload the entry (simulating a restart after the add-on update)
+    await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    # Reload with an updated portal version
+    with patch(
+        "custom_components.ha_guest_portal.PortalApi.async_get_state",
+        AsyncMock(return_value=STATE),
+    ):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+
+    # The repair issue should now be cleared
+    assert registry.async_get_issue(DOMAIN, issue_id) is None
