@@ -174,7 +174,7 @@ test.describe('Portal E2E', () => {
     await expect(tile).toBeDisabled()
 
     // Verify the stale tile is NOT painted as the active blue
-    const bg = await tile.evaluate((el) => getComputedStyle(el).backgroundColor)
+    const bg = await tile.evaluate((el) => window.getComputedStyle(el).backgroundColor)
     // Tailwind v4 blue-500 in oklch is oklch(62.3% .214 259.815)
     // which computes to approximately rgb(59, 130, 246)
     expect(bg).not.toBe('rgb(59, 130, 246)')

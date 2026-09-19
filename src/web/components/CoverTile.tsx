@@ -69,7 +69,7 @@ export function CoverTile({ device, disabled }: CoverTileProps): ReactElement {
             className={`flex-1 py-3 px-4 rounded-lg font-medium disabled:cursor-not-allowed ${
               isStale
                 ? 'bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
-                : 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-700'
+                : 'bg-gray-600 text-white hover:bg-gray-700 active:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-700'
             }`}
           >
             Open
@@ -105,7 +105,7 @@ export function CoverTile({ device, disabled }: CoverTileProps): ReactElement {
             className={`flex-1 py-3 px-4 rounded-lg font-medium disabled:cursor-not-allowed ${
               isStale
                 ? 'bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
-                : 'bg-orange-500 text-white hover:bg-orange-600 active:bg-orange-700'
+                : 'bg-gray-600 text-white hover:bg-gray-700 active:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-700'
             }`}
           >
             Close

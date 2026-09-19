@@ -118,7 +118,7 @@ export function LockTile({ device, disabled }: LockTileProps): ReactElement {
               className={`flex-1 py-3 px-4 rounded-lg font-semibold disabled:cursor-not-allowed ${
                 isStale
                   ? 'bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
-                  : 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800'
+                  : 'bg-gray-600 text-white hover:bg-gray-700 active:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-700'
               }`}
             >
               Lock
@@ -134,7 +134,7 @@ export function LockTile({ device, disabled }: LockTileProps): ReactElement {
               className={`flex-1 py-3 px-4 rounded-lg font-semibold disabled:cursor-not-allowed ${
                 isStale
                   ? 'bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
-                  : 'bg-orange-600 text-white hover:bg-orange-700 active:bg-orange-800'
+                  : 'bg-red-600 text-white hover:bg-red-700 active:bg-red-800 dark:bg-red-600 dark:hover:bg-red-700'
               }`}
             >
               Unlock
