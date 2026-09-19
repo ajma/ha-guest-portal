@@ -66,7 +66,11 @@ export function CoverTile({ device, disabled }: CoverTileProps): ReactElement {
             }}
             disabled={pending || isStale}
             aria-describedby={error !== null ? `${device.entityId}-error` : undefined}
-            className="flex-1 py-3 px-4 rounded-lg bg-blue-500 text-white font-medium hover:bg-blue-600 active:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`flex-1 py-3 px-4 rounded-lg font-medium disabled:cursor-not-allowed ${
+              isStale
+                ? 'bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
+                : 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-700'
+            }`}
           >
             Open
           </button>
@@ -80,7 +84,11 @@ export function CoverTile({ device, disabled }: CoverTileProps): ReactElement {
             }}
             disabled={pending || isStale}
             aria-describedby={error !== null ? `${device.entityId}-error` : undefined}
-            className="flex-1 py-3 px-4 rounded-lg bg-gray-500 text-white font-medium hover:bg-gray-600 active:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`flex-1 py-3 px-4 rounded-lg font-medium disabled:cursor-not-allowed ${
+              isStale
+                ? 'bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
+                : 'bg-gray-500 text-white hover:bg-gray-600 active:bg-gray-700'
+            }`}
           >
             Stop
           </button>
@@ -94,7 +102,11 @@ export function CoverTile({ device, disabled }: CoverTileProps): ReactElement {
             }}
             disabled={pending || isStale}
             aria-describedby={error !== null ? `${device.entityId}-error` : undefined}
-            className="flex-1 py-3 px-4 rounded-lg bg-orange-500 text-white font-medium hover:bg-orange-600 active:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`flex-1 py-3 px-4 rounded-lg font-medium disabled:cursor-not-allowed ${
+              isStale
+                ? 'bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
+                : 'bg-orange-500 text-white hover:bg-orange-600 active:bg-orange-700'
+            }`}
           >
             Close
           </button>

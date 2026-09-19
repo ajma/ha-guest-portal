@@ -109,11 +109,13 @@ export function ToggleTile({ device, disabled }: ToggleTileProps): ReactElement 
         className={`
           w-full min-h-24 p-4 rounded-lg font-semibold text-lg
           transition-colors duration-150
-          disabled:opacity-50 disabled:cursor-not-allowed
+          disabled:cursor-not-allowed
           ${
-            isOn
-              ? 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-700'
-              : 'bg-gray-200 text-gray-900 hover:bg-gray-300 active:bg-gray-400 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600'
+            isStale
+              ? 'bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
+              : isOn
+                ? 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-700'
+                : 'bg-gray-200 text-gray-900 hover:bg-gray-300 active:bg-gray-400 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600'
           }
         `}
       >

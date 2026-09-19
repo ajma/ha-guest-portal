@@ -103,8 +103,9 @@ export class FakeHomeAssistant {
     return this.lastTimestamp
   }
 
-  static async start(opts?: { token?: string }): Promise<FakeHomeAssistant> {
+  static async start(opts?: { token?: string; port?: number }): Promise<FakeHomeAssistant> {
     const token = opts?.token ?? 'fake-token'
+    const port = opts?.port ?? 0
     const httpServer = createServer()
     const wss = new WebSocketServer({ noServer: true })
 
@@ -123,7 +124,7 @@ export class FakeHomeAssistant {
     })
 
     await new Promise<void>((resolve) => {
-      httpServer.listen(0, '127.0.0.1', () => {
+      httpServer.listen(port, '127.0.0.1', () => {
         const addr = httpServer.address()
         if (addr && typeof addr === 'object') {
           instance._baseUrl = `http://127.0.0.1:${addr.port}`

@@ -115,7 +115,11 @@ export function LockTile({ device, disabled }: LockTileProps): ReactElement {
               onClick={handleLockClick}
               disabled={pending || isStale}
               aria-describedby={error !== null ? `${device.entityId}-error` : undefined}
-              className="flex-1 py-3 px-4 rounded-lg bg-green-600 text-white font-semibold hover:bg-green-700 active:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`flex-1 py-3 px-4 rounded-lg font-semibold disabled:cursor-not-allowed ${
+                isStale
+                  ? 'bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
+                  : 'bg-green-600 text-white hover:bg-green-700 active:bg-green-800'
+              }`}
             >
               Lock
             </button>
@@ -127,7 +131,11 @@ export function LockTile({ device, disabled }: LockTileProps): ReactElement {
               onClick={handleUnlockClick}
               disabled={pending || isStale}
               aria-describedby={error !== null ? `${device.entityId}-error` : undefined}
-              className="flex-1 py-3 px-4 rounded-lg bg-orange-600 text-white font-semibold hover:bg-orange-700 active:bg-orange-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`flex-1 py-3 px-4 rounded-lg font-semibold disabled:cursor-not-allowed ${
+                isStale
+                  ? 'bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
+                  : 'bg-orange-600 text-white hover:bg-orange-700 active:bg-orange-800'
+              }`}
             >
               Unlock
             </button>

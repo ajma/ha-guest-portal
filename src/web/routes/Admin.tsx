@@ -220,18 +220,19 @@ export function Admin(): ReactElement {
   const excludedIds = devices.map((d) => d.entityId)
 
   return (
-    <div data-testid="admin-screen">
-      <h1>Admin Portal</h1>
+    <div data-testid="admin-screen" style={{ padding: '24px', minHeight: '100vh' }}>
+      <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+        <h1 style={{ fontSize: '28px', fontWeight: 700, marginBottom: '24px' }}>Admin Portal</h1>
 
-      <section style={{ marginBottom: '24px' }}>
-        <h2 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '8px' }}>Add Entity</h2>
+        <section style={{ marginBottom: '24px' }}>
+          <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>Add Entity</h2>
         <EntityPicker entities={catalog} exclude={excludedIds} onSelect={handleAdd} />
       </section>
 
-      <section>
-        <h2 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '12px' }}>
-          Allowed Devices ({devices.length})
-        </h2>
+        <section>
+          <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '12px' }}>
+            Allowed Devices ({devices.length})
+          </h2>
 
         {devices.length === 0 ? (
           <p style={{ color: '#666', fontSize: '14px' }}>
@@ -377,10 +378,10 @@ export function Admin(): ReactElement {
               )
             })}
           </div>
-        )}
-      </section>
+          )}
+        </section>
 
-      <section style={{ marginTop: '24px' }}>
+        <section style={{ marginTop: '24px' }}>
         <button
           type="button"
           onClick={handleSave}
@@ -409,7 +410,8 @@ export function Admin(): ReactElement {
             {saveMessage}
           </span>
         )}
-      </section>
+        </section>
+      </div>
     </div>
   )
 }
