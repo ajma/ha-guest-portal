@@ -4,6 +4,7 @@ import { DevicesResponse, LoginRequest, SessionResponse } from '../../shared/api
 import type { HaClient } from '../ha/client.js'
 import type { AllowlistStore } from '../store/allowlist.js'
 import type { AuditLog } from '../store/auditlog.js'
+import type { SettingsStore } from '../store/settings.js'
 import type { Config } from '../config.js'
 import {
   SESSION_COOKIE,
@@ -22,6 +23,7 @@ export type Deps = {
   ha: HaClient
   allowlist: AllowlistStore
   audit: AuditLog
+  settings: SettingsStore
   sessions: SessionStore
   limiter: LoginRateLimiter
   hub: SseHub
@@ -191,7 +193,10 @@ export function createRoutes(deps: Deps) {
         // not_allowlisted returns 404 to avoid confirming entity existence
         // All other validation failures return 403
         const status = FAILURE_STATUS[validation.reason]
-        return c.json({ error: validation.reason === 'not_allowlisted' ? 'Not found' : 'Forbidden' }, status)
+        return c.json(
+          { error: validation.reason === 'not_allowlisted' ? 'Not found' : 'Forbidden' },
+          status,
+        )
       }
 
       // Call Home Assistant

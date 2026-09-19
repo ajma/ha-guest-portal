@@ -5,6 +5,7 @@ import { type LoginRateLimiter, SESSION_COOKIE, SessionStore } from '../../src/s
 import { SseHub } from '../../src/server/http/sse.ts'
 import { AllowlistStore } from '../../src/server/store/allowlist.ts'
 import { AuditLog } from '../../src/server/store/auditlog.ts'
+import { SettingsStore } from '../../src/server/store/settings.ts'
 import { openDb } from '../../src/server/store/db.ts'
 import type { Config } from '../../src/server/config.ts'
 import type { SseFrame } from '../../src/shared/api.ts'
@@ -45,11 +46,7 @@ async function openStream(baseUrl: string, cookie: string) {
   return { res, frames, abort: () => ctrl.abort(), pump }
 }
 
-async function waitForFrame(
-  frames: SseFrame[],
-  type: string,
-  ms = 5000,
-): Promise<boolean> {
+async function waitForFrame(frames: SseFrame[], type: string, ms = 5000): Promise<boolean> {
   const t0 = Date.now()
   while (Date.now() - t0 < ms) {
     if (frames.some((f) => f.type === type)) return true
@@ -67,6 +64,7 @@ describe('Guest API routes', () => {
   let haClient: HaClient
   let allowlist: AllowlistStore
   let audit: AuditLog
+  let settings: SettingsStore
   let sessions: SessionStore
   let limiter: LoginRateLimiter
   let hub: SseHub
@@ -112,6 +110,7 @@ describe('Guest API routes', () => {
     ])
 
     audit = new AuditLog(db)
+    settings = new SettingsStore(db)
     sessions = new SessionStore()
 
     // Create rate limiter with test-friendly params
@@ -151,6 +150,7 @@ describe('Guest API routes', () => {
       ha: haClient,
       allowlist,
       audit,
+      settings,
       sessions,
       limiter,
       hub,

@@ -7,6 +7,7 @@ import type { Config } from './config.js'
 import type { HaClient } from './ha/client.js'
 import type { AllowlistStore } from './store/allowlist.js'
 import type { AuditLog } from './store/auditlog.js'
+import type { SettingsStore } from './store/settings.js'
 import { SESSION_COOKIE, type SessionStore, type LoginRateLimiter } from './http/auth.js'
 import type { SseHub } from './http/sse.js'
 import { createApp } from './app.js'
@@ -24,6 +25,7 @@ export type Deps = {
   ha: HaClient
   allowlist: AllowlistStore
   audit: AuditLog
+  settings: SettingsStore
   sessions: SessionStore
   limiter: LoginRateLimiter
   hub: SseHub
@@ -52,10 +54,7 @@ export function isFromSupervisor(remoteAddress: string | undefined): boolean {
 }
 
 // Shared session check used by both Hono middleware and SSE handler
-export function checkSession(
-  cookie: string | undefined,
-  sessions: SessionStore,
-): Role | null {
+export function checkSession(cookie: string | undefined, sessions: SessionStore): Role | null {
   if (!cookie) return null
 
   const match = new RegExp(`${SESSION_COOKIE}=([^;]+)`).exec(cookie)
@@ -100,9 +99,7 @@ export function createRuntime(deps: Deps): Runtime {
     const stale = ha.stale
 
     // Only include changed devices that are in the allowlist
-    const allowlistRowsFiltered = allowlistRows.filter((row) =>
-      changedStates.has(row.entityId),
-    )
+    const allowlistRowsFiltered = allowlistRows.filter((row) => changedStates.has(row.entityId))
     const changedDevices = assembleDevices(allowlistRowsFiltered, changedStates, stale)
 
     if (changedDevices.length > 0) {
@@ -132,7 +129,10 @@ export function createRuntime(deps: Deps): Runtime {
   const honoListener = getRequestListener(app.fetch)
 
   // Direct port request handler
-  function handleDirectRequest(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) {
+  function handleDirectRequest(
+    req: import('node:http').IncomingMessage,
+    res: import('node:http').ServerResponse,
+  ) {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
 
     // Normalize single trailing slash
@@ -177,7 +177,10 @@ export function createRuntime(deps: Deps): Runtime {
   }
 
   // Ingress port request handler - enforces Supervisor source check first
-  function handleIngressRequest(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) {
+  function handleIngressRequest(
+    req: import('node:http').IncomingMessage,
+    res: import('node:http').ServerResponse,
+  ) {
     const remoteAddress = req.socket.remoteAddress
 
     // Ingress listener security gate: ONLY Supervisor connections allowed

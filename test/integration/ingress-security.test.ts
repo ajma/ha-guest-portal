@@ -5,6 +5,7 @@ import { LoginRateLimiter, SessionStore } from '../../src/server/http/auth.ts'
 import { SseHub } from '../../src/server/http/sse.ts'
 import { AllowlistStore } from '../../src/server/store/allowlist.ts'
 import { AuditLog } from '../../src/server/store/auditlog.ts'
+import { SettingsStore } from '../../src/server/store/settings.ts'
 import { openDb } from '../../src/server/store/db.ts'
 import type { Config } from '../../src/server/config.ts'
 import { createRuntime, type Runtime } from '../../src/server/runtime.ts'
@@ -21,6 +22,7 @@ describe('Ingress security - source address enforcement', () => {
   let haClient: HaClient
   let allowlist: AllowlistStore
   let audit: AuditLog
+  let settings: SettingsStore
   let sessions: SessionStore
   let limiter: LoginRateLimiter
   let hub: SseHub
@@ -52,6 +54,7 @@ describe('Ingress security - source address enforcement', () => {
     ])
 
     audit = new AuditLog(db)
+    settings = new SettingsStore(db)
     sessions = new SessionStore()
     limiter = new LoginRateLimiter({ perIpMax: 10, windowMs: 60_000 })
     hub = new SseHub()
@@ -87,6 +90,7 @@ describe('Ingress security - source address enforcement', () => {
       ha: haClient,
       allowlist,
       audit,
+      settings,
       sessions,
       limiter,
       hub,
@@ -252,6 +256,7 @@ describe('Ingress security - source address enforcement', () => {
         ha: haClient,
         allowlist,
         audit,
+        settings,
         sessions,
         limiter,
         hub,

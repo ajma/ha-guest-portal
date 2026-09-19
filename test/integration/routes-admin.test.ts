@@ -5,6 +5,7 @@ import { type LoginRateLimiter, SessionStore } from '../../src/server/http/auth.
 import { SseHub } from '../../src/server/http/sse.ts'
 import { AllowlistStore } from '../../src/server/store/allowlist.ts'
 import { AuditLog } from '../../src/server/store/auditlog.ts'
+import { SettingsStore } from '../../src/server/store/settings.ts'
 import { openDb } from '../../src/server/store/db.ts'
 import type { Config } from '../../src/server/config.ts'
 import { createRuntime, type Runtime } from '../../src/server/runtime.ts'
@@ -19,6 +20,7 @@ describe('Admin API routes', () => {
   let haClient: HaClient
   let allowlist: AllowlistStore
   let audit: AuditLog
+  let settings: SettingsStore
   let sessions: SessionStore
   let limiter: LoginRateLimiter
   let hub: SseHub
@@ -65,6 +67,7 @@ describe('Admin API routes', () => {
     ])
 
     audit = new AuditLog(db)
+    settings = new SettingsStore(db)
     sessions = new SessionStore()
 
     // Create rate limiter with test-friendly params
@@ -104,6 +107,7 @@ describe('Admin API routes', () => {
       ha: haClient,
       allowlist,
       audit,
+      settings,
       sessions,
       limiter,
       hub,
@@ -186,9 +190,7 @@ describe('Admin API routes', () => {
       expect(res.status).toBe(200)
 
       const body = await res.json()
-      const porch = body.entities.find(
-        (e: { entityId: string }) => e.entityId === 'light.porch',
-      )
+      const porch = body.entities.find((e: { entityId: string }) => e.entityId === 'light.porch')
       expect(porch).toBeDefined()
       expect(porch).toHaveProperty('area')
       expect(porch).toHaveProperty('supported')

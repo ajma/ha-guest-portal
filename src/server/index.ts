@@ -2,6 +2,7 @@ import { loadConfig } from './config.js'
 import { openDb } from './store/db.js'
 import { AllowlistStore } from './store/allowlist.js'
 import { AuditLog } from './store/auditlog.js'
+import { SettingsStore } from './store/settings.js'
 import { SessionStore, LoginRateLimiter } from './http/auth.js'
 import { SseHub } from './http/sse.js'
 import { HaClient } from './ha/client.js'
@@ -17,6 +18,7 @@ async function main() {
   // Construct components
   const allowlist = new AllowlistStore(db)
   const audit = new AuditLog(db)
+  const settings = new SettingsStore(db)
   const sessions = new SessionStore()
   const limiter = new LoginRateLimiter()
   const hub = new SseHub()
@@ -41,6 +43,7 @@ async function main() {
     ha,
     allowlist,
     audit,
+    settings,
     sessions,
     limiter,
     hub,

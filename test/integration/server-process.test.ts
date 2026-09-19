@@ -96,11 +96,13 @@ describe('Server process smoke test', () => {
     const { SseHub } = await import('../../src/server/http/sse.ts')
     const { AllowlistStore } = await import('../../src/server/store/allowlist.ts')
     const { AuditLog } = await import('../../src/server/store/auditlog.ts')
+    const { SettingsStore } = await import('../../src/server/store/settings.ts')
     const { openDb } = await import('../../src/server/store/db.ts')
 
     const db = openDb(':memory:')
     const allowlist = new AllowlistStore(db)
     const audit = new AuditLog(db)
+    const settings = new SettingsStore(db)
     const sessions = new SessionStore()
     const limiter = new LoginRateLimiter()
     const hub = new SseHub()
@@ -124,6 +126,7 @@ describe('Server process smoke test', () => {
       ha,
       allowlist,
       audit,
+      settings,
       sessions,
       limiter,
       hub,

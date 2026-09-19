@@ -20,6 +20,11 @@ CREATE TABLE IF NOT EXISTS action_log (
   role      TEXT NOT NULL,
   ok        INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `
 
 export function openDb(path: string): DatabaseSync {
