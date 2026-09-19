@@ -1,10 +1,16 @@
 import type { Hono } from 'hono'
 import type { Env } from '../app.js'
 import type { Deps } from './routes-guest.js'
-import { AllowlistPutRequest, AllowlistResponse, CatalogResponse } from '../../shared/api.js'
+import {
+  AdminPortalPutRequest,
+  AdminPortalResponse,
+  AllowlistPutRequest,
+  AllowlistResponse,
+  CatalogResponse,
+} from '../../shared/api.js'
 
 export function mountAdminRoutes(app: Hono<Env>, deps: Deps): void {
-  const { ha, allowlist } = deps
+  const { ha, allowlist, settings } = deps
 
   // Middleware to require admin role
   app.use('/api/admin/*', async (c, next) => {
@@ -65,5 +71,38 @@ export function mountAdminRoutes(app: Hono<Env>, deps: Deps): void {
     allowlist.replace(parseResult.data.devices)
 
     return c.json({ ok: true })
+  })
+
+  // GET /api/admin/portal - toggle state plus the credentials needed to set up
+  // the Home Assistant integration by hand (non-add-on deployments).
+  app.get('/api/admin/portal', (c) => {
+    return c.json(
+      AdminPortalResponse.parse({
+        enabled: settings.getPortalEnabled(),
+        integrationToken: settings.getIntegrationToken(),
+        portalId: settings.getPortalId(),
+      }),
+    )
+  })
+
+  // PUT /api/admin/portal - enable or disable the guest surface
+  app.put('/api/admin/portal', async (c) => {
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ error: 'Invalid JSON' }, 400)
+    }
+
+    const parseResult = AdminPortalPutRequest.safeParse(body)
+    if (!parseResult.success) {
+      const firstIssue = parseResult.error.issues[0]
+      const errorMessage = firstIssue ? firstIssue.message : 'Invalid request'
+      return c.json({ error: errorMessage }, 400)
+    }
+
+    settings.setPortalEnabled(parseResult.data.enabled)
+
+    return c.json({ enabled: parseResult.data.enabled })
   })
 }

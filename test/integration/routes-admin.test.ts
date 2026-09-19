@@ -507,4 +507,66 @@ describe('Admin API routes', () => {
       expect(subscribed).not.toContain('lock.front')
     })
   })
+
+  describe('portal toggle routes', () => {
+    it('returns portal state, token, and id to an admin', async () => {
+      const res = await fetch(`${baseUrl}/api/admin/portal`, {
+        headers: { cookie: adminCookie },
+      })
+
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.enabled).toBe(true)
+      expect(body.integrationToken).toMatch(/^[0-9a-f]{64}$/)
+      expect(body.portalId).toMatch(/^[0-9a-f-]{36}$/)
+    })
+
+    it('refuses a guest', async () => {
+      const res = await fetch(`${baseUrl}/api/admin/portal`, {
+        headers: { cookie: guestCookie },
+      })
+      expect(res.status).toBe(403)
+    })
+
+    it('refuses an anonymous request', async () => {
+      const res = await fetch(`${baseUrl}/api/admin/portal`)
+      expect(res.status).toBe(401)
+    })
+
+    it('disables the portal', async () => {
+      const res = await fetch(`${baseUrl}/api/admin/portal`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({ enabled: false }),
+      })
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ enabled: false })
+      expect(settings.getPortalEnabled()).toBe(false)
+    })
+
+    it('rejects a non-boolean enabled', async () => {
+      const res = await fetch(`${baseUrl}/api/admin/portal`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({ enabled: 'nope' }),
+      })
+
+      expect(res.status).toBe(400)
+      const body = await res.json()
+      expect(body.error).toBe('Invalid input: expected boolean, received string')
+      expect(settings.getPortalEnabled()).toBe(true)
+    })
+
+    it('rejects malformed JSON', async () => {
+      const res = await fetch(`${baseUrl}/api/admin/portal`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+        body: 'not json',
+      })
+
+      expect(res.status).toBe(400)
+      expect(settings.getPortalEnabled()).toBe(true)
+    })
+  })
 })
