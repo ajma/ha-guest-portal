@@ -231,10 +231,7 @@ describe('Home Assistant frame schemas', () => {
       if (result.success) {
         expect(result.data.event.c).toBeDefined()
         expect(result.data.event.c?.['light.porch']?.['+']?.s).toBe('off')
-        expect(result.data.event.c?.['light.porch']?.['-']?.a).toEqual([
-          'brightness',
-          'color_temp',
-        ])
+        expect(result.data.event.c?.['light.porch']?.['-']?.a).toEqual(['brightness', 'color_temp'])
       }
     })
 
@@ -249,10 +246,7 @@ describe('Home Assistant frame schemas', () => {
       const result = EventFrame.safeParse(frame)
       expect(result.success).toBe(true)
       if (result.success) {
-        expect(result.data.event.r).toEqual([
-          'light.removed',
-          'switch.unplugged',
-        ])
+        expect(result.data.event.r).toEqual(['light.removed', 'switch.unplugged'])
       }
     })
 
@@ -290,9 +284,7 @@ describe('Home Assistant frame schemas', () => {
       const result = EventFrame.safeParse(frame)
       expect(result.success).toBe(true)
       if (result.success) {
-        expect(result.data.event.c?.['sensor.temp']?.['+']?.lu).toBe(
-          1726675300.0
-        )
+        expect(result.data.event.c?.['sensor.temp']?.['+']?.lu).toBe(1726675300.0)
         expect(result.data.event.c?.['sensor.temp']?.['+']?.lc).toBeUndefined()
       }
     })

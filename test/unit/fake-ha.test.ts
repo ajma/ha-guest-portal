@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import WebSocket from 'ws'
 import { FakeHomeAssistant } from '../fake-ha.ts'
-import { InboundFrame, type EntityEvent, type CompressedState } from '../../src/server/ha/schemas.ts'
+import {
+  InboundFrame,
+  type EntityEvent,
+  type CompressedState,
+} from '../../src/server/ha/schemas.ts'
 import type { z } from 'zod'
 
 type TestWebSocket = WebSocket & { messageQueue: unknown[] }
@@ -11,10 +15,12 @@ type FrameOf<T extends InboundFrameType['type']> = Extract<InboundFrameType, { t
 
 function expectFrame<T extends InboundFrameType['type']>(
   frame: InboundFrameType,
-  type: T
+  type: T,
 ): asserts frame is FrameOf<T> {
   if (frame.type !== type) {
-    throw new Error(`expected a "${type}" frame but received "${frame.type}": ${JSON.stringify(frame)}`)
+    throw new Error(
+      `expected a "${type}" frame but received "${frame.type}": ${JSON.stringify(frame)}`,
+    )
   }
 }
 
@@ -31,18 +37,25 @@ function requireWs(ws: TestWebSocket | undefined): TestWebSocket {
 function getAddedEntity(event: EntityEvent, entityId: string): CompressedState {
   const added = event.a?.[entityId]
   if (!added) {
-    throw new Error(`expected entity "${entityId}" in added section (a) but not found: ${JSON.stringify(event)}`)
+    throw new Error(
+      `expected entity "${entityId}" in added section (a) but not found: ${JSON.stringify(event)}`,
+    )
   }
   return added
 }
 
-function getChangedEntity(event: EntityEvent, entityId: string): {
+function getChangedEntity(
+  event: EntityEvent,
+  entityId: string,
+): {
   '+'?: CompressedState | undefined
   '-'?: { a?: string[] | undefined } | undefined
 } {
   const changed = event.c?.[entityId]
   if (!changed) {
-    throw new Error(`expected entity "${entityId}" in changed section (c) but not found: ${JSON.stringify(event)}`)
+    throw new Error(
+      `expected entity "${entityId}" in changed section (c) but not found: ${JSON.stringify(event)}`,
+    )
   }
   return changed
 }
@@ -234,7 +247,7 @@ describe('FakeHomeAssistant', () => {
         [
           { areaId: 'living_room', name: 'Living Room' },
           { areaId: 'bedroom', name: 'Bedroom' },
-        ]
+        ],
       )
 
       sendMessage(requireWs(currentWs), { type: 'config/area_registry/list', id: 1 })
@@ -258,7 +271,7 @@ describe('FakeHomeAssistant', () => {
         [
           { id: 'device1', name: 'Device 1', areaId: 'living_room' },
           { id: 'device2', name: 'Device 2', areaId: null },
-        ]
+        ],
       )
 
       sendMessage(requireWs(currentWs), { type: 'config/device_registry/list', id: 1 })
@@ -289,7 +302,7 @@ describe('FakeHomeAssistant', () => {
             hiddenBy: null,
           },
         ],
-        [{ areaId: 'living_room', name: 'Living Room' }]
+        [{ areaId: 'living_room', name: 'Living Room' }],
       )
 
       sendMessage(requireWs(currentWs), { type: 'config/entity_registry/list', id: 1 })
@@ -343,7 +356,7 @@ describe('FakeHomeAssistant', () => {
           },
           { entityId: 'light.bedroom', state: 'off', attributes: {} },
         ],
-        []
+        [],
       )
     })
 
@@ -647,10 +660,7 @@ describe('FakeHomeAssistant', () => {
     })
 
     it('snapshot contains s, a, c, lc and NO lu when last_changed equals last_updated', async () => {
-      fake.seed(
-        [{ entityId: 'light.test', state: 'on', attributes: { brightness: 100 } }],
-        []
-      )
+      fake.seed([{ entityId: 'light.test', state: 'on', attributes: { brightness: 100 } }], [])
 
       sendMessage(requireWs(currentWs), { type: 'subscribe_entities', id: 1 })
       await receiveMessage(requireWs(currentWs)) // result
@@ -667,10 +677,7 @@ describe('FakeHomeAssistant', () => {
     })
 
     it('snapshot contains lu when last_updated differs from last_changed', async () => {
-      fake.seed(
-        [{ entityId: 'light.test', state: 'on', attributes: { brightness: 100 } }],
-        []
-      )
+      fake.seed([{ entityId: 'light.test', state: 'on', attributes: { brightness: 100 } }], [])
 
       sendMessage(requireWs(currentWs), { type: 'subscribe_entities', id: 1 })
       await receiveMessage(requireWs(currentWs)) // result
@@ -694,10 +701,7 @@ describe('FakeHomeAssistant', () => {
     })
 
     it('context in snapshot is a string', async () => {
-      fake.seed(
-        [{ entityId: 'light.test', state: 'on', attributes: {} }],
-        []
-      )
+      fake.seed([{ entityId: 'light.test', state: 'on', attributes: {} }], [])
 
       sendMessage(requireWs(currentWs), { type: 'subscribe_entities', id: 1 })
       await receiveMessage(requireWs(currentWs)) // result
@@ -709,10 +713,7 @@ describe('FakeHomeAssistant', () => {
     })
 
     it('timestamps are float seconds not milliseconds', async () => {
-      fake.seed(
-        [{ entityId: 'light.test', state: 'on', attributes: {} }],
-        []
-      )
+      fake.seed([{ entityId: 'light.test', state: 'on', attributes: {} }], [])
 
       sendMessage(requireWs(currentWs), { type: 'subscribe_entities', id: 1 })
       await receiveMessage(requireWs(currentWs)) // result
@@ -729,10 +730,7 @@ describe('FakeHomeAssistant', () => {
     })
 
     it('state-change diff contains lc and NOT lu', async () => {
-      fake.seed(
-        [{ entityId: 'light.test', state: 'on', attributes: { brightness: 100 } }],
-        []
-      )
+      fake.seed([{ entityId: 'light.test', state: 'on', attributes: { brightness: 100 } }], [])
 
       sendMessage(requireWs(currentWs), { type: 'subscribe_entities', id: 1 })
       await receiveMessage(requireWs(currentWs)) // result
@@ -750,10 +748,7 @@ describe('FakeHomeAssistant', () => {
     })
 
     it('attribute-only diff contains lu and NOT lc', async () => {
-      fake.seed(
-        [{ entityId: 'light.test', state: 'on', attributes: { brightness: 100 } }],
-        []
-      )
+      fake.seed([{ entityId: 'light.test', state: 'on', attributes: { brightness: 100 } }], [])
 
       sendMessage(requireWs(currentWs), { type: 'subscribe_entities', id: 1 })
       await receiveMessage(requireWs(currentWs)) // result
@@ -772,10 +767,7 @@ describe('FakeHomeAssistant', () => {
     })
 
     it('newly added attribute appears under +.a', async () => {
-      fake.seed(
-        [{ entityId: 'light.test', state: 'on', attributes: { brightness: 100 } }],
-        []
-      )
+      fake.seed([{ entityId: 'light.test', state: 'on', attributes: { brightness: 100 } }], [])
 
       sendMessage(requireWs(currentWs), { type: 'subscribe_entities', id: 1 })
       await receiveMessage(requireWs(currentWs)) // result

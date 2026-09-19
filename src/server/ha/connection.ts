@@ -1,9 +1,6 @@
 import WebSocket from 'ws'
 import type { z } from 'zod'
-import {
-  InboundFrame,
-  type EntityEvent,
-} from './schemas.js'
+import { InboundFrame, type EntityEvent } from './schemas.js'
 
 export type ConnectionStatus = 'connecting' | 'ready' | 'disconnected'
 
@@ -135,7 +132,7 @@ export class HaConnection {
    */
   async subscribe(
     payload: Record<string, unknown>,
-    onEvent: (event: EntityEvent) => void
+    onEvent: (event: EntityEvent) => void,
   ): Promise<{ unsubscribe: () => Promise<void> }> {
     if (this.status_ !== 'ready') {
       throw new Error('Connection not ready')

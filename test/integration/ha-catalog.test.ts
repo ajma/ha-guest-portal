@@ -53,7 +53,7 @@ describe('fetchCatalog', () => {
         { areaId: 'bedroom', name: 'Bedroom' },
         { areaId: 'kitchen', name: 'Kitchen' },
       ],
-      [{ id: 'device1', name: 'Device 1', areaId: 'kitchen' }]
+      [{ id: 'device1', name: 'Device 1', areaId: 'kitchen' }],
     )
     const connection = await setupConnection()
 
@@ -82,7 +82,7 @@ describe('fetchCatalog', () => {
         },
       ],
       [{ areaId: 'hallway', name: 'Hallway' }],
-      [{ id: 'device2', name: 'Device 2', areaId: 'hallway' }]
+      [{ id: 'device2', name: 'Device 2', areaId: 'hallway' }],
     )
     const connection = await setupConnection()
 
@@ -111,7 +111,7 @@ describe('fetchCatalog', () => {
         },
       ],
       [],
-      [{ id: 'device3', name: 'Device 3', areaId: null }]
+      [{ id: 'device3', name: 'Device 3', areaId: null }],
     )
     const connection = await setupConnection()
 
@@ -140,7 +140,7 @@ describe('fetchCatalog', () => {
         },
       ],
       [{ areaId: 'living_room', name: 'Living Room' }],
-      []
+      [],
     )
     const connection = await setupConnection()
 
@@ -169,7 +169,7 @@ describe('fetchCatalog', () => {
         },
       ],
       [],
-      []
+      [],
     )
     const connection = await setupConnection()
 
@@ -200,7 +200,7 @@ describe('fetchCatalog', () => {
         },
       ],
       [],
-      []
+      [],
     )
     const connection = await setupConnection()
 
@@ -237,7 +237,7 @@ describe('fetchCatalog', () => {
         },
       ],
       [],
-      []
+      [],
     )
     const connection = await setupConnection()
 
@@ -264,7 +264,7 @@ describe('fetchCatalog', () => {
         },
       ],
       [],
-      []
+      [],
     )
     const connection = await setupConnection()
 
@@ -285,7 +285,7 @@ describe('fetchCatalog', () => {
         },
       ],
       [],
-      []
+      [],
     )
     const connection = await setupConnection()
 
@@ -311,7 +311,7 @@ describe('fetchCatalog', () => {
         },
       ],
       [],
-      []
+      [],
     )
     const connection = await setupConnection()
 
@@ -347,7 +347,7 @@ describe('fetchCatalog', () => {
         },
       ],
       [],
-      []
+      [],
     )
     const connection = await setupConnection()
 

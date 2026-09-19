@@ -33,7 +33,11 @@ export function isSupportedEntity(entityId: string): boolean {
 
 export type ValidationFailure = {
   ok: false
-  reason: 'not_allowlisted' | 'unsupported_domain' | 'action_not_valid_for_domain' | 'action_not_permitted'
+  reason:
+    | 'not_allowlisted'
+    | 'unsupported_domain'
+    | 'action_not_valid_for_domain'
+    | 'action_not_permitted'
 }
 
 export type ValidationSuccess = {

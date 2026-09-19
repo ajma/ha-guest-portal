@@ -7,18 +7,9 @@ import { isSupportedEntity } from '../../shared/devices.js'
 export async function fetchCatalog(conn: HaConnection): Promise<CatalogEntry[]> {
   // Fetch all three registries concurrently
   const [entities, devices, areas] = await Promise.all([
-    conn.send(
-      { type: 'config/entity_registry/list' },
-      z.array(RegistryEntity)
-    ),
-    conn.send(
-      { type: 'config/device_registry/list' },
-      z.array(RegistryDevice)
-    ),
-    conn.send(
-      { type: 'config/area_registry/list' },
-      z.array(RegistryArea)
-    ),
+    conn.send({ type: 'config/entity_registry/list' }, z.array(RegistryEntity)),
+    conn.send({ type: 'config/device_registry/list' }, z.array(RegistryDevice)),
+    conn.send({ type: 'config/area_registry/list' }, z.array(RegistryArea)),
   ])
 
   // Build lookup maps

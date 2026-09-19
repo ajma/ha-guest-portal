@@ -20,8 +20,9 @@ const schema = z
       return !url.hostname.endsWith('.local')
     },
     {
-      message: 'mDNS hostnames (.local) do not resolve inside containers. Use a LAN IP address instead.',
-    }
+      message:
+        'mDNS hostnames (.local) do not resolve inside containers. Use a LAN IP address instead.',
+    },
   )
 
 export type Config = {

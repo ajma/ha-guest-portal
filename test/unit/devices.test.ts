@@ -1,6 +1,11 @@
 // test/unit/devices.test.ts
 import { describe, expect, it } from 'vitest'
-import { DOMAIN_ACTIONS, isSupportedEntity, parseDomain, validateAction } from '../../src/shared/devices.ts'
+import {
+  DOMAIN_ACTIONS,
+  isSupportedEntity,
+  parseDomain,
+  validateAction,
+} from '../../src/shared/devices.ts'
 
 const allow = (m: Record<string, string[]>) => new Map(Object.entries(m))
 
@@ -45,8 +50,11 @@ describe('validateAction — gates', () => {
   })
 
   it('permits unlock while lock is withheld', () => {
-    expect(validateAction('lock.front', 'unlock', allow({ 'lock.front': ['unlock'] })))
-      .toEqual({ ok: true, domain: 'lock', service: 'unlock' })
+    expect(validateAction('lock.front', 'unlock', allow({ 'lock.front': ['unlock'] }))).toEqual({
+      ok: true,
+      domain: 'lock',
+      service: 'unlock',
+    })
   })
 
   it('cannot aim a lock service at an entity exposed as a light', () => {
@@ -55,7 +63,11 @@ describe('validateAction — gates', () => {
   })
 
   it('rejects an entity id carrying a service separator', () => {
-    const r = validateAction('light.porch/../lock/unlock', 'turn_on', allow({ 'light.porch/../lock/unlock': ['turn_on'] }))
+    const r = validateAction(
+      'light.porch/../lock/unlock',
+      'turn_on',
+      allow({ 'light.porch/../lock/unlock': ['turn_on'] }),
+    )
     expect(r.ok).toBe(false)
   })
 })

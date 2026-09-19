@@ -56,7 +56,7 @@ const EntityEventSchema = z.object({
       z.object({
         '+': CompressedStateSchema.optional(),
         '-': z.object({ a: z.array(z.string()).optional() }).optional(),
-      })
+      }),
     )
     .optional(),
   r: z.array(z.string()).optional(),

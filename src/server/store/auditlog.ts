@@ -27,21 +27,15 @@ export class AuditLog {
   }
 
   record(e: AuditEntry): void {
-    this.db.prepare(
-      'INSERT INTO action_log (ts, entity_id, action, role, ok) VALUES (?, ?, ?, ?, ?)'
-    ).run(
-      e.ts,
-      e.entityId,
-      e.action,
-      e.role,
-      e.ok ? 1 : 0
-    )
+    this.db
+      .prepare('INSERT INTO action_log (ts, entity_id, action, role, ok) VALUES (?, ?, ?, ?, ?)')
+      .run(e.ts, e.entityId, e.action, e.role, e.ok ? 1 : 0)
   }
 
   recent(limit: number): AuditEntry[] {
-    const rows = this.db.prepare(
-      'SELECT ts, entity_id, action, role, ok FROM action_log ORDER BY id DESC LIMIT ?'
-    ).all(limit)
+    const rows = this.db
+      .prepare('SELECT ts, entity_id, action, role, ok FROM action_log ORDER BY id DESC LIMIT ?')
+      .all(limit)
 
     const result: AuditEntry[] = []
 

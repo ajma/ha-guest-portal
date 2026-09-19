@@ -22,7 +22,11 @@ const ClientCommand = z.union([
   z.object({ type: z.literal('config/area_registry/list'), id: z.number() }),
   z.object({ type: z.literal('config/device_registry/list'), id: z.number() }),
   z.object({ type: z.literal('config/entity_registry/list'), id: z.number() }),
-  z.object({ type: z.literal('subscribe_entities'), id: z.number(), entity_ids: z.array(z.string()).optional() }),
+  z.object({
+    type: z.literal('subscribe_entities'),
+    id: z.number(),
+    entity_ids: z.array(z.string()).optional(),
+  }),
   z.object({ type: z.string(), id: z.number().optional() }), // Catch-all for unknown commands
 ])
 
@@ -131,7 +135,10 @@ export class FakeHomeAssistant {
     return instance
   }
 
-  private handleHttpRequest(req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse): void {
+  private handleHttpRequest(
+    req: import('node:http').IncomingMessage,
+    res: import('node:http').ServerResponse,
+  ): void {
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`)
 
     if (req.method === 'POST' && url.pathname.startsWith('/api/services/')) {
@@ -198,10 +205,14 @@ export class FakeHomeAssistant {
     })
 
     // Send auth_required immediately (WebSocket is already open at this point)
-    this.sendValidated(ws, {
-      type: 'auth_required',
-      ha_version: '2026.9.0',
-    }, AuthRequired)
+    this.sendValidated(
+      ws,
+      {
+        type: 'auth_required',
+        ha_version: '2026.9.0',
+      },
+      AuthRequired,
+    )
   }
 
   private handleMessage(ws: WebSocket, data: WebSocket.RawData): void {
@@ -216,17 +227,27 @@ export class FakeHomeAssistant {
     const parseResult = ClientCommand.safeParse(parsed)
     if (!parseResult.success) {
       // Malformed frame, try to respond if we can extract an id
-      const maybeId = typeof parsed === 'object' && parsed !== null && 'id' in parsed && typeof parsed.id === 'number' ? parsed.id : null
+      const maybeId =
+        typeof parsed === 'object' &&
+        parsed !== null &&
+        'id' in parsed &&
+        typeof parsed.id === 'number'
+          ? parsed.id
+          : null
       if (maybeId !== null) {
-        this.sendValidated(ws, {
-          type: 'result',
-          id: maybeId,
-          success: false,
-          error: {
-            code: 'invalid_format',
-            message: 'Invalid message format',
+        this.sendValidated(
+          ws,
+          {
+            type: 'result',
+            id: maybeId,
+            success: false,
+            error: {
+              code: 'invalid_format',
+              message: 'Invalid message format',
+            },
           },
-        }, ResultFrame)
+          ResultFrame,
+        )
       }
       return
     }
@@ -238,20 +259,28 @@ export class FakeHomeAssistant {
         return
       }
       if (this.authRejectionEnabled || msg.access_token !== this.token) {
-        this.sendValidated(ws, {
-          type: 'auth_invalid',
-          message: 'Invalid access token',
-        }, AuthInvalid)
+        this.sendValidated(
+          ws,
+          {
+            type: 'auth_invalid',
+            message: 'Invalid access token',
+          },
+          AuthInvalid,
+        )
         // Close socket after auth_invalid
         setTimeout(() => ws.close(), 10)
         return
       }
 
       this.authenticatedConnections.add(ws)
-      this.sendValidated(ws, {
-        type: 'auth_ok',
-        ha_version: '2026.9.0',
-      }, AuthOk)
+      this.sendValidated(
+        ws,
+        {
+          type: 'auth_ok',
+          ha_version: '2026.9.0',
+        },
+        AuthOk,
+      )
       return
     }
 
@@ -272,113 +301,147 @@ export class FakeHomeAssistant {
         break
 
       case 'get_config':
-        this.sendValidated(ws, {
-          type: 'result',
-          id,
-          success: true,
-          result: {
-            version: '2026.9.0',
-            location_name: 'Home',
-            latitude: 0,
-            longitude: 0,
-            elevation: 0,
-            unit_system: {
-              length: 'km',
-              mass: 'kg',
-              volume: 'L',
-              temperature: 'C',
+        this.sendValidated(
+          ws,
+          {
+            type: 'result',
+            id,
+            success: true,
+            result: {
+              version: '2026.9.0',
+              location_name: 'Home',
+              latitude: 0,
+              longitude: 0,
+              elevation: 0,
+              unit_system: {
+                length: 'km',
+                mass: 'kg',
+                volume: 'L',
+                temperature: 'C',
+              },
+              time_zone: 'UTC',
             },
-            time_zone: 'UTC',
           },
-        }, ResultFrame)
+          ResultFrame,
+        )
         break
 
       case 'config/area_registry/list':
-        this.sendValidated(ws, {
-          type: 'result',
-          id,
-          success: true,
-          result: this.areas.map((a) => ({ area_id: a.areaId, name: a.name })),
-        }, ResultFrame)
+        this.sendValidated(
+          ws,
+          {
+            type: 'result',
+            id,
+            success: true,
+            result: this.areas.map((a) => ({ area_id: a.areaId, name: a.name })),
+          },
+          ResultFrame,
+        )
         break
 
       case 'config/device_registry/list':
-        this.sendValidated(ws, {
-          type: 'result',
-          id,
-          success: true,
-          result: this.devices.map((d) => ({
-            id: d.id,
-            name: d.name,
-            name_by_user: null,
-            area_id: d.areaId,
-          })),
-        }, ResultFrame)
+        this.sendValidated(
+          ws,
+          {
+            type: 'result',
+            id,
+            success: true,
+            result: this.devices.map((d) => ({
+              id: d.id,
+              name: d.name,
+              name_by_user: null,
+              area_id: d.areaId,
+            })),
+          },
+          ResultFrame,
+        )
         break
 
       case 'config/entity_registry/list':
-        this.sendValidated(ws, {
-          type: 'result',
-          id,
-          success: true,
-          result: Array.from(this.entities.keys()).map((entityId) => {
-            const meta = this.entityMeta.get(entityId)
-            return {
-              entity_id: entityId,
-              name: meta?.name ?? null,
-              original_name: meta?.name ?? null,
-              area_id: meta?.areaId ?? null,
-              device_id: meta?.deviceId ?? null,
-              disabled_by: meta?.disabledBy ?? null,
-              hidden_by: meta?.hiddenBy ?? null,
-              entity_category: null,
-            }
-          }),
-        }, ResultFrame)
+        this.sendValidated(
+          ws,
+          {
+            type: 'result',
+            id,
+            success: true,
+            result: Array.from(this.entities.keys()).map((entityId) => {
+              const meta = this.entityMeta.get(entityId)
+              return {
+                entity_id: entityId,
+                name: meta?.name ?? null,
+                original_name: meta?.name ?? null,
+                area_id: meta?.areaId ?? null,
+                device_id: meta?.deviceId ?? null,
+                disabled_by: meta?.disabledBy ?? null,
+                hidden_by: meta?.hiddenBy ?? null,
+                entity_category: null,
+              }
+            }),
+          },
+          ResultFrame,
+        )
         break
 
       case 'subscribe_entities': {
-        const entityIds = ('entity_ids' in msg && msg.entity_ids) ? msg.entity_ids : null
+        const entityIds = 'entity_ids' in msg && msg.entity_ids ? msg.entity_ids : null
         const subscription: Subscription = { id, entityIds }
         this.subscriptions.set(ws, subscription)
         this.latestSubscription = subscription
 
-        this.sendValidated(ws, {
-          type: 'result',
-          id,
-          success: true,
-        }, ResultFrame)
+        this.sendValidated(
+          ws,
+          {
+            type: 'result',
+            id,
+            success: true,
+          },
+          ResultFrame,
+        )
 
         // Send snapshot immediately
         const snapshot = this.buildSnapshot(entityIds)
-        this.sendValidated(ws, {
-          type: 'event',
-          id,
-          event: snapshot,
-        }, EventFrame)
+        this.sendValidated(
+          ws,
+          {
+            type: 'event',
+            id,
+            event: snapshot,
+          },
+          EventFrame,
+        )
         break
       }
 
       default:
-        this.sendValidated(ws, {
-          type: 'result',
-          id,
-          success: false,
-          error: {
-            code: 'unknown_command',
-            message: `Unknown command: ${msg.type}`,
+        this.sendValidated(
+          ws,
+          {
+            type: 'result',
+            id,
+            success: false,
+            error: {
+              code: 'unknown_command',
+              message: `Unknown command: ${msg.type}`,
+            },
           },
-        }, ResultFrame)
+          ResultFrame,
+        )
         break
     }
   }
 
-  private sendValidated(ws: WebSocket, frame: unknown, schema: { parse: (val: unknown) => unknown }): void {
+  private sendValidated(
+    ws: WebSocket,
+    frame: unknown,
+    schema: { parse: (val: unknown) => unknown },
+  ): void {
     // Validate the frame against the schema before sending
     try {
       schema.parse(frame)
     } catch (err) {
-      throw new Error(`Frame validation failed: ${err instanceof Error ? err.message : String(err)}`)
+      throw new Error(
+        `Frame validation failed: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
 
     ws.send(JSON.stringify(frame))
@@ -411,7 +474,11 @@ export class FakeHomeAssistant {
     return { a: added }
   }
 
-  private buildDiff(_entityId: string, oldState: EntityState, newState: EntityState): CompressedState {
+  private buildDiff(
+    _entityId: string,
+    oldState: EntityState,
+    newState: EntityState,
+  ): CompressedState {
     const plus: CompressedState = {}
 
     // Check if state changed
@@ -450,7 +517,7 @@ export class FakeHomeAssistant {
   seed(
     entities: FakeEntity[],
     areas: Array<{ areaId: string; name: string }>,
-    devices?: Array<{ id: string; name: string; areaId: string | null }>
+    devices?: Array<{ id: string; name: string; areaId: string | null }>,
   ): void {
     this.entities.clear()
     this.entityMeta.clear()
@@ -530,11 +597,15 @@ export class FakeHomeAssistant {
         }
       }
 
-      this.sendValidated(ws, {
-        type: 'event',
-        id: subscription.id,
-        event,
-      }, EventFrame)
+      this.sendValidated(
+        ws,
+        {
+          type: 'event',
+          id: subscription.id,
+          event,
+        },
+        EventFrame,
+      )
     }
   }
 
@@ -557,11 +628,15 @@ export class FakeHomeAssistant {
         r: [entityId],
       }
 
-      this.sendValidated(ws, {
-        type: 'event',
-        id: subscription.id,
-        event,
-      }, EventFrame)
+      this.sendValidated(
+        ws,
+        {
+          type: 'event',
+          id: subscription.id,
+          event,
+        },
+        EventFrame,
+      )
     }
   }
 

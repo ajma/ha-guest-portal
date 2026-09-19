@@ -42,10 +42,7 @@ describe('HaConnection', () => {
 
   it('send resolves with parsed result payload, not envelope', async () => {
     fake = await FakeHomeAssistant.start()
-    fake.seed(
-      [{ entityId: 'light.test', state: 'off' }],
-      [{ areaId: 'hall', name: 'Hall' }]
-    )
+    fake.seed([{ entityId: 'light.test', state: 'off' }], [{ areaId: 'hall', name: 'Hall' }])
 
     const wsUrl = `${fake.baseUrl.replace('http://', 'ws://')}/api/websocket`
 
@@ -62,10 +59,14 @@ describe('HaConnection', () => {
     await waitFor(() => conn.status === 'ready', 2000)
 
     const { z } = await import('zod')
-    const AreaSchema = z.array(z.object({
-      area_id: z.string(),
-      name: z.string(),
-    }).passthrough())
+    const AreaSchema = z.array(
+      z
+        .object({
+          area_id: z.string(),
+          name: z.string(),
+        })
+        .passthrough(),
+    )
 
     const areas = await conn.send({ type: 'config/area_registry/list' }, AreaSchema)
 
@@ -94,19 +95,14 @@ describe('HaConnection', () => {
     const { z } = await import('zod')
 
     // Send unknown command that will return error
-    await expect(
-      conn.send({ type: 'unknown_command_xyz' }, z.unknown())
-    ).rejects.toThrow()
+    await expect(conn.send({ type: 'unknown_command_xyz' }, z.unknown())).rejects.toThrow()
 
     await conn.stop()
   })
 
   it('send rejects when result does not match schema', async () => {
     fake = await FakeHomeAssistant.start()
-    fake.seed(
-      [{ entityId: 'light.test', state: 'off' }],
-      [{ areaId: 'hall', name: 'Hall' }]
-    )
+    fake.seed([{ entityId: 'light.test', state: 'off' }], [{ areaId: 'hall', name: 'Hall' }])
 
     const wsUrl = `${fake.baseUrl.replace('http://', 'ws://')}/api/websocket`
 
@@ -129,9 +125,7 @@ describe('HaConnection', () => {
     })
 
     // Send valid command but with wrong schema expectation
-    await expect(
-      conn.send({ type: 'config/area_registry/list' }, BadSchema)
-    ).rejects.toThrow()
+    await expect(conn.send({ type: 'config/area_registry/list' }, BadSchema)).rejects.toThrow()
 
     await conn.stop()
   })
@@ -215,7 +209,7 @@ describe('HaConnection', () => {
       baseUrl: fake.baseUrl,
       token: fake.token,
       wsUrl,
-      reconnectBaseMs: 50,  // Very short for testing
+      reconnectBaseMs: 50, // Very short for testing
       reconnectMaxMs: 200,
       pingIntervalMs: 5000,
     })
@@ -235,7 +229,7 @@ describe('HaConnection', () => {
     expect(conn.status).toBe('disconnected')
 
     // Should only have tried once (connecting -> disconnected)
-    const connectingCount = statuses.filter(s => s === 'connecting').length
+    const connectingCount = statuses.filter((s) => s === 'connecting').length
     expect(connectingCount).toBe(1)
 
     await conn.stop()
@@ -245,7 +239,7 @@ describe('HaConnection', () => {
     fake = await FakeHomeAssistant.start()
     fake.seed(
       [{ entityId: 'light.living_room', state: 'off' }],
-      [{ areaId: 'living_room', name: 'Living Room' }]
+      [{ areaId: 'living_room', name: 'Living Room' }],
     )
 
     const wsUrl = `${fake.baseUrl.replace('http://', 'ws://')}/api/websocket`
@@ -263,10 +257,7 @@ describe('HaConnection', () => {
     await waitFor(() => conn.status === 'ready', 2000)
 
     const events: unknown[] = []
-    const sub = await conn.subscribe(
-      { type: 'subscribe_entities' },
-      (event) => events.push(event)
-    )
+    const sub = await conn.subscribe({ type: 'subscribe_entities' }, (event) => events.push(event))
 
     // Should get initial snapshot
     await waitFor(() => events.length > 0, 2000)
@@ -315,7 +306,7 @@ describe('HaConnection', () => {
     fake = await FakeHomeAssistant.start()
 
     const conn = new HaConnection({
-      baseUrl: fake.baseUrl,  // http://...
+      baseUrl: fake.baseUrl, // http://...
       token: fake.token,
       // No wsUrl provided - should derive
       reconnectBaseMs: 100,
@@ -336,9 +327,9 @@ describe('HaConnection', () => {
     const explicitWsUrl = `${fake.baseUrl.replace('http://', 'ws://')}/api/websocket`
 
     const conn = new HaConnection({
-      baseUrl: 'http://different-host:8123',  // Different from actual
+      baseUrl: 'http://different-host:8123', // Different from actual
       token: fake.token,
-      wsUrl: explicitWsUrl,  // But explicit URL should be used
+      wsUrl: explicitWsUrl, // But explicit URL should be used
       reconnectBaseMs: 100,
       reconnectMaxMs: 1000,
       pingIntervalMs: 5000,
@@ -354,10 +345,7 @@ describe('HaConnection', () => {
 
   it('subscription survives reconnect', async () => {
     fake = await FakeHomeAssistant.start()
-    fake.seed(
-      [{ entityId: 'light.test', state: 'off' }],
-      []
-    )
+    fake.seed([{ entityId: 'light.test', state: 'off' }], [])
 
     const wsUrl = `${fake.baseUrl.replace('http://', 'ws://')}/api/websocket`
 
@@ -374,10 +362,7 @@ describe('HaConnection', () => {
     await waitFor(() => conn.status === 'ready', 2000)
 
     const events: unknown[] = []
-    await conn.subscribe(
-      { type: 'subscribe_entities' },
-      (event) => events.push(event)
-    )
+    await conn.subscribe({ type: 'subscribe_entities' }, (event) => events.push(event))
 
     // Wait for initial snapshot
     await waitFor(() => events.length > 0, 2000)
@@ -401,10 +386,7 @@ describe('HaConnection', () => {
 
   it('fresh snapshot after reconnect', async () => {
     fake = await FakeHomeAssistant.start()
-    fake.seed(
-      [{ entityId: 'light.test', state: 'off' }],
-      []
-    )
+    fake.seed([{ entityId: 'light.test', state: 'off' }], [])
 
     const wsUrl = `${fake.baseUrl.replace('http://', 'ws://')}/api/websocket`
 
@@ -421,10 +403,7 @@ describe('HaConnection', () => {
     await waitFor(() => conn.status === 'ready', 2000)
 
     const events: unknown[] = []
-    await conn.subscribe(
-      { type: 'subscribe_entities' },
-      (event) => events.push(event)
-    )
+    await conn.subscribe({ type: 'subscribe_entities' }, (event) => events.push(event))
 
     // Wait for initial snapshot
     await waitFor(() => events.length > 0, 2000)
@@ -454,10 +433,7 @@ describe('HaConnection', () => {
 
   it('unsubscribe still works after reconnect', async () => {
     fake = await FakeHomeAssistant.start()
-    fake.seed(
-      [{ entityId: 'light.test', state: 'off' }],
-      []
-    )
+    fake.seed([{ entityId: 'light.test', state: 'off' }], [])
 
     const wsUrl = `${fake.baseUrl.replace('http://', 'ws://')}/api/websocket`
 
@@ -474,10 +450,7 @@ describe('HaConnection', () => {
     await waitFor(() => conn.status === 'ready', 2000)
 
     const events: unknown[] = []
-    const sub = await conn.subscribe(
-      { type: 'subscribe_entities' },
-      (event) => events.push(event)
-    )
+    const sub = await conn.subscribe({ type: 'subscribe_entities' }, (event) => events.push(event))
 
     // Wait for initial snapshot
     await waitFor(() => events.length > 0, 2000)
@@ -534,10 +507,7 @@ describe('HaConnection', () => {
 
   it('no orphaned sockets after multiple reconnects', async () => {
     fake = await FakeHomeAssistant.start()
-    fake.seed(
-      [{ entityId: 'light.test', state: 'off' }],
-      []
-    )
+    fake.seed([{ entityId: 'light.test', state: 'off' }], [])
 
     const wsUrl = `${fake.baseUrl.replace('http://', 'ws://')}/api/websocket`
 
@@ -554,10 +524,7 @@ describe('HaConnection', () => {
     await waitFor(() => conn.status === 'ready', 2000)
 
     const events: unknown[] = []
-    await conn.subscribe(
-      { type: 'subscribe_entities' },
-      (event) => events.push(event)
-    )
+    await conn.subscribe({ type: 'subscribe_entities' }, (event) => events.push(event))
 
     // Wait for initial snapshot
     await waitFor(() => events.length > 0, 2000)

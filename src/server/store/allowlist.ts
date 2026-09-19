@@ -25,9 +25,11 @@ export class AllowlistStore {
   }
 
   list(): AllowlistRow[] {
-    const rows = this.db.prepare(
-      'SELECT entity_id, label, allowed_actions, sort_order FROM exposed_device ORDER BY sort_order, entity_id'
-    ).all()
+    const rows = this.db
+      .prepare(
+        'SELECT entity_id, label, allowed_actions, sort_order FROM exposed_device ORDER BY sort_order, entity_id',
+      )
+      .all()
 
     const result: AllowlistRow[] = []
 
@@ -45,7 +47,9 @@ export class AllowlistStore {
         const jsonParsed = JSON.parse(allowed_actions)
         allowedActions = Array.isArray(jsonParsed) ? jsonParsed : []
       } catch {
-        console.error(`Corrupt allowed_actions JSON for entity ${entity_id}, failing closed with empty actions`)
+        console.error(
+          `Corrupt allowed_actions JSON for entity ${entity_id}, failing closed with empty actions`,
+        )
         allowedActions = []
       }
 
@@ -61,9 +65,9 @@ export class AllowlistStore {
   }
 
   entityIds(): string[] {
-    const rows = this.db.prepare(
-      'SELECT entity_id FROM exposed_device ORDER BY sort_order, entity_id'
-    ).all()
+    const rows = this.db
+      .prepare('SELECT entity_id FROM exposed_device ORDER BY sort_order, entity_id')
+      .all()
 
     const result: string[] = []
 
@@ -98,22 +102,17 @@ export class AllowlistStore {
 
       // Insert new rows
       const insert = this.db.prepare(
-        'INSERT INTO exposed_device (entity_id, label, allowed_actions, sort_order) VALUES (?, ?, ?, ?)'
+        'INSERT INTO exposed_device (entity_id, label, allowed_actions, sort_order) VALUES (?, ?, ?, ?)',
       )
 
       for (const row of rows) {
-        insert.run(
-          row.entityId,
-          row.label,
-          JSON.stringify(row.allowedActions),
-          row.sortOrder
-        )
+        insert.run(row.entityId, row.label, JSON.stringify(row.allowedActions), row.sortOrder)
       }
 
       this.db.exec('COMMIT')
 
       // Fire listeners only after successful commit
-      const entityIds = rows.map(r => r.entityId)
+      const entityIds = rows.map((r) => r.entityId)
       this.notifyListeners(entityIds)
     } catch (error) {
       this.db.exec('ROLLBACK')

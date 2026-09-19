@@ -13,15 +13,15 @@ describe('openDb', () => {
     const db = openDb(':memory:')
 
     // Verify exposed_device table exists
-    const deviceTableCheck = db.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='exposed_device'"
-    ).get()
+    const deviceTableCheck = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='exposed_device'")
+      .get()
     expect(deviceTableCheck).toEqual({ name: 'exposed_device' })
 
     // Verify action_log table exists
-    const logTableCheck = db.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='action_log'"
-    ).get()
+    const logTableCheck = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='action_log'")
+      .get()
     expect(logTableCheck).toEqual({ name: 'action_log' })
   })
 
@@ -32,7 +32,9 @@ describe('openDb', () => {
     try {
       // First open: create tables and insert data
       const db1 = openDb(dbPath)
-      db1.exec("INSERT INTO exposed_device (entity_id, label, allowed_actions, sort_order) VALUES ('light.a', 'A', '[]', 0)")
+      db1.exec(
+        "INSERT INTO exposed_device (entity_id, label, allowed_actions, sort_order) VALUES ('light.a', 'A', '[]', 0)",
+      )
 
       // Second open: should not throw, should not clobber data
       const db2 = openDb(dbPath)
@@ -74,7 +76,12 @@ describe('AllowlistStore', () => {
     })
 
     const rows: AllowlistRow[] = [
-      { entityId: 'light.porch', label: 'Porch Light', allowedActions: ['turn_on', 'turn_off'], sortOrder: 1 },
+      {
+        entityId: 'light.porch',
+        label: 'Porch Light',
+        allowedActions: ['turn_on', 'turn_off'],
+        sortOrder: 1,
+      },
       { entityId: 'switch.fan', label: 'Ceiling Fan', allowedActions: ['toggle'], sortOrder: 2 },
     ]
 
@@ -123,9 +130,7 @@ describe('AllowlistStore', () => {
       events.push(entityIds)
     })
 
-    store.replace([
-      { entityId: 'light.a', label: 'A', allowedActions: ['turn_on'], sortOrder: 1 },
-    ])
+    store.replace([{ entityId: 'light.a', label: 'A', allowedActions: ['turn_on'], sortOrder: 1 }])
 
     store.replace([
       { entityId: 'light.b', label: 'B', allowedActions: ['turn_off'], sortOrder: 1 },
@@ -146,17 +151,13 @@ describe('AllowlistStore', () => {
       events.push(entityIds)
     })
 
-    store.replace([
-      { entityId: 'light.a', label: 'A', allowedActions: ['turn_on'], sortOrder: 1 },
-    ])
+    store.replace([{ entityId: 'light.a', label: 'A', allowedActions: ['turn_on'], sortOrder: 1 }])
 
     expect(events).toHaveLength(1)
 
     unsubscribe()
 
-    store.replace([
-      { entityId: 'light.b', label: 'B', allowedActions: ['turn_off'], sortOrder: 1 },
-    ])
+    store.replace([{ entityId: 'light.b', label: 'B', allowedActions: ['turn_off'], sortOrder: 1 }])
 
     // Should still be 1 because we unsubscribed
     expect(events).toHaveLength(1)
@@ -187,7 +188,7 @@ describe('AllowlistStore', () => {
     store.replace(rows)
 
     const result = store.list()
-    expect(result.map(r => r.entityId)).toEqual(['light.a', 'light.b', 'light.c'])
+    expect(result.map((r) => r.entityId)).toEqual(['light.a', 'light.b', 'light.c'])
   })
 
   it('asMap() returns correct Map<string, readonly string[]>', () => {
@@ -195,7 +196,12 @@ describe('AllowlistStore', () => {
     const store = new AllowlistStore(db)
 
     store.replace([
-      { entityId: 'light.porch', label: 'Porch', allowedActions: ['turn_on', 'turn_off'], sortOrder: 1 },
+      {
+        entityId: 'light.porch',
+        label: 'Porch',
+        allowedActions: ['turn_on', 'turn_off'],
+        sortOrder: 1,
+      },
       { entityId: 'lock.front', label: 'Front Door', allowedActions: ['lock'], sortOrder: 2 },
     ])
 
@@ -210,7 +216,12 @@ describe('AllowlistStore', () => {
     const store = new AllowlistStore(db)
 
     const rows: AllowlistRow[] = [
-      { entityId: 'light.a', label: 'A', allowedActions: ['turn_on', 'turn_off', 'toggle'], sortOrder: 1 },
+      {
+        entityId: 'light.a',
+        label: 'A',
+        allowedActions: ['turn_on', 'turn_off', 'toggle'],
+        sortOrder: 1,
+      },
     ]
 
     store.replace(rows)
@@ -228,11 +239,11 @@ describe('AllowlistStore', () => {
     try {
       // Insert a good row and a corrupt row
       db.prepare(
-        "INSERT INTO exposed_device (entity_id, label, allowed_actions, sort_order) VALUES (?, ?, ?, ?)"
+        'INSERT INTO exposed_device (entity_id, label, allowed_actions, sort_order) VALUES (?, ?, ?, ?)',
       ).run('light.good', 'Good', '["turn_on"]', 1)
 
       db.prepare(
-        "INSERT INTO exposed_device (entity_id, label, allowed_actions, sort_order) VALUES (?, ?, ?, ?)"
+        'INSERT INTO exposed_device (entity_id, label, allowed_actions, sort_order) VALUES (?, ?, ?, ?)',
       ).run('light.corrupt', 'Corrupt', 'not valid json', 2)
 
       const result = store.list()
@@ -257,9 +268,7 @@ describe('AllowlistStore', () => {
       })
 
       // Should have logged an error naming the entity
-      expect(errorSpy).toHaveBeenCalledWith(
-        expect.stringContaining('light.corrupt')
-      )
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('light.corrupt'))
     } finally {
       errorSpy.mockRestore()
     }
@@ -289,9 +298,7 @@ describe('AllowlistStore', () => {
     })
 
     // This should not throw, and both non-throwing listeners should fire
-    store.replace([
-      { entityId: 'light.a', label: 'A', allowedActions: ['turn_on'], sortOrder: 1 },
-    ])
+    store.replace([{ entityId: 'light.a', label: 'A', allowedActions: ['turn_on'], sortOrder: 1 }])
 
     expect(events1).toHaveLength(1)
     expect(events2).toHaveLength(1)
@@ -337,7 +344,7 @@ describe('AuditLog', () => {
     log.record({ ts: 3000, entityId: 'light.c', action: 'toggle', role: 'guest', ok: true })
 
     const entries = log.recent(10)
-    expect(entries.map(e => e.ts)).toEqual([3000, 2000, 1000])
+    expect(entries.map((e) => e.ts)).toEqual([3000, 2000, 1000])
   })
 
   it('recent() respects limit', () => {
