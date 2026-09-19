@@ -49,7 +49,7 @@ const FAILURE_STATUS = {
 } as const satisfies Record<string, ContentfulStatusCode>
 
 export function createRoutes(deps: Deps) {
-  const { cfg, ha, allowlist, audit, settings, sessions, limiter } = deps
+  const { cfg, ha, allowlist, audit, settings, interactions, sessions, limiter } = deps
 
   function portalBlocked(role: Role): boolean {
     return role === 'guest' && !settings.getPortalEnabled()
@@ -101,6 +101,18 @@ export function createRoutes(deps: Deps) {
 
       // Record success
       limiter.recordSuccess(ip)
+
+      // Record guest interaction
+      if (role === 'guest') {
+        interactions.record({
+          ts: Date.now(),
+          kind: 'login',
+          entityId: null,
+          label: null,
+          action: null,
+          ok: true,
+        })
+      }
 
       // Create session
       const sessionId = sessions.create(role)
@@ -212,6 +224,18 @@ export function createRoutes(deps: Deps) {
           ok: false,
         })
 
+        // Record guest interaction
+        if (role === 'guest') {
+          interactions.record({
+            ts,
+            kind: 'action',
+            entityId,
+            label: allowlist.list().find((d) => d.entityId === entityId)?.label ?? null,
+            action,
+            ok: false,
+          })
+        }
+
         // not_allowlisted returns 404 to avoid confirming entity existence
         // All other validation failures return 403
         const status = FAILURE_STATUS[validation.reason]
@@ -232,6 +256,18 @@ export function createRoutes(deps: Deps) {
         role,
         ok: result.ok,
       })
+
+      // Record guest interaction
+      if (role === 'guest') {
+        interactions.record({
+          ts,
+          kind: 'action',
+          entityId,
+          label: allowlist.list().find((d) => d.entityId === entityId)?.label ?? null,
+          action,
+          ok: result.ok,
+        })
+      }
 
       if (!result.ok) {
         // Log the detailed error server-side

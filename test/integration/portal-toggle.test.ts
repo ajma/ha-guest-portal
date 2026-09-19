@@ -289,4 +289,75 @@ describe('Portal toggle', () => {
 
     await adminReader.cancel()
   })
+
+  describe('interaction recording', () => {
+    it('records a guest login', async () => {
+      await loginAs('guest-pass-12345678')
+
+      const latest = interactions.latest()
+      expect(latest?.kind).toBe('login')
+      expect(latest?.ok).toBe(true)
+      expect(latest?.entityId).toBeNull()
+    })
+
+    it('does not record an admin login', async () => {
+      await loginAs('admin-pass-87654321')
+      expect(interactions.latest()).toBeNull()
+    })
+
+    it('records a successful guest action with its label', async () => {
+      const { cookie } = await loginAs('guest-pass-12345678')
+
+      await fetch(`${baseUrl}/api/devices/light.porch/turn_on`, {
+        method: 'POST',
+        headers: { cookie },
+      })
+
+      expect(interactions.latest()).toMatchObject({
+        kind: 'action',
+        entityId: 'light.porch',
+        label: 'Porch',
+        action: 'turn_on',
+        ok: true,
+      })
+    })
+
+    it('records a rejected guest action', async () => {
+      const { cookie } = await loginAs('guest-pass-12345678')
+
+      await fetch(`${baseUrl}/api/devices/light.not_allowlisted/turn_on`, {
+        method: 'POST',
+        headers: { cookie },
+      })
+
+      expect(interactions.latest()).toMatchObject({
+        kind: 'action',
+        entityId: 'light.not_allowlisted',
+        action: 'turn_on',
+        ok: false,
+      })
+    })
+
+    it('leaves label null for an action on an unknown entity', async () => {
+      const { cookie } = await loginAs('guest-pass-12345678')
+
+      await fetch(`${baseUrl}/api/devices/light.not_allowlisted/turn_on`, {
+        method: 'POST',
+        headers: { cookie },
+      })
+
+      expect(interactions.latest()?.label).toBeNull()
+    })
+
+    it('does not record an admin action', async () => {
+      const { cookie } = await loginAs('admin-pass-87654321')
+
+      await fetch(`${baseUrl}/api/devices/light.porch/turn_on`, {
+        method: 'POST',
+        headers: { cookie },
+      })
+
+      expect(interactions.latest()).toBeNull()
+    })
+  })
 })
