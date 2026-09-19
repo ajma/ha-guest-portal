@@ -5,6 +5,7 @@ import type { HaClient } from '../ha/client.js'
 import type { AllowlistStore } from '../store/allowlist.js'
 import type { AuditLog } from '../store/auditlog.js'
 import type { SettingsStore } from '../store/settings.js'
+import type { InteractionStore } from '../store/interactions.js'
 import type { Config } from '../config.js'
 import {
   SESSION_COOKIE,
@@ -24,6 +25,7 @@ export type Deps = {
   allowlist: AllowlistStore
   audit: AuditLog
   settings: SettingsStore
+  interactions: InteractionStore
   sessions: SessionStore
   limiter: LoginRateLimiter
   hub: SseHub

@@ -3,6 +3,7 @@ import { openDb } from './store/db.js'
 import { AllowlistStore } from './store/allowlist.js'
 import { AuditLog } from './store/auditlog.js'
 import { SettingsStore } from './store/settings.js'
+import { InteractionStore } from './store/interactions.js'
 import { SessionStore, LoginRateLimiter } from './http/auth.js'
 import { SseHub } from './http/sse.js'
 import { HaClient } from './ha/client.js'
@@ -19,6 +20,7 @@ async function main() {
   const allowlist = new AllowlistStore(db)
   const audit = new AuditLog(db)
   const settings = new SettingsStore(db)
+  const interactions = new InteractionStore(db)
   const sessions = new SessionStore()
   const limiter = new LoginRateLimiter()
   const hub = new SseHub()
@@ -44,6 +46,7 @@ async function main() {
     allowlist,
     audit,
     settings,
+    interactions,
     sessions,
     limiter,
     hub,

@@ -6,6 +6,7 @@ import { SseHub } from '../../src/server/http/sse.ts'
 import { AllowlistStore } from '../../src/server/store/allowlist.ts'
 import { AuditLog } from '../../src/server/store/auditlog.ts'
 import { SettingsStore } from '../../src/server/store/settings.ts'
+import { InteractionStore } from '../../src/server/store/interactions.ts'
 import { openDb } from '../../src/server/store/db.ts'
 import type { Config } from '../../src/server/config.ts'
 import { createRuntime, type Runtime } from '../../src/server/runtime.ts'
@@ -21,6 +22,7 @@ describe('Admin API routes', () => {
   let allowlist: AllowlistStore
   let audit: AuditLog
   let settings: SettingsStore
+  let interactions: InteractionStore
   let sessions: SessionStore
   let limiter: LoginRateLimiter
   let hub: SseHub
@@ -68,6 +70,7 @@ describe('Admin API routes', () => {
 
     audit = new AuditLog(db)
     settings = new SettingsStore(db)
+    interactions = new InteractionStore(db)
     sessions = new SessionStore()
 
     // Create rate limiter with test-friendly params
@@ -108,6 +111,7 @@ describe('Admin API routes', () => {
       allowlist,
       audit,
       settings,
+      interactions,
       sessions,
       limiter,
       hub,

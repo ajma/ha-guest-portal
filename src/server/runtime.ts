@@ -8,6 +8,7 @@ import type { HaClient } from './ha/client.js'
 import type { AllowlistStore } from './store/allowlist.js'
 import type { AuditLog } from './store/auditlog.js'
 import type { SettingsStore } from './store/settings.js'
+import type { InteractionStore } from './store/interactions.js'
 import { SESSION_COOKIE, type SessionStore, type LoginRateLimiter } from './http/auth.js'
 import type { SseHub } from './http/sse.js'
 import { createApp } from './app.js'
@@ -26,6 +27,7 @@ export type Deps = {
   allowlist: AllowlistStore
   audit: AuditLog
   settings: SettingsStore
+  interactions: InteractionStore
   sessions: SessionStore
   limiter: LoginRateLimiter
   hub: SseHub

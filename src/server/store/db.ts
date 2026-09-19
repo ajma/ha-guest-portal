@@ -25,6 +25,16 @@ CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS guest_interaction (
+  id        INTEGER PRIMARY KEY CHECK (id = 1),
+  ts        INTEGER NOT NULL,
+  kind      TEXT    NOT NULL,
+  entity_id TEXT,
+  label     TEXT,
+  action    TEXT,
+  ok        INTEGER NOT NULL
+);
 `
 
 export function openDb(path: string): DatabaseSync {
