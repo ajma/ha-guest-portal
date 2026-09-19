@@ -1,6 +1,6 @@
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
 import { validateAction } from '../../shared/devices.js'
-import { DevicesResponse, LoginRequest, SessionResponse } from '../../shared/api.js'
+import { DevicesResponse, LoginRequest, SessionResponse, type Role } from '../../shared/api.js'
 import type { HaClient } from '../ha/client.js'
 import type { AllowlistStore } from '../store/allowlist.js'
 import type { AuditLog } from '../store/auditlog.js'
@@ -51,6 +51,10 @@ const FAILURE_STATUS = {
 export function createRoutes(deps: Deps) {
   const { cfg, ha, allowlist, audit, settings, sessions, limiter } = deps
 
+  function portalBlocked(role: Role): boolean {
+    return role === 'guest' && !settings.getPortalEnabled()
+  }
+
   return {
     // POST /api/login
     async login(c: HonoContext) {
@@ -85,6 +89,14 @@ export function createRoutes(deps: Deps) {
         // Record failure
         limiter.recordFailure(ip)
         return c.json({ error: 'Invalid credentials' }, 401)
+      }
+
+      // Portal disabled: block guests, leave admins alone.
+      // Deliberately does NOT call limiter.recordFailure() — the password was
+      // correct, and counting it would let a disabled portal lock out a guest
+      // who keeps retrying, leaving them locked out after re-enabling.
+      if (role === 'guest' && !settings.getPortalEnabled()) {
+        return c.json({ error: 'portal_disabled' }, 403)
       }
 
       // Record success
@@ -154,6 +166,10 @@ export function createRoutes(deps: Deps) {
         return c.json({ error: 'Unauthorized' }, 401)
       }
 
+      if (portalBlocked(role)) {
+        return c.json({ error: 'portal_disabled' }, 403)
+      }
+
       const allowlistRows = allowlist.list()
       const states = ha.getStates()
       const stale = ha.stale
@@ -168,6 +184,10 @@ export function createRoutes(deps: Deps) {
       const role = c.var.role
       if (!role) {
         return c.json({ error: 'Unauthorized' }, 401)
+      }
+
+      if (portalBlocked(role)) {
+        return c.json({ error: 'portal_disabled' }, 403)
       }
 
       const entityId = c.req.param('entityId')

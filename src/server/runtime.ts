@@ -69,7 +69,7 @@ export function checkSession(cookie: string | undefined, sessions: SessionStore)
 }
 
 export function createRuntime(deps: Deps): Runtime {
-  const { ha, allowlist, hub, sessions } = deps
+  const { ha, allowlist, hub, sessions, settings } = deps
 
   // Wire allowlist.onChange → ha.setWatchedEntities → broadcast snapshot
   allowlist.onChange((entityIds) => {
@@ -124,6 +124,20 @@ export function createRuntime(deps: Deps): Runtime {
     hub.broadcast(degraded)
   })
 
+  // Wire settings.onPortalEnabledChange → broadcast + drop guest streams
+  settings.onPortalEnabledChange((enabled) => {
+    const frame: SseFrame = SseFrameSchema.parse({ type: 'portal', enabled })
+    hub.broadcast(frame)
+
+    // Broadcast first, then drop: a guest that receives the frame switches to
+    // the disabled screen immediately. Closing the stream is the fallback —
+    // the client's existing stream-drop recheck hits /api/session and lands on
+    // the same screen even if the frame was missed.
+    if (!enabled) {
+      hub.closeRole('guest')
+    }
+  })
+
   // Create Hono app
   const app = createApp(deps)
 
@@ -150,6 +164,12 @@ export function createRuntime(deps: Deps): Runtime {
       if (!role) {
         res.writeHead(401, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify({ error: 'Unauthorized' }))
+        return
+      }
+
+      if (role === 'guest' && !settings.getPortalEnabled()) {
+        res.writeHead(403, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'portal_disabled' }))
         return
       }
 
