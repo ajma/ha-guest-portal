@@ -43,6 +43,64 @@ The add-on supports two access methods:
 
 No Home Assistant token is needed — the Supervisor provides it automatically. See `DOCS.md` for detailed add-on documentation.
 
+### Home Assistant Integration (optional)
+
+A companion custom integration exposes the portal to Home Assistant as:
+
+- `switch.guest_portal` — turn the guest portal on and off from HA, a dashboard,
+  or an automation
+- `sensor.guest_portal_last_interaction` — a timestamp updated whenever a guest
+  logs in or operates a device
+
+#### Install
+
+Via HACS: add `https://github.com/ajma/ha-guest-portal` as a custom repository
+of type *Integration*, install "Home Assistant Guest Portal", and restart Home
+Assistant.
+
+Manually: copy `custom_components/ha_guest_portal/` into your Home Assistant
+`config/custom_components/` directory and restart.
+
+#### Set up
+
+**Add-on installations:** the add-on announces itself to the Supervisor, so after
+restarting Home Assistant you will find "Home Assistant Guest Portal" waiting
+under Settings → Devices & Services. Click **Configure**. No credentials needed.
+
+**Docker Compose installations:** go to Settings → Devices & Services → Add
+Integration → Home Assistant Guest Portal, and enter the host, port, and the
+integration token shown on the portal's admin page under "Show token".
+
+The integration requires **Python 3.14.2+**, which is satisfied by Home Assistant
+2026.9 and newer.
+
+#### Notification automation
+
+The sensor's attributes describe what happened, using the same shape for both
+kinds of interaction:
+
+```yaml
+automation:
+  - alias: Notify when a guest uses the portal
+    triggers:
+      - trigger: state
+        entity_id: sensor.guest_portal_last_interaction
+    conditions:
+      - condition: template
+        value_template: "{{ state_attr('sensor.guest_portal_last_interaction', 'kind') == 'action' }}"
+    actions:
+      - action: notify.mobile_app_my_phone
+        data:
+          message: >-
+            Guest used {{ state_attr('sensor.guest_portal_last_interaction', 'label') }}
+            ({{ state_attr('sensor.guest_portal_last_interaction', 'action') }})
+```
+
+Attributes: `kind` (`action` or `login`), `target_entity_id`, `label`, `action`,
+and `ok`. The three device attributes are `null` when `kind` is `login`.
+
+Home Assistant learns about an interaction within about 10 seconds.
+
 ### Docker Compose (Recommended)
 
 1. Clone this repository or download the files
@@ -155,6 +213,8 @@ This portal is designed for deployment on a trusted home network behind a router
 
 - **Two shared passwords**: one for guests (device control), one for admins (device selection)
 - **Server-side allowlist**: Only explicitly approved entities and actions are permitted
+- **Kill-switch**: the guest surface can be disabled from the add-on admin page or
+  from Home Assistant, without affecting the admin surface
 - **Token isolation**: The Home Assistant access token never reaches a browser
 - **Network isolation**: Bind to a LAN interface only; no TLS (relies on physical network boundary)
 - **Session cookies**: HttpOnly, SameSite=Lax (no Secure flag — this is plain HTTP on LAN)

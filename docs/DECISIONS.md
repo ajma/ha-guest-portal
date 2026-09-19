@@ -32,6 +32,19 @@ that vanished during the outage have not been reconciled. The portal must never 
 confident value it cannot vouch for — that is the reason this application exists in this
 shape.
 
+**The guest portal's enable flag lives in the add-on's SQLite, not in Home Assistant.**
+The Home Assistant switch is a remote control, not the source of truth. Putting the
+flag in HA would mean the portal's enablement depends on HA being reachable, and a
+removed integration would fail open — the portal would quietly serve guests with no
+way to see that the switch was gone.
+
+**`guest_interaction` holds one row, not a log.** Home Assistant's recorder already
+keeps the state history of the sensor this row feeds, so a second history here would
+be redundant. It is persisted rather than in-memory so the sensor does not blank to
+`unknown` on every add-on restart. `action_log` was left untouched: it is a security
+artifact whose value is its strictness, and login rows have no entity or action, so
+reusing it would mean relaxing its `NOT NULL` columns.
+
 ## Security
 
 **This application is the security boundary.** Home Assistant cannot issue a token scoped
@@ -60,6 +73,23 @@ anyone with Docker daemon access — treat host access as full access.
 **Sessions are in-memory.** A container restart logs everyone out. Accepted and intended;
 it also means the app must return to the login screen when a session disappears, which it
 does via a 401 hook plus a stream-drop recheck.
+
+**The integration authenticates with a dedicated token, not the admin password.**
+The token opens exactly two routes — read status, set enabled — so a leaked Home
+Assistant config entry cannot edit the allowlist or read the audit log. Using the
+admin password instead would have pushed it into the Supervisor's discovery record
+and HA's config entry store, and would have granted the integration full admin.
+
+**The integration routes are served on the LAN-facing port.** The plain Docker
+deployment has no Supervisor network, so there is no internal-only path available.
+A 256-bit bearer secret is a stronger gate than the guest password already served
+on that port. The alternative — add-on-only support — was rejected as it would have
+left the Compose deployment with no integration at all.
+
+**A correct guest password while the portal is disabled returns 403 without
+counting a rate-limit failure.** The password was right. Counting it would let a
+disabled portal lock out a guest who keeps retrying, and leave them locked out
+after re-enabling — a denial of service caused by the kill-switch itself.
 
 ## Deployment
 
@@ -123,3 +153,13 @@ because a native module needs musl prebuilds or a full toolchain in Alpine.
   doubles).
 - A hand-edited non-0/1 `ok` value in `action_log` reads back as `false`. Requires direct
   database tampering and fails in the safe direction.
+- **The disabled portal still confirms a correct guest password.** While the portal is
+  off, `POST /api/login` answers `403 portal_disabled` for the correct guest password but
+  `401` for a wrong one. That is deliberate: the SPA needs the 403 to render the
+  "temporarily unavailable" screen rather than a login failure. The exposure is small —
+  wrong guesses still hit the per-IP rate limiter, and the attacker learns only that a
+  password is valid for a portal they cannot currently use.
+- **Known gap — flipping the kill-switch writes no audit row.** Neither the admin route
+  nor the integration route records who disabled the portal or when. `action_log` covers
+  guest device actions only. This is consistent across both paths so it is not a
+  regression, but "who turned this off?" is currently unanswerable.

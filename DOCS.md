@@ -45,6 +45,20 @@ port: 8080
 
 **No Home Assistant token is needed** — the Supervisor automatically provides it.
 
+## Turning the guest portal on and off
+
+The add-on's admin page (click the add-on in your Home Assistant sidebar) has a
+**Guest Portal** toggle at the top. Turning it off:
+
+- refuses guest logins, even with the correct password
+- blocks guests who are already signed in, and drops their live updates
+- leaves this admin page, and the allowlist, fully usable
+
+Guest sessions are blocked, not destroyed. When you turn the portal back on,
+anyone who kept their tab open returns automatically without signing in again.
+
+The setting survives add-on restarts and updates.
+
 ## Access Methods
 
 The portal supports two ways to access it:
