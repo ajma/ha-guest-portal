@@ -5,7 +5,12 @@ import { DOMAIN_ACTIONS, parseDomain } from '@shared/devices.js'
 import { EntityPicker } from '../components/EntityPicker.js'
 import * as api from '../api.js'
 
-export function Admin(): ReactElement {
+type AdminProps = {
+  onLogout: () => Promise<void>
+}
+
+export function Admin({ onLogout }: AdminProps): ReactElement {
+  const [loggingOut, setLoggingOut] = useState(false)
   const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null)
   const [devices, setDevices] = useState<AllowlistRow[]>([])
   const [orphaned, setOrphaned] = useState<string[]>([])
@@ -84,11 +89,9 @@ export function Admin(): ReactElement {
   }
 
   const handleRemove = (index: number): void => {
-    const newDevices = devices.filter((_, i) => i !== index)
-    // Re-index sortOrder
-    newDevices.forEach((device, i) => {
-      device.sortOrder = i
-    })
+    const newDevices = devices
+      .filter((_, i) => i !== index)
+      .map((device, i) => ({ ...device, sortOrder: i }))
     setDevices(newDevices)
     setSaveStatus('idle')
     setIsDirty(true)
@@ -102,11 +105,8 @@ export function Admin(): ReactElement {
     if (temp && current) {
       newDevices[index - 1] = current
       newDevices[index] = temp
-      // Re-index sortOrder
-      newDevices.forEach((device, i) => {
-        device.sortOrder = i
-      })
-      setDevices(newDevices)
+      // Re-index sortOrder and copy objects
+      setDevices(newDevices.map((device, i) => ({ ...device, sortOrder: i })))
       setSaveStatus('idle')
       setIsDirty(true)
     }
@@ -120,38 +120,33 @@ export function Admin(): ReactElement {
     if (temp && current) {
       newDevices[index + 1] = current
       newDevices[index] = temp
-      // Re-index sortOrder
-      newDevices.forEach((device, i) => {
-        device.sortOrder = i
-      })
-      setDevices(newDevices)
+      // Re-index sortOrder and copy objects
+      setDevices(newDevices.map((device, i) => ({ ...device, sortOrder: i })))
       setSaveStatus('idle')
       setIsDirty(true)
     }
   }
 
   const handleLabelChange = (index: number, newLabel: string): void => {
-    const newDevices = [...devices]
-    const device = newDevices[index]
-    if (device) {
-      device.label = newLabel
-      setDevices(newDevices)
-      setSaveStatus('idle')
-      setIsDirty(true)
-    }
+    const newDevices = devices.map((device, i) =>
+      i === index ? { ...device, label: newLabel } : device,
+    )
+    setDevices(newDevices)
+    setSaveStatus('idle')
+    setIsDirty(true)
   }
 
   const handleActionToggle = (index: number, action: string): void => {
-    const newDevices = [...devices]
-    const device = newDevices[index]
-    if (!device) return
-
-    const hasAction = device.allowedActions.includes(action)
-    if (hasAction) {
-      device.allowedActions = device.allowedActions.filter((a) => a !== action)
-    } else {
-      device.allowedActions = [...device.allowedActions, action]
-    }
+    const newDevices = devices.map((device, i) => {
+      if (i !== index) return device
+      const hasAction = device.allowedActions.includes(action)
+      return {
+        ...device,
+        allowedActions: hasAction
+          ? device.allowedActions.filter((a) => a !== action)
+          : [...device.allowedActions, action],
+      }
+    })
     setDevices(newDevices)
     setSaveStatus('idle')
     setIsDirty(true)
@@ -182,6 +177,11 @@ export function Admin(): ReactElement {
         setSaveMessage('Failed to save allowlist')
       }
     }
+  }
+
+  async function handleLogout(): Promise<void> {
+    setLoggingOut(true)
+    await onLogout()
   }
 
   if (loading) {
@@ -222,7 +222,29 @@ export function Admin(): ReactElement {
   return (
     <div data-testid="admin-screen" style={{ padding: '24px', minHeight: '100vh' }}>
       <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-        <h1 style={{ fontSize: '28px', fontWeight: 700, marginBottom: '24px' }}>Admin Portal</h1>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+          <h1 style={{ fontSize: '28px', fontWeight: 700, margin: 0 }}>Admin Portal</h1>
+          <button
+            type="button"
+            onClick={() => {
+              void handleLogout()
+            }}
+            disabled={loggingOut}
+            style={{
+              padding: '8px 16px',
+              fontSize: '14px',
+              fontWeight: 500,
+              color: '#374151',
+              backgroundColor: 'white',
+              border: '1px solid #d1d5db',
+              borderRadius: '6px',
+              cursor: loggingOut ? 'not-allowed' : 'pointer',
+              opacity: loggingOut ? 0.5 : 1,
+            }}
+          >
+            {loggingOut ? 'Logging out...' : 'Log out'}
+          </button>
+        </div>
 
         <section style={{ marginBottom: '24px' }}>
           <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>Add Entity</h2>

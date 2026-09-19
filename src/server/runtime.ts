@@ -1,8 +1,7 @@
 import type { Server } from 'node:http'
 import { createServer } from 'node:http'
 import { getRequestListener } from '@hono/node-server'
-import { parseDomain } from '../shared/devices.js'
-import type { Device, Role, SseFrame } from '../shared/api.js'
+import type { Role, SseFrame } from '../shared/api.js'
 import { SseFrameSchema } from '../shared/api.js'
 import type { Config } from './config.js'
 import type { HaClient } from './ha/client.js'
@@ -11,6 +10,7 @@ import type { AuditLog } from './store/auditlog.js'
 import { SESSION_COOKIE, type SessionStore, type LoginRateLimiter } from './http/auth.js'
 import type { SseHub } from './http/sse.js'
 import { createApp } from './app.js'
+import { assembleDevices } from './device-assembly.js'
 
 export type Deps = {
   cfg: Config
@@ -55,23 +55,7 @@ export function createRuntime(deps: Deps): Runtime {
         const states = ha.getStates()
         const stale = ha.stale
 
-        const devices: Device[] = allowlistRows.map((row) => {
-          const state = states.get(row.entityId)
-          const domain = parseDomain(row.entityId)
-
-          return {
-            entityId: row.entityId,
-            label: row.label,
-            domain: domain ?? 'unknown',
-            allowedActions: row.allowedActions,
-            sortOrder: row.sortOrder,
-            state: {
-              state: state?.state ?? 'unavailable',
-              attributes: state?.attributes ?? {},
-              stale,
-            },
-          }
-        })
+        const devices = assembleDevices(allowlistRows, states, stale)
 
         const snapshot: SseFrame = SseFrameSchema.parse({
           type: 'snapshot',
@@ -92,25 +76,10 @@ export function createRuntime(deps: Deps): Runtime {
     const stale = ha.stale
 
     // Only include changed devices that are in the allowlist
-    const changedDevices: Device[] = allowlistRows
-      .filter((row) => changedStates.has(row.entityId))
-      .map((row) => {
-        const state = changedStates.get(row.entityId)
-        const domain = parseDomain(row.entityId)
-
-        return {
-          entityId: row.entityId,
-          label: row.label,
-          domain: domain ?? 'unknown',
-          allowedActions: row.allowedActions,
-          sortOrder: row.sortOrder,
-          state: {
-            state: state?.state ?? 'unavailable',
-            attributes: state?.attributes ?? {},
-            stale,
-          },
-        }
-      })
+    const allowlistRowsFiltered = allowlistRows.filter((row) =>
+      changedStates.has(row.entityId),
+    )
+    const changedDevices = assembleDevices(allowlistRowsFiltered, changedStates, stale)
 
     if (changedDevices.length > 0) {
       const patch: SseFrame = SseFrameSchema.parse({
@@ -166,23 +135,7 @@ export function createRuntime(deps: Deps): Runtime {
       const states = ha.getStates()
       const stale = ha.stale
 
-      const devices: Device[] = allowlistRows.map((row) => {
-        const state = states.get(row.entityId)
-        const domain = parseDomain(row.entityId)
-
-        return {
-          entityId: row.entityId,
-          label: row.label,
-          domain: domain ?? 'unknown',
-          allowedActions: row.allowedActions,
-          sortOrder: row.sortOrder,
-          state: {
-            state: state?.state ?? 'unavailable',
-            attributes: state?.attributes ?? {},
-            stale,
-          },
-        }
-      })
+      const devices = assembleDevices(allowlistRows, states, stale)
 
       const snapshot: SseFrame = SseFrameSchema.parse({
         type: 'snapshot',
@@ -218,7 +171,7 @@ export function createRuntime(deps: Deps): Runtime {
       await new Promise<void>((resolve) => {
         server.close((err) => {
           // Ignore ERR_SERVER_NOT_RUNNING - server already closed
-          if (err && (err as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') {
+          if (err && 'code' in err && err.code !== 'ERR_SERVER_NOT_RUNNING') {
             console.error('Error closing server:', err)
           }
           resolve()

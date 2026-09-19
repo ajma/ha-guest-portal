@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, type ReactElement } from 'react'
 import type { Role } from '@shared/api.js'
-import { getSession, setUnauthorizedCallback } from './api.js'
+import { getSession, logout, setUnauthorizedCallback } from './api.js'
 import { Admin } from './routes/Admin.js'
 import { Guest } from './routes/Guest.js'
 import { Login } from './routes/Login.js'
@@ -53,6 +53,11 @@ export function App(): ReactElement {
     setRole(newRole)
   }
 
+  async function handleLogout(): Promise<void> {
+    await logout()
+    setRole(null)
+  }
+
   if (role === 'loading') {
     return <div>Loading...</div>
   }
@@ -65,8 +70,8 @@ export function App(): ReactElement {
   const isAdminPath = window.location.pathname === '/admin'
 
   if (isAdminPath && role === 'admin') {
-    return <Admin />
+    return <Admin onLogout={handleLogout} />
   }
 
-  return <Guest />
+  return <Guest onLogout={handleLogout} />
 }

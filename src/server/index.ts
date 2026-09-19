@@ -23,6 +23,7 @@ async function main() {
   const ha = HaClient.create({
     haBaseUrl: cfg.haBaseUrl,
     haToken: cfg.haToken,
+    haWsUrl: cfg.haWsUrl,
   })
 
   // Set initial watched entities

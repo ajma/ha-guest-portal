@@ -7,7 +7,7 @@ export type ConnectionStatus = 'connecting' | 'ready' | 'disconnected'
 export type HaConnectionOptions = {
   baseUrl: string
   token: string
-  wsUrl?: string
+  wsUrl?: string | undefined
   reconnectBaseMs?: number
   reconnectMaxMs?: number
   pingIntervalMs?: number

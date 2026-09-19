@@ -169,9 +169,9 @@ test.describe('Portal E2E', () => {
     // Drop the WebSocket connection
     fake.drop()
 
-    // Within a few seconds, the tile should show 'Unknown' and become disabled
+    // Within a few seconds, the tile should show 'Unknown' but remain enabled
     await expect(tile).toContainText('Unknown', { timeout: 5000 })
-    await expect(tile).toBeDisabled()
+    await expect(tile).not.toBeDisabled()
 
     // Verify the stale tile is NOT painted as the active blue
     const bg = await tile.evaluate((el) => window.getComputedStyle(el).backgroundColor)

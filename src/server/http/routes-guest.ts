@@ -1,6 +1,5 @@
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
-import { parseDomain, validateAction } from '../../shared/devices.js'
-import type { Device } from '../../shared/api.js'
+import { validateAction } from '../../shared/devices.js'
 import { DevicesResponse, LoginRequest, SessionResponse } from '../../shared/api.js'
 import type { HaClient } from '../ha/client.js'
 import type { AllowlistStore } from '../store/allowlist.js'
@@ -16,6 +15,7 @@ import {
 import type { SseHub } from './sse.js'
 import type { Env } from '../app.js'
 import type { Context } from 'hono'
+import { assembleDevices } from '../device-assembly.js'
 
 export type Deps = {
   cfg: Config
@@ -30,13 +30,9 @@ export type Deps = {
 type HonoContext = Context<Env>
 
 // Helper to extract client IP from request
-// Cannot use c.env.incoming here because routes-guest is framework-agnostic
-// So we pass the raw IP extraction logic via a closure
-function getClientIp(req: { header: (name: string) => string | undefined }, cfg: Config): string {
-  // In the Hono context, we can't directly access the socket
-  // So we treat the request as coming from 0.0.0.0 and rely on X-Forwarded-For
-  const rawIp = '0.0.0.0'
-  const forwardedFor = req.header('x-forwarded-for')
+function getClientIp(c: HonoContext, cfg: Config): string {
+  const rawIp = c.env.incoming.socket.remoteAddress ?? '0.0.0.0'
+  const forwardedFor = c.req.header('x-forwarded-for')
   const trustProxy = cfg.trustProxy
   return clientIp(rawIp, forwardedFor, trustProxy)
 }
@@ -54,7 +50,7 @@ export function createRoutes(deps: Deps) {
   return {
     // POST /api/login
     async login(c: HonoContext) {
-      const ip = getClientIp(c.req, cfg)
+      const ip = getClientIp(c, cfg)
 
       // Check rate limit
       const rateLimitResult = limiter.check(ip)
@@ -158,23 +154,7 @@ export function createRoutes(deps: Deps) {
       const states = ha.getStates()
       const stale = ha.stale
 
-      const devices: Device[] = allowlistRows.map((row) => {
-        const state = states.get(row.entityId)
-        const domain = parseDomain(row.entityId)
-
-        return {
-          entityId: row.entityId,
-          label: row.label,
-          domain: domain ?? 'unknown',
-          allowedActions: row.allowedActions,
-          sortOrder: row.sortOrder,
-          state: {
-            state: state?.state ?? 'unavailable',
-            attributes: state?.attributes ?? {},
-            stale,
-          },
-        }
-      })
+      const devices = assembleDevices(allowlistRows, states, stale)
 
       return c.json(DevicesResponse.parse({ devices, stale }))
     },
@@ -227,8 +207,10 @@ export function createRoutes(deps: Deps) {
       })
 
       if (!result.ok) {
-        // HA errors are treated as 503 Service Unavailable
-        return c.json({ error: result.message }, 503)
+        // Log the detailed error server-side
+        console.error(`HA action failed for ${entityId}/${action}:`, result.message)
+        // Return a generic error to the client
+        return c.json({ error: 'Service unavailable' }, 503)
       }
 
       return c.json({ ok: true })

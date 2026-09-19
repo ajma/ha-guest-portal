@@ -1,11 +1,13 @@
 import { Hono, type MiddlewareHandler } from 'hono'
 import { serveStatic } from '@hono/node-server/serve-static'
+import type { HttpBindings } from '@hono/node-server'
 import type { Role } from '../shared/api.js'
 import { createRoutes, type Deps } from './http/routes-guest.js'
 import { mountAdminRoutes } from './http/routes-admin.js'
 import { checkSession } from './runtime.js'
 
 export type Env = {
+  Bindings: HttpBindings
   Variables: {
     role: Role
   }

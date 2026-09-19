@@ -22,10 +22,13 @@ export class HaClient {
     this.token = token
   }
 
-  static create(cfg: Pick<Config, 'haBaseUrl' | 'haToken'>): HaClient {
+  static create(
+    cfg: Pick<Config, 'haBaseUrl' | 'haToken'> & Partial<Pick<Config, 'haWsUrl'>>,
+  ): HaClient {
     const conn = new HaConnection({
       baseUrl: cfg.haBaseUrl,
       token: cfg.haToken,
+      wsUrl: cfg.haWsUrl,
     })
 
     const cache = new StateCache(conn)

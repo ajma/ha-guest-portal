@@ -103,7 +103,7 @@ describe('Device store', () => {
   })
 
   describe('degraded frame', () => {
-    it('sets stale without discarding devices', () => {
+    it('sets stale on all devices without discarding them', () => {
       const device1 = makeDevice('light.living_room')
       const device2 = makeDevice('light.bedroom')
 
@@ -122,7 +122,11 @@ describe('Device store', () => {
       })
 
       const snapshotAfter = getSnapshot()
-      expect(snapshotAfter.devices).toEqual([device1, device2])
+      // Devices should have stale flag updated
+      expect(snapshotAfter.devices).toEqual([
+        { ...device1, state: { ...device1.state, stale: true } },
+        { ...device2, state: { ...device2.state, stale: true } },
+      ])
       expect(snapshotAfter.stale).toBe(true)
     })
   })

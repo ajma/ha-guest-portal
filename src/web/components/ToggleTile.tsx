@@ -44,7 +44,7 @@ export function ToggleTile({ device, disabled }: ToggleTileProps): ReactElement 
   // Use optimistic state if present, otherwise use actual state
   const displayState = optimisticState ?? device.state.state
   const isOn = displayState === 'on'
-  const isStale = device.state.stale || disabled
+  const isStale = device.state.stale
 
   // Determine which action to use based on allowedActions
   const canTurnOn = device.allowedActions.includes('turn_on')
@@ -60,7 +60,7 @@ export function ToggleTile({ device, disabled }: ToggleTileProps): ReactElement 
   }
 
   async function handleClick(): Promise<void> {
-    if (pending || isStale) return
+    if (pending || disabled) return
 
     setError(null)
     const targetState = isOn ? 'off' : 'on'
@@ -103,7 +103,7 @@ export function ToggleTile({ device, disabled }: ToggleTileProps): ReactElement 
         onClick={() => {
           void handleClick()
         }}
-        disabled={pending || isStale}
+        disabled={pending || disabled}
         aria-label={device.label}
         aria-describedby={error !== null ? `${device.entityId}-error` : undefined}
         className={`
@@ -111,11 +111,13 @@ export function ToggleTile({ device, disabled }: ToggleTileProps): ReactElement 
           transition-colors duration-150
           disabled:cursor-not-allowed
           ${
-            isStale
+            disabled
               ? 'bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
-              : isOn
-                ? 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-700'
-                : 'bg-gray-200 text-gray-900 hover:bg-gray-300 active:bg-gray-400 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600'
+              : isStale
+                ? 'bg-gray-300 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                : isOn
+                  ? 'bg-blue-500 text-white hover:bg-blue-600 active:bg-blue-700'
+                  : 'bg-gray-200 text-gray-900 hover:bg-gray-300 active:bg-gray-400 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600'
           }
         `}
       >

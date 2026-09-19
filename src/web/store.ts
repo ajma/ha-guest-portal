@@ -77,9 +77,17 @@ export function applyFrame(frame: SseFrame): void {
     }
     notifySubscribers()
   } else if (validFrame.type === 'degraded') {
-    // Set stale without discarding devices
+    // Set stale on all devices
+    const updatedDevices = snapshot.devices.map((device) => ({
+      ...device,
+      state: {
+        ...device.state,
+        stale: validFrame.stale,
+      },
+    }))
+
     snapshot = {
-      devices: snapshot.devices,
+      devices: updatedDevices,
       stale: validFrame.stale,
       connected: snapshot.connected,
     }

@@ -308,6 +308,10 @@ describe('HaClient', () => {
     it('onStaleChange fires and unsubscribe works', async () => {
       await new Promise((resolve) => setTimeout(resolve, 100))
 
+      // Set watched entities to get a snapshot and clear initial stale state
+      await client.setWatchedEntities(['light.living_room'])
+      await new Promise((resolve) => setTimeout(resolve, 50))
+
       const staleChanges: boolean[] = []
       const unsubscribe = client.onStaleChange((stale) => {
         staleChanges.push(stale)

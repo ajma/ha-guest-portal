@@ -23,7 +23,7 @@ describe('Guest UI', () => {
       const teardownSpy = vi.fn()
       const connectSpy = vi.spyOn(store, 'connectDeviceStore').mockReturnValue(teardownSpy)
 
-      const { unmount } = render(<Guest />)
+      const { unmount } = render(<Guest onLogout={async () => {}} />)
 
       expect(connectSpy).toHaveBeenCalledOnce()
 
@@ -54,7 +54,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /living room light/i })
 
@@ -86,7 +86,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /ceiling fan/i })
       expect(tile.textContent).toMatch(/off/i)
@@ -116,7 +116,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /bedroom light/i })
       expect(tile.textContent).toMatch(/off/i)
@@ -168,7 +168,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /kitchen light/i })
       expect(tile.textContent).toMatch(/off/i)
@@ -211,7 +211,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /hallway light/i })
 
@@ -234,7 +234,7 @@ describe('Guest UI', () => {
       })
     })
 
-    it('disables controls when device is stale', () => {
+    it('shows Unknown but keeps controls enabled when device is stale', () => {
       const device: Device = {
         entityId: 'light.garage',
         label: 'Garage Light',
@@ -251,15 +251,15 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /garage light/i })
 
-      // Should be disabled
-      expect("disabled" in tile ? tile.disabled : false).toBe(true)
+      // Should NOT be disabled
+      expect("disabled" in tile ? tile.disabled : false).toBe(false)
 
-      // Should show stale indicator
-      
+      // Should show Unknown state
+      expect(tile.textContent).toMatch(/unknown/i)
     })
 
     it('disables controls when store is disconnected even if device is not stale', () => {
@@ -279,7 +279,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(false)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /patio light/i })
 
@@ -307,7 +307,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /stale test light/i })
 
@@ -338,7 +338,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /unplugged light/i })
       expect(tile.textContent).toMatch(/off/i)
@@ -393,7 +393,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /timeout test light/i })
 
@@ -437,7 +437,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /toggle only light/i })
       await user.click(tile)
@@ -463,7 +463,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       // Should show no actions message, not a clickable button with the device label
       expect(screen.queryByRole('button', { name: /no actions light/i })).toBeNull()
@@ -490,7 +490,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       
       
@@ -514,7 +514,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [openingDevice], stale: false })
       store.setConnected(true)
 
-      const { rerender } = render(<Guest />)
+      const { rerender } = render(<Guest onLogout={async () => {}} />)
 
       // Should show "opening" state
       expect(screen.getByText('Opening')).toBeDefined()
@@ -531,7 +531,7 @@ describe('Guest UI', () => {
 
       store.applyFrame({ type: 'patch', devices: [openDevice] })
 
-      rerender(<Guest />)
+      rerender(<Guest onLogout={async () => {}} />)
 
       // Should no longer show "opening" state
       expect(screen.queryByText('Opening')).toBeNull()
@@ -556,7 +556,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       
     })
@@ -581,7 +581,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       await user.click(screen.getByRole('button', { name: /open/i }))
       expect(performActionSpy).toHaveBeenCalledWith('cover.shades', 'open_cover')
@@ -612,7 +612,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       expect(screen.queryByRole('button', { name: /^open$/i })).toBeNull()
       expect(screen.queryByRole('button', { name: /stop/i })).toBeNull()
@@ -636,7 +636,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       // Should show Unknown in state display
       const stateTexts = screen.getAllByText('Unknown')
@@ -669,7 +669,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       const lockButton = screen.getByRole('button', { name: /^lock$/i })
       fireEvent.click(lockButton)
@@ -699,7 +699,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       const unlockButton = screen.getByRole('button', { name: /unlock/i })
 
@@ -735,7 +735,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       const unlockButton = screen.getByRole('button', { name: /unlock/i })
 
@@ -772,7 +772,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       const unlockButton = screen.getByRole('button', { name: /unlock/i })
 
@@ -811,10 +811,54 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       expect(screen.queryByRole('button', { name: /^lock$/i })).toBeNull()
 
+    })
+
+    it('renders jammed state correctly', () => {
+      const device: Device = {
+        entityId: 'lock.jammed_lock',
+        label: 'Jammed Lock',
+        domain: 'lock',
+        allowedActions: ['lock', 'unlock'],
+        sortOrder: 0,
+        state: {
+          state: 'jammed',
+          attributes: {},
+          stale: false,
+        },
+      }
+
+      store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
+      store.setConnected(true)
+
+      render(<Guest onLogout={async () => {}} />)
+
+      expect(screen.getByText('Jammed')).toBeDefined()
+    })
+
+    it('renders unavailable state correctly', () => {
+      const device: Device = {
+        entityId: 'lock.unavailable_lock',
+        label: 'Unavailable Lock',
+        domain: 'lock',
+        allowedActions: ['lock', 'unlock'],
+        sortOrder: 0,
+        state: {
+          state: 'unavailable',
+          attributes: {},
+          stale: false,
+        },
+      }
+
+      store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
+      store.setConnected(true)
+
+      render(<Guest onLogout={async () => {}} />)
+
+      expect(screen.getByText('unavailable')).toBeDefined()
     })
 
     it('shows Unknown state instead of actual state when stale', () => {
@@ -834,7 +878,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       // Should NOT show the actual state
       expect(screen.queryByText('Locked')).toBeNull()
@@ -877,12 +921,14 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices, stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
-      const tiles = screen.getAllByRole('button')
-      expect(tiles[0]?.getAttribute('aria-label')).toMatch(/first/i)
-      expect(tiles[1]?.getAttribute('aria-label')).toMatch(/second/i)
-      expect(tiles[2]?.getAttribute('aria-label')).toMatch(/third/i)
+      // Filter out the logout button by checking for aria-label
+      const allButtons = screen.getAllByRole('button')
+      const tiles = allButtons.filter((button) => button.getAttribute('aria-label'))
+      expect(tiles[0]?.getAttribute('aria-label') ?? '').toMatch(/first/i)
+      expect(tiles[1]?.getAttribute('aria-label') ?? '').toMatch(/second/i)
+      expect(tiles[2]?.getAttribute('aria-label') ?? '').toMatch(/third/i)
     })
   })
 
@@ -891,7 +937,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [], stale: false })
       store.setConnected(true)
 
-      render(<Guest />)
+      render(<Guest onLogout={async () => {}} />)
 
       
     })

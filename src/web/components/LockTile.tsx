@@ -17,7 +17,7 @@ export function LockTile({ device, disabled }: LockTileProps): ReactElement {
   const [pending, setPending] = useState(false)
   const [unlockConfirmPending, setUnlockConfirmPending] = useState(false)
 
-  const isStale = device.state.stale || disabled
+  const isStale = device.state.stale
   const currentState = device.state.state
 
   // Determine which actions are allowed
@@ -38,7 +38,7 @@ export function LockTile({ device, disabled }: LockTileProps): ReactElement {
   }, [unlockConfirmPending])
 
   async function handleAction(action: LockAction): Promise<void> {
-    if (pending || isStale) return
+    if (pending || disabled) return
 
     setError(null)
     setPending(true)
@@ -73,12 +73,26 @@ export function LockTile({ device, disabled }: LockTileProps): ReactElement {
     setUnlockConfirmPending(false)
   }
 
+  // Render state text
+  function getStateText(): string {
+    if (isStale) return 'Unknown'
+    if (pending) return 'Updating...'
+    if (currentState === 'locked') return 'Locked'
+    if (currentState === 'unlocked') return 'Unlocked'
+    if (currentState === 'unlocking') return 'Unlocking'
+    if (currentState === 'locking') return 'Locking'
+    if (currentState === 'jammed') return 'Jammed'
+    if (currentState === 'open') return 'Open'
+    if (currentState === 'opening') return 'Opening'
+    return currentState
+  }
+
   return (
     <div className="p-6 border-2 border-orange-500 dark:border-orange-600 rounded-lg bg-white dark:bg-gray-800 shadow-md">
       <div className="mb-4">
         <div className="font-bold text-xl">{device.label}</div>
         <div className="text-base text-gray-700 dark:text-gray-300">
-          {isStale ? 'Unknown' : pending ? 'Updating...' : currentState === 'locked' ? 'Locked' : 'Unlocked'}
+          {getStateText()}
         </div>
       </div>
 
@@ -91,7 +105,7 @@ export function LockTile({ device, disabled }: LockTileProps): ReactElement {
             <button
               type="button"
               onClick={handleUnlockClick}
-              disabled={pending || isStale}
+              disabled={pending || disabled}
               aria-describedby={error !== null ? `${device.entityId}-error` : undefined}
               className="flex-1 py-3 px-4 rounded-lg bg-orange-600 text-white font-semibold hover:bg-orange-700 active:bg-orange-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -100,7 +114,7 @@ export function LockTile({ device, disabled }: LockTileProps): ReactElement {
             <button
               type="button"
               onClick={handleCancelUnlock}
-              disabled={pending || isStale}
+              disabled={pending || disabled}
               className="flex-1 py-3 px-4 rounded-lg bg-gray-500 text-white font-semibold hover:bg-gray-600 active:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Cancel
@@ -113,12 +127,14 @@ export function LockTile({ device, disabled }: LockTileProps): ReactElement {
             <button
               type="button"
               onClick={handleLockClick}
-              disabled={pending || isStale}
+              disabled={pending || disabled}
               aria-describedby={error !== null ? `${device.entityId}-error` : undefined}
               className={`flex-1 py-3 px-4 rounded-lg font-semibold disabled:cursor-not-allowed ${
-                isStale
+                disabled
                   ? 'bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
-                  : 'bg-gray-600 text-white hover:bg-gray-700 active:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-700'
+                  : isStale
+                    ? 'bg-gray-400 text-gray-700 dark:bg-gray-600 dark:text-gray-300'
+                    : 'bg-gray-600 text-white hover:bg-gray-700 active:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-700'
               }`}
             >
               Lock
@@ -129,12 +145,14 @@ export function LockTile({ device, disabled }: LockTileProps): ReactElement {
             <button
               type="button"
               onClick={handleUnlockClick}
-              disabled={pending || isStale}
+              disabled={pending || disabled}
               aria-describedby={error !== null ? `${device.entityId}-error` : undefined}
               className={`flex-1 py-3 px-4 rounded-lg font-semibold disabled:cursor-not-allowed ${
-                isStale
+                disabled
                   ? 'bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
-                  : 'bg-red-600 text-white hover:bg-red-700 active:bg-red-800 dark:bg-red-600 dark:hover:bg-red-700'
+                  : isStale
+                    ? 'bg-red-400 text-red-900 dark:bg-red-900 dark:text-red-200'
+                    : 'bg-red-600 text-white hover:bg-red-700 active:bg-red-800 dark:bg-red-600 dark:hover:bg-red-700'
               }`}
             >
               Unlock

@@ -14,7 +14,7 @@ export function CoverTile({ device, disabled }: CoverTileProps): ReactElement {
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
-  const isStale = device.state.stale || disabled
+  const isStale = device.state.stale
   const currentState = device.state.state
 
   // Determine which actions are allowed
@@ -23,7 +23,7 @@ export function CoverTile({ device, disabled }: CoverTileProps): ReactElement {
   const canStop = device.allowedActions.includes('stop_cover')
 
   async function handleAction(action: CoverAction): Promise<void> {
-    if (pending || isStale) return
+    if (pending || disabled) return
 
     setError(null)
     setPending(true)
@@ -64,12 +64,14 @@ export function CoverTile({ device, disabled }: CoverTileProps): ReactElement {
             onClick={() => {
               void handleAction('open_cover')
             }}
-            disabled={pending || isStale}
+            disabled={pending || disabled}
             aria-describedby={error !== null ? `${device.entityId}-error` : undefined}
             className={`flex-1 py-3 px-4 rounded-lg font-medium disabled:cursor-not-allowed ${
-              isStale
+              disabled
                 ? 'bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
-                : 'bg-gray-600 text-white hover:bg-gray-700 active:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-700'
+                : isStale
+                  ? 'bg-gray-400 text-gray-700 dark:bg-gray-600 dark:text-gray-300'
+                  : 'bg-gray-600 text-white hover:bg-gray-700 active:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-700'
             }`}
           >
             Open
@@ -82,12 +84,14 @@ export function CoverTile({ device, disabled }: CoverTileProps): ReactElement {
             onClick={() => {
               void handleAction('stop_cover')
             }}
-            disabled={pending || isStale}
+            disabled={pending || disabled}
             aria-describedby={error !== null ? `${device.entityId}-error` : undefined}
             className={`flex-1 py-3 px-4 rounded-lg font-medium disabled:cursor-not-allowed ${
-              isStale
+              disabled
                 ? 'bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
-                : 'bg-gray-500 text-white hover:bg-gray-600 active:bg-gray-700'
+                : isStale
+                  ? 'bg-gray-400 text-gray-700 dark:bg-gray-600 dark:text-gray-300'
+                  : 'bg-gray-500 text-white hover:bg-gray-600 active:bg-gray-700'
             }`}
           >
             Stop
@@ -100,12 +104,14 @@ export function CoverTile({ device, disabled }: CoverTileProps): ReactElement {
             onClick={() => {
               void handleAction('close_cover')
             }}
-            disabled={pending || isStale}
+            disabled={pending || disabled}
             aria-describedby={error !== null ? `${device.entityId}-error` : undefined}
             className={`flex-1 py-3 px-4 rounded-lg font-medium disabled:cursor-not-allowed ${
-              isStale
+              disabled
                 ? 'bg-gray-300 text-gray-500 dark:bg-gray-700 dark:text-gray-500'
-                : 'bg-gray-600 text-white hover:bg-gray-700 active:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-700'
+                : isStale
+                  ? 'bg-gray-400 text-gray-700 dark:bg-gray-600 dark:text-gray-300'
+                  : 'bg-gray-600 text-white hover:bg-gray-700 active:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-700'
             }`}
           >
             Close

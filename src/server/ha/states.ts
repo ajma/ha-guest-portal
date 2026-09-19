@@ -17,7 +17,7 @@ export type StateChangeListener = (changed: Map<string, CachedState>) => void
 
 export class StateCache {
   private cache = new Map<string, CachedState>()
-  private stale_ = false
+  private stale_ = true
   private changeListeners = new Set<StateChangeListener>()
   private staleListeners = new Set<(stale: boolean) => void>()
   private conn: HaConnection

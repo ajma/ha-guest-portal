@@ -64,7 +64,7 @@ describe('Admin Screen', () => {
       },
     })
 
-    render(<Admin />)
+    render(<Admin onLogout={async () => {}} />)
 
     await waitFor(() => {
       expect(screen.queryByText(/loading/i)).toBeNull()
@@ -99,7 +99,7 @@ describe('Admin Screen', () => {
       },
     })
 
-    render(<Admin />)
+    render(<Admin onLogout={async () => {}} />)
 
     await waitFor(() => {
       expect(screen.queryByText(/loading/i)).toBeNull()
@@ -136,7 +136,7 @@ describe('Admin Screen', () => {
       },
     })
 
-    render(<Admin />)
+    render(<Admin onLogout={async () => {}} />)
 
     await waitFor(() => {
       expect(screen.queryByText(/loading/i)).toBeNull()
@@ -160,7 +160,7 @@ describe('Admin Screen', () => {
       },
     })
 
-    render(<Admin />)
+    render(<Admin onLogout={async () => {}} />)
 
     await waitFor(() => {
       expect(screen.queryByText(/loading/i)).toBeNull()
@@ -174,7 +174,7 @@ describe('Admin Screen', () => {
     vi.spyOn(api, 'getCatalog').mockResolvedValue({ ok: true, data: mockCatalog })
     vi.spyOn(api, 'getAllowlist').mockResolvedValue({ ok: false, status: 500 })
 
-    render(<Admin />)
+    render(<Admin onLogout={async () => {}} />)
 
     await waitFor(() => {
       expect(screen.getByText(/home assistant.*reach|cannot.*reach/i)).toBeTruthy()
@@ -194,7 +194,7 @@ describe('Admin Screen', () => {
     })
     const putSpy = vi.spyOn(api, 'putAllowlist').mockResolvedValue({ ok: true, data: undefined })
 
-    render(<Admin />)
+    render(<Admin onLogout={async () => {}} />)
 
     await waitFor(() => {
       expect(screen.queryByText(/loading/i)).toBeNull()
@@ -222,7 +222,7 @@ describe('Admin Screen', () => {
     })
     vi.spyOn(api, 'putAllowlist').mockResolvedValue({ ok: false, status: 400 })
 
-    render(<Admin />)
+    render(<Admin onLogout={async () => {}} />)
 
     await waitFor(() => {
       expect(screen.queryByText(/loading/i)).toBeNull()
@@ -248,7 +248,7 @@ describe('Admin Screen', () => {
       },
     })
 
-    render(<Admin />)
+    render(<Admin onLogout={async () => {}} />)
 
     await waitFor(() => {
       expect(screen.queryByText(/loading/i)).toBeNull()
@@ -279,7 +279,7 @@ describe('Admin Screen', () => {
       },
     })
 
-    render(<Admin />)
+    render(<Admin onLogout={async () => {}} />)
 
     await waitFor(() => {
       expect(screen.queryByText(/loading/i)).toBeNull()
@@ -310,7 +310,7 @@ describe('Admin Screen', () => {
         data: { devices: getMockAllowlist(), orphaned: [] },
       })
 
-    render(<Admin />)
+    render(<Admin onLogout={async () => {}} />)
 
     await waitFor(() => {
       expect(screen.getByText(/cannot.*reach.*home assistant/i)).toBeTruthy()
@@ -356,7 +356,7 @@ describe('Admin Screen', () => {
       .spyOn(api, 'putAllowlist')
       .mockResolvedValue({ ok: true, data: undefined })
 
-    render(<Admin />)
+    render(<Admin onLogout={async () => {}} />)
 
     await waitFor(() => {
       expect(screen.queryByText(/loading/i)).toBeNull()
@@ -443,7 +443,7 @@ describe('Admin Screen', () => {
 
     vi.spyOn(api, 'putAllowlist').mockResolvedValue({ ok: true, data: undefined })
 
-    render(<Admin />)
+    render(<Admin onLogout={async () => {}} />)
 
     await waitFor(() => {
       expect(screen.queryByText(/loading/i)).toBeNull()
@@ -474,7 +474,7 @@ describe('Admin Screen', () => {
 
     const addEventListenerSpy = vi.spyOn(window, 'addEventListener')
 
-    render(<Admin />)
+    render(<Admin onLogout={async () => {}} />)
 
     const beforeunloadCalls = addEventListenerSpy.mock.calls.filter(
       (call) => call[0] === 'beforeunload',
@@ -491,7 +491,7 @@ describe('Admin Screen', () => {
       data: { devices: getMockAllowlist(), orphaned: [] },
     })
 
-    render(<Admin />)
+    render(<Admin onLogout={async () => {}} />)
 
     await waitFor(() => {
       expect(screen.queryByText(/loading/i)).toBeNull()
@@ -523,7 +523,7 @@ describe('Admin Screen', () => {
     })
     vi.spyOn(api, 'putAllowlist').mockResolvedValue({ ok: true, data: undefined })
 
-    render(<Admin />)
+    render(<Admin onLogout={async () => {}} />)
 
     await waitFor(() => {
       expect(screen.queryByText(/loading/i)).toBeNull()
