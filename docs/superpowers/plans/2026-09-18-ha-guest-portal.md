@@ -927,6 +927,8 @@ The Admin screen lists current devices with editable labels, per-action checkbox
 
 Second path: `fake.drop()` → the tile shows the stale treatment within a few seconds.
 
+**Third path — boot order.** Start the portal BEFORE the fake Home Assistant is listening, then bring HA up. Assert the portal subscribes and tiles populate without intervention. This is the real cold-start sequence under Docker Compose (portal ready in ~2s, HA in 30-60s) and the unit-level coverage exercises 'not yet started' rather than 'unreachable for a while, then appears'. Only an e2e run covers the genuine article.
+
 This crosses cookie auth, the allowlist check, the REST action, the WS subscription, the compressed-diff application, the SSE fan-out and the React store. Unit tests pass on all seven while the wiring between them is broken.
 
 - [ ] **Step 1: Write the spec file and config.**
