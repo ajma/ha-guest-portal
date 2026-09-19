@@ -14,9 +14,4 @@ export default defineConfig(({ command }) => ({
   build: {
     outDir: 'dist/web',
   },
-  server: {
-    proxy: {
-      '/api': `http://localhost:${process.env.PORT ?? '9123'}`,
-    },
-  },
 }))
