@@ -42,5 +42,11 @@
         "name": "Last interaction"
       }
     }
+  },
+  "issues": {
+    "portal_too_old": {
+      "title": "Guest Portal add-on is out of date",
+      "description": "The Guest Portal add-on reports version {found}, but this integration needs {expected} or newer. Update the add-on from Settings → Add-ons."
+    }
   }
 }
