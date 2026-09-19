@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { describe, expect, it, beforeEach } from 'vitest'
 import type { Device, SseFrame } from '@shared/api.js'
 
 // Store functions to be implemented
@@ -16,7 +16,6 @@ let getSnapshot: () => DeviceStoreSnapshot
 let setConnected: (connected: boolean) => void
 let setPortalEnabled: (enabled: boolean) => void
 let resetStore: () => void
-let useDeviceStore: () => DeviceStoreSnapshot
 
 describe('Device store', () => {
   beforeEach(async () => {
@@ -27,7 +26,6 @@ describe('Device store', () => {
     setConnected = store.setConnected
     setPortalEnabled = store.setPortalEnabled
     resetStore = store.resetStore
-    useDeviceStore = store.useDeviceStore
 
     // Reset state before each test
     resetStore()
