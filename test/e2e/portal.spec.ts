@@ -112,7 +112,13 @@ test.describe('Portal E2E', () => {
         () => {
           const calls = fake.serviceCalls
           return calls.find(
-            (c) => c.domain === 'light' && c.service === 'turn_on' && c.body && typeof c.body === 'object' && 'entity_id' in c.body && c.body.entity_id === 'light.porch',
+            (c) =>
+              c.domain === 'light' &&
+              c.service === 'turn_on' &&
+              c.body &&
+              typeof c.body === 'object' &&
+              'entity_id' in c.body &&
+              c.body.entity_id === 'light.porch',
           )
         },
         { timeout: 2000 },
@@ -158,7 +164,12 @@ test.describe('Portal E2E', () => {
 
     // First,ensure the light is off (reset from previous test's 'on' state)
     // This way the stale tile won't show bright blue
-    if (await tile.getByText('On').isVisible().catch(() => false)) {
+    if (
+      await tile
+        .getByText('On')
+        .isVisible()
+        .catch(() => false)
+    ) {
       fake.setState('light.porch', 'off', { brightness: 0 })
       await expect(tile).toContainText('Off', { timeout: 2000 })
     }
@@ -246,6 +257,60 @@ test.describe('Portal E2E', () => {
       await expect(tile).not.toContainText('Unknown')
     } finally {
       await bootHarness.cleanup()
+    }
+  })
+
+  test('an admin can disable the portal and a guest is blocked, then restored', async ({
+    browser,
+  }) => {
+    const { baseUrl } = harness
+
+    const adminContext = await browser.newContext()
+    const guestContext = await browser.newContext()
+
+    const adminPage = await adminContext.newPage()
+    const guestPage = await guestContext.newPage()
+
+    try {
+      // Step 1: Guest signs in and reaches the device list
+      await guestPage.goto(baseUrl)
+      await guestPage.getByLabel('Password').fill('test-guest-password')
+      await guestPage.getByRole('button', { name: 'Log in' }).click()
+      await expect(guestPage.getByTestId('guest-screen')).toBeVisible()
+
+      // Step 2: Admin signs in and turns the portal off
+      await adminPage.goto(`${baseUrl}/admin`)
+      await adminPage.getByLabel('Password').fill('test-admin-password')
+      await adminPage.getByRole('button', { name: 'Log in' }).click()
+      await expect(adminPage.getByTestId('portal-toggle')).toBeChecked()
+
+      await adminPage.getByTestId('portal-toggle').uncheck()
+      await expect(adminPage.getByTestId('portal-disabled-banner')).toBeVisible()
+
+      // Step 3: The guest's stream is dropped, the client rechecks, and lands on disabled screen
+      // This proves the SSE-drop → session-recheck path works
+      // 5s timeout: fast path is ~800ms, this gives 6× headroom while staying well below
+      // the 15s poll, ensuring the poll cannot satisfy this assertion
+      await expect(guestPage.getByTestId('portal-disabled-screen')).toBeVisible({
+        timeout: 5000,
+      })
+
+      // Step 4: The admin page keeps working while the portal is off
+      await expect(adminPage.getByTestId('admin-screen')).toBeVisible()
+
+      // Step 5: Turning it back on restores the guest without a fresh login
+      await adminPage.getByTestId('portal-toggle').check()
+      await expect(adminPage.getByTestId('portal-disabled-banner')).not.toBeVisible()
+
+      await guestPage.getByTestId('portal-disabled-retry').click()
+      await expect(guestPage.getByTestId('guest-screen')).toBeVisible()
+
+      // Verify the guest is back on the device list, not on the login screen
+      // This proves sessions were blocked, not destroyed
+      await expect(guestPage.getByLabel('Password')).not.toBeVisible()
+    } finally {
+      await adminContext.close()
+      await guestContext.close()
     }
   })
 })
