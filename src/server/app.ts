@@ -2,6 +2,7 @@ import { Hono, type MiddlewareHandler } from 'hono'
 import { serveStatic } from '@hono/node-server/serve-static'
 import type { Role } from '../shared/api.js'
 import { createRoutes, type Deps } from './http/routes-guest.js'
+import { mountAdminRoutes } from './http/routes-admin.js'
 import { checkSession } from './runtime.js'
 
 export type Env = {
@@ -37,6 +38,10 @@ export function createApp(deps: Deps) {
   app.get('/api/devices', requireSession, routes.devices)
   app.post('/api/devices/:entityId/:action', requireSession, routes.callAction)
   // /api/stream is handled in runtime.ts before Hono sees it
+
+  // Admin routes (require session, then role check inside)
+  app.use('/api/admin/*', requireSession)
+  mountAdminRoutes(app, deps)
 
   // Static file serving with SPA fallback
   // Serve built SPA from dist/web
