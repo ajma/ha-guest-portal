@@ -54,8 +54,16 @@ async function main() {
   const shutdown = async () => {
     console.log('Shutting down...')
 
+    // Force exit after 5 seconds if graceful shutdown hangs
+    const forceExit = setTimeout(() => {
+      console.error('Forced shutdown after timeout')
+      process.exit(1)
+    }, 5000)
+    forceExit.unref()
+
     try {
       await runtime.close()
+      clearTimeout(forceExit)
       console.log('Server closed')
       process.exit(0)
     } catch (error) {
@@ -63,13 +71,6 @@ async function main() {
       process.exit(1)
     }
   }
-
-  // Force exit after 5 seconds if graceful shutdown hangs
-  const forceExit = setTimeout(() => {
-    console.error('Forced shutdown after timeout')
-    process.exit(1)
-  }, 5000)
-  forceExit.unref()
 
   process.on('SIGTERM', shutdown)
   process.on('SIGINT', shutdown)

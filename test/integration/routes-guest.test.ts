@@ -7,6 +7,7 @@ import { AllowlistStore } from '../../src/server/store/allowlist.ts'
 import { AuditLog } from '../../src/server/store/auditlog.ts'
 import { openDb } from '../../src/server/store/db.ts'
 import type { Config } from '../../src/server/config.ts'
+import type { SseFrame } from '../../src/shared/api.ts'
 import { createRuntime, type Runtime } from '../../src/server/runtime.ts'
 import { FakeHomeAssistant } from '../fake-ha.ts'
 
@@ -20,7 +21,7 @@ async function openStream(baseUrl: string, cookie: string) {
   const reader = res.body?.getReader()
   if (!reader) throw new Error('no body')
   const dec = new TextDecoder()
-  const frames: Array<Record<string, unknown>> = []
+  const frames: SseFrame[] = []
   const pump = (async () => {
     let buf = ''
     try {
@@ -45,7 +46,7 @@ async function openStream(baseUrl: string, cookie: string) {
 }
 
 async function waitForFrame(
-  frames: Array<Record<string, unknown>>,
+  frames: SseFrame[],
   type: string,
   ms = 5000,
 ): Promise<boolean> {
@@ -478,15 +479,20 @@ describe('Guest API routes', () => {
 
       const snapshot = stream.frames.find((f) => f.type === 'snapshot')
       expect(snapshot).toBeDefined()
+
+      // Type guard narrows to snapshot frame
+      if (snapshot?.type !== 'snapshot') {
+        throw new Error('Expected snapshot frame')
+      }
+
       expect(snapshot).toHaveProperty('devices')
       expect(snapshot).toHaveProperty('stale', false)
 
       // Verify it contains the allowlisted entities
-      const devices = (snapshot as { devices: Array<{ entityId: string }> }).devices
-      expect(devices).toHaveLength(3)
-      expect(devices.map((d) => d.entityId)).toContain('light.porch')
-      expect(devices.map((d) => d.entityId)).toContain('lock.front')
-      expect(devices.map((d) => d.entityId)).toContain('switch.fan')
+      expect(snapshot.devices).toHaveLength(3)
+      expect(snapshot.devices.map((d) => d.entityId)).toContain('light.porch')
+      expect(snapshot.devices.map((d) => d.entityId)).toContain('lock.front')
+      expect(snapshot.devices.map((d) => d.entityId)).toContain('switch.fan')
 
       stream.abort()
       await stream.pump
@@ -559,9 +565,14 @@ describe('Guest API routes', () => {
       const snapshots = stream.frames.filter((f) => f.type === 'snapshot')
       const latest = snapshots[snapshots.length - 1]
       expect(latest).toBeDefined()
-      const devices = (latest as { devices: Array<{ entityId: string }> }).devices
-      expect(devices).toHaveLength(1)
-      expect(devices[0]?.entityId).toBe('light.porch')
+
+      // Type guard narrows to snapshot frame
+      if (latest?.type !== 'snapshot') {
+        throw new Error('Expected snapshot frame')
+      }
+
+      expect(latest.devices).toHaveLength(1)
+      expect(latest.devices[0]?.entityId).toBe('light.porch')
 
       stream.abort()
       await stream.pump

@@ -142,8 +142,14 @@ export function createRuntime(deps: Deps): Runtime {
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
 
+    // Normalize single trailing slash
+    let pathname = url.pathname
+    if (pathname.endsWith('/') && pathname.length > 1) {
+      pathname = pathname.slice(0, -1)
+    }
+
     // Intercept /api/stream before Hono sees it
-    if (url.pathname === '/api/stream' && req.method === 'GET') {
+    if (pathname === '/api/stream' && req.method === 'GET') {
       // Check session using shared helper
       const role = checkSession(req.headers.cookie, sessions)
       if (!role) {
@@ -194,20 +200,28 @@ export function createRuntime(deps: Deps): Runtime {
   })
 
   // Return runtime with close function
+  let closing = false
   return {
     server,
     close: async () => {
+      // Make close() idempotent - return early if already closing
+      if (closing) return
+      closing = true
+
       // Close SSE hub first - ends all streaming connections
       hub.close()
 
       // Stop HA client
       await ha.stop()
 
-      // Close HTTP server
-      await new Promise<void>((resolve, reject) => {
+      // Close HTTP server (ignore ERR_SERVER_NOT_RUNNING on second call)
+      await new Promise<void>((resolve) => {
         server.close((err) => {
-          if (err) reject(err)
-          else resolve()
+          // Ignore ERR_SERVER_NOT_RUNNING - server already closed
+          if (err && (err as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') {
+            console.error('Error closing server:', err)
+          }
+          resolve()
         })
       })
     },
