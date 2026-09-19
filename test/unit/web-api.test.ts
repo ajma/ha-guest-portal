@@ -74,7 +74,7 @@ describe('API client', () => {
       const { login } = await import('../../src/web/api.js')
 
       vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'guest' }), {
+        new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         }),
@@ -105,14 +105,14 @@ describe('API client', () => {
       const { getSession } = await import('../../src/web/api.js')
 
       vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'admin' }), {
+        new Response(JSON.stringify({ role: 'admin', portalEnabled: true }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         }),
       )
 
       const result = await getSession()
-      expect(result).toEqual({ role: 'admin' })
+      expect(result).toEqual({ role: 'admin', portalEnabled: true })
     })
 
     it('omits retryAfter for non-numeric Retry-After header', async () => {

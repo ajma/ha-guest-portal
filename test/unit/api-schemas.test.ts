@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  AdminPortalPutRequest,
+  AdminPortalResponse,
   AllowlistPutRequest,
   AllowlistResponse,
   CatalogResponse,
   DevicesResponse,
+  IntegrationStateResponse,
   LoginRequest,
   SessionResponse,
   type SseFrame,
@@ -24,17 +27,17 @@ describe('LoginRequest', () => {
 
 describe('SessionResponse', () => {
   it('accepts guest role', () => {
-    const result = SessionResponse.safeParse({ role: 'guest' })
+    const result = SessionResponse.safeParse({ role: 'guest', portalEnabled: true })
     expect(result.success).toBe(true)
   })
 
   it('accepts admin role', () => {
-    const result = SessionResponse.safeParse({ role: 'admin' })
+    const result = SessionResponse.safeParse({ role: 'admin', portalEnabled: false })
     expect(result.success).toBe(true)
   })
 
   it('rejects invalid role', () => {
-    const result = SessionResponse.safeParse({ role: 'superuser' })
+    const result = SessionResponse.safeParse({ role: 'superuser', portalEnabled: true })
     expect(result.success).toBe(false)
   })
 })
@@ -321,5 +324,71 @@ describe('SseFrameSchema', () => {
       data: {},
     })
     expect(result.success).toBe(false)
+  })
+})
+
+describe('portal toggle schemas', () => {
+  it('requires portalEnabled on SessionResponse', () => {
+    expect(SessionResponse.safeParse({ role: 'guest' }).success).toBe(false)
+    expect(SessionResponse.parse({ role: 'guest', portalEnabled: false })).toEqual({
+      role: 'guest',
+      portalEnabled: false,
+    })
+  })
+
+  it('accepts a portal SSE frame', () => {
+    expect(SseFrameSchema.parse({ type: 'portal', enabled: false })).toEqual({
+      type: 'portal',
+      enabled: false,
+    })
+  })
+
+  it('rejects a portal frame without enabled', () => {
+    expect(SseFrameSchema.safeParse({ type: 'portal' }).success).toBe(false)
+  })
+
+  it('parses an admin portal response', () => {
+    expect(
+      AdminPortalResponse.parse({
+        enabled: true,
+        integrationToken: 'a'.repeat(64),
+        portalId: '11111111-1111-1111-1111-111111111111',
+      }).enabled,
+    ).toBe(true)
+  })
+
+  it('rejects a non-boolean enabled on the put request', () => {
+    expect(AdminPortalPutRequest.safeParse({ enabled: 'yes' }).success).toBe(false)
+  })
+
+  it('parses an integration state response with a null interaction', () => {
+    const parsed = IntegrationStateResponse.parse({
+      portalId: '11111111-1111-1111-1111-111111111111',
+      enabled: true,
+      haStale: false,
+      deviceCount: 3,
+      version: '0.2.0',
+      lastInteraction: null,
+    })
+    expect(parsed.lastInteraction).toBeNull()
+  })
+
+  it('parses an integration state response with an action interaction', () => {
+    const parsed = IntegrationStateResponse.parse({
+      portalId: '11111111-1111-1111-1111-111111111111',
+      enabled: false,
+      haStale: true,
+      deviceCount: 0,
+      version: '0.2.0',
+      lastInteraction: {
+        ts: 1,
+        kind: 'action',
+        entityId: 'lock.front',
+        label: 'Front Door',
+        action: 'unlock',
+        ok: true,
+      },
+    })
+    expect(parsed.lastInteraction?.kind).toBe('action')
   })
 })

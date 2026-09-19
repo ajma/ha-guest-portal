@@ -49,7 +49,7 @@ const FAILURE_STATUS = {
 } as const satisfies Record<string, ContentfulStatusCode>
 
 export function createRoutes(deps: Deps) {
-  const { cfg, ha, allowlist, audit, sessions, limiter } = deps
+  const { cfg, ha, allowlist, audit, settings, sessions, limiter } = deps
 
   return {
     // POST /api/login
@@ -101,7 +101,7 @@ export function createRoutes(deps: Deps) {
       //            browsers to silently drop the cookie, breaking login
       const cookieValue = `${SESSION_COOKIE}=${sessionId}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`
 
-      return c.json(SessionResponse.parse({ role }), {
+      return c.json(SessionResponse.parse({ role, portalEnabled: settings.getPortalEnabled() }), {
         headers: {
           'Set-Cookie': cookieValue,
         },
@@ -144,7 +144,7 @@ export function createRoutes(deps: Deps) {
         return c.json({ error: 'Unauthorized' }, 401)
       }
 
-      return c.json(SessionResponse.parse({ role }))
+      return c.json(SessionResponse.parse({ role, portalEnabled: settings.getPortalEnabled() }))
     },
 
     // GET /api/devices

@@ -10,9 +10,7 @@ import {
 } from '@shared/api.js'
 
 type ApiSuccess<T> = { ok: true; data: T }
-type ApiError =
-  | { ok: false; status: number; retryAfter: number }
-  | { ok: false; status: number }
+type ApiError = { ok: false; status: number; retryAfter: number } | { ok: false; status: number }
 type ApiResult<T> = ApiSuccess<T> | ApiError
 
 // Module-level unauthorized callback
@@ -58,7 +56,9 @@ async function handleResponse<T>(
   return { ok: true, data: parsed }
 }
 
-export async function login(password: string): Promise<ApiResult<{ role: Role }>> {
+export async function login(
+  password: string,
+): Promise<ApiResult<{ role: Role; portalEnabled: boolean }>> {
   const response = await fetch('/api/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -76,7 +76,7 @@ export async function logout(): Promise<void> {
   })
 }
 
-export async function getSession(): Promise<{ role: Role } | null> {
+export async function getSession(): Promise<{ role: Role; portalEnabled: boolean } | null> {
   const response = await fetch('/api/session', {
     credentials: 'same-origin',
   })

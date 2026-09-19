@@ -12,6 +12,7 @@ export const LoginRequest = z.object({
 
 export const SessionResponse = z.object({
   role: RoleSchema,
+  portalEnabled: z.boolean(),
 })
 
 // Device state and device schemas
@@ -144,9 +145,48 @@ const DegradedFrameSchema = z.object({
   stale: z.boolean(),
 })
 
+const PortalFrameSchema = z.object({
+  type: z.literal('portal'),
+  enabled: z.boolean(),
+})
+
 export type SseFrame = z.infer<typeof SseFrameSchema>
 export const SseFrameSchema = z.discriminatedUnion('type', [
   SnapshotFrameSchema,
   PatchFrameSchema,
   DegradedFrameSchema,
+  PortalFrameSchema,
 ])
+
+// Portal toggle schemas
+export const AdminPortalResponse = z.object({
+  enabled: z.boolean(),
+  integrationToken: z.string(),
+  portalId: z.string(),
+})
+
+export const AdminPortalPutRequest = z.object({
+  enabled: z.boolean(),
+})
+
+const InteractionSchema = z.object({
+  ts: z.number(),
+  kind: z.enum(['action', 'login']),
+  entityId: z.string().nullable(),
+  label: z.string().nullable(),
+  action: z.string().nullable(),
+  ok: z.boolean(),
+})
+
+export const IntegrationStateResponse = z.object({
+  portalId: z.string(),
+  enabled: z.boolean(),
+  haStale: z.boolean(),
+  deviceCount: z.number(),
+  version: z.string(),
+  lastInteraction: InteractionSchema.nullable(),
+})
+
+export const IntegrationEnabledRequest = z.object({
+  enabled: z.boolean(),
+})

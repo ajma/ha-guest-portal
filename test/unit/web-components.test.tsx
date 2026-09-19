@@ -72,7 +72,7 @@ describe('Login component', () => {
     const { Login } = await import('../../src/web/routes/Login.js')
 
     vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ role: 'admin' }), {
+      new Response(JSON.stringify({ role: 'admin', portalEnabled: true }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }),
@@ -130,7 +130,7 @@ describe('App component', () => {
     const { App } = await import('../../src/web/App.js')
 
     vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ role: 'guest' }), {
+      new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }),
@@ -148,7 +148,7 @@ describe('App component', () => {
 
     // Mock session check
     vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ role: 'admin' }), {
+      new Response(JSON.stringify({ role: 'admin', portalEnabled: true }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }),
@@ -188,7 +188,7 @@ describe('App component', () => {
     const { App } = await import('../../src/web/App.js')
 
     vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ role: 'guest' }), {
+      new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       }),
@@ -215,7 +215,7 @@ describe('App component', () => {
 
       // Initial session check succeeds
       vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'guest' }), {
+        new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         }),
@@ -262,7 +262,7 @@ describe('App component', () => {
 
       // Initial session check succeeds
       vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'guest' }), {
+        new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         }),
@@ -315,7 +315,7 @@ describe('App component', () => {
 
       // Initial session check succeeds
       vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'guest' }), {
+        new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         }),
@@ -332,7 +332,7 @@ describe('App component', () => {
 
       // Session check still succeeds
       vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'guest' }), {
+        new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         }),

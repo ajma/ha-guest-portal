@@ -215,7 +215,7 @@ describe('Guest API routes', () => {
       expect(res.status).toBe(200)
 
       const body = await res.json()
-      expect(body).toEqual({ role: 'guest' })
+      expect(body).toEqual({ role: 'guest', portalEnabled: true })
 
       const setCookie = res.headers.get('set-cookie')
       expect(setCookie).toBeTruthy()
@@ -237,7 +237,7 @@ describe('Guest API routes', () => {
       expect(res.status).toBe(200)
 
       const body = await res.json()
-      expect(body).toEqual({ role: 'admin' })
+      expect(body).toEqual({ role: 'admin', portalEnabled: true })
     })
 
     it('login with wrong password returns 401 and records rate-limiter failure', async () => {
@@ -292,7 +292,7 @@ describe('Guest API routes', () => {
 
       expect(sessionRes.status).toBe(200)
       const body = await sessionRes.json()
-      expect(body).toEqual({ role: 'guest' })
+      expect(body).toEqual({ role: 'guest', portalEnabled: true })
     })
 
     it('POST /api/logout destroys session', async () => {
