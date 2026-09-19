@@ -252,6 +252,7 @@ describe('App component', () => {
         devices: [],
         stale: false,
         connected: mockConnected,
+        portalEnabled: true,
       }))
 
       // Override useDeviceStore to use our mock
@@ -306,6 +307,7 @@ describe('App component', () => {
         devices: [],
         stale: false,
         connected: mockConnected,
+        portalEnabled: true,
       }))
 
       vi.spyOn(storeModule, 'useDeviceStore').mockImplementation(() => mockGetSnapshot())

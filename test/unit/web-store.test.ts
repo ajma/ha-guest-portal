@@ -6,6 +6,7 @@ type DeviceStoreSnapshot = {
   devices: Device[]
   stale: boolean
   connected: boolean
+  portalEnabled: boolean
 }
 
 // We'll test the internal applyFrame function directly
@@ -13,6 +14,7 @@ type DeviceStoreSnapshot = {
 let applyFrame: (frame: SseFrame) => void
 let getSnapshot: () => DeviceStoreSnapshot
 let setConnected: (connected: boolean) => void
+let setPortalEnabled: (enabled: boolean) => void
 let resetStore: () => void
 
 describe('Device store', () => {
@@ -22,6 +24,7 @@ describe('Device store', () => {
     applyFrame = store.applyFrame
     getSnapshot = store.getSnapshot
     setConnected = store.setConnected
+    setPortalEnabled = store.setPortalEnabled
     resetStore = store.resetStore
 
     // Reset state before each test
@@ -310,6 +313,127 @@ describe('Device store', () => {
         globalThis.EventSource = OriginalEventSource
         resetStore()
       }
+    })
+  })
+
+  describe('portal frame', () => {
+    beforeEach(() => {
+      resetStore()
+    })
+
+    it('defaults portalEnabled to true', () => {
+      expect(getSnapshot().portalEnabled).toBe(true)
+    })
+
+    it('applies a portal frame', () => {
+      applyFrame({ type: 'portal', enabled: false })
+      expect(getSnapshot().portalEnabled).toBe(false)
+    })
+
+    it('leaves devices untouched on a portal frame', () => {
+      applyFrame({
+        type: 'snapshot',
+        stale: false,
+        devices: [
+          {
+            entityId: 'light.porch',
+            label: 'Porch',
+            domain: 'light',
+            allowedActions: ['turn_on'],
+            sortOrder: 0,
+            state: { state: 'off', attributes: {}, stale: false },
+          },
+        ],
+      })
+
+      applyFrame({ type: 'portal', enabled: false })
+
+      expect(getSnapshot().devices).toHaveLength(1)
+    })
+
+    it('setPortalEnabled updates the snapshot', () => {
+      setPortalEnabled(false)
+      expect(getSnapshot().portalEnabled).toBe(false)
+    })
+
+    it('snapshot frame does not clobber portalEnabled', () => {
+      setPortalEnabled(false)
+
+      applyFrame({
+        type: 'snapshot',
+        stale: false,
+        devices: [
+          {
+            entityId: 'light.porch',
+            label: 'Porch',
+            domain: 'light',
+            allowedActions: ['turn_on'],
+            sortOrder: 0,
+            state: { state: 'off', attributes: {}, stale: false },
+          },
+        ],
+      })
+
+      expect(getSnapshot().portalEnabled).toBe(false)
+    })
+
+    it('patch frame does not clobber portalEnabled', () => {
+      // Set up initial state with a device
+      applyFrame({
+        type: 'snapshot',
+        stale: false,
+        devices: [
+          {
+            entityId: 'light.porch',
+            label: 'Porch',
+            domain: 'light',
+            allowedActions: ['turn_on'],
+            sortOrder: 0,
+            state: { state: 'off', attributes: {}, stale: false },
+          },
+        ],
+      })
+
+      setPortalEnabled(false)
+
+      const snapshotAfterInit = getSnapshot()
+      const device = snapshotAfterInit.devices[0]
+      if (!device) throw new Error('device not found')
+
+      const updatedDevice = { ...device, state: { ...device.state, state: 'on' } }
+      applyFrame({
+        type: 'patch',
+        devices: [updatedDevice],
+      })
+
+      expect(getSnapshot().portalEnabled).toBe(false)
+    })
+
+    it('degraded frame does not clobber portalEnabled', () => {
+      // Set up initial state with a device
+      applyFrame({
+        type: 'snapshot',
+        stale: false,
+        devices: [
+          {
+            entityId: 'light.porch',
+            label: 'Porch',
+            domain: 'light',
+            allowedActions: ['turn_on'],
+            sortOrder: 0,
+            state: { state: 'off', attributes: {}, stale: false },
+          },
+        ],
+      })
+
+      setPortalEnabled(false)
+
+      applyFrame({
+        type: 'degraded',
+        stale: true,
+      })
+
+      expect(getSnapshot().portalEnabled).toBe(false)
     })
   })
 })

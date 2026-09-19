@@ -195,4 +195,112 @@ describe('API client', () => {
       setUnauthorizedCallback(null)
     })
   })
+
+  describe('admin portal API', () => {
+    it('fetches portal state', async () => {
+      const { getAdminPortal } = await import('../../src/web/api.js')
+
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            enabled: false,
+            integrationToken: 'a'.repeat(64),
+            portalId: '11111111-1111-1111-1111-111111111111',
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+
+      const result = await getAdminPortal()
+
+      expect(result.ok).toBe(true)
+      if (result.ok) expect(result.data.enabled).toBe(false)
+    })
+
+    it('reports a failed portal fetch', async () => {
+      const { getAdminPortal } = await import('../../src/web/api.js')
+
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+
+      const result = await getAdminPortal()
+
+      expect(result.ok).toBe(false)
+    })
+
+    it('puts a new enabled value', async () => {
+      const { putAdminPortal } = await import('../../src/web/api.js')
+
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ enabled: false }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+
+      const result = await putAdminPortal(false)
+
+      expect(result.ok).toBe(true)
+    })
+
+    it('reports a failed put', async () => {
+      const { putAdminPortal } = await import('../../src/web/api.js')
+
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'boom' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+
+      const result = await putAdminPortal(false)
+
+      expect(result.ok).toBe(false)
+    })
+
+    it('calls unauthorized callback on 401', async () => {
+      const { putAdminPortal, setUnauthorizedCallback } = await import('../../src/web/api.js')
+
+      const callback = vi.fn()
+      setUnauthorizedCallback(callback)
+
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+
+      await putAdminPortal(false)
+      expect(callback).toHaveBeenCalledOnce()
+
+      setUnauthorizedCallback(null)
+    })
+
+    it('does not call unauthorized callback on non-401 errors', async () => {
+      const { putAdminPortal, setUnauthorizedCallback } = await import('../../src/web/api.js')
+
+      const callback = vi.fn()
+      setUnauthorizedCallback(callback)
+
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: 'Internal Server Error' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+
+      await putAdminPortal(false)
+      expect(callback).not.toHaveBeenCalled()
+
+      setUnauthorizedCallback(null)
+    })
+  })
 })

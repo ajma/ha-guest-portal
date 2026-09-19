@@ -6,6 +6,7 @@ export type DeviceStoreSnapshot = {
   devices: Device[]
   stale: boolean
   connected: boolean
+  portalEnabled: boolean
 }
 
 // Internal state
@@ -13,6 +14,7 @@ let snapshot: DeviceStoreSnapshot = {
   devices: [],
   stale: false,
   connected: false,
+  portalEnabled: true,
 }
 
 const subscribers = new Set<() => void>()
@@ -27,6 +29,7 @@ export function resetStore(): void {
     devices: [],
     stale: false,
     connected: false,
+    portalEnabled: true,
   }
   subscribers.clear()
   if (eventSource !== null) {
@@ -59,6 +62,7 @@ export function applyFrame(frame: SseFrame): void {
       devices: validFrame.devices,
       stale: validFrame.stale,
       connected: snapshot.connected,
+      portalEnabled: snapshot.portalEnabled,
     }
     notifySubscribers()
   } else if (validFrame.type === 'patch') {
@@ -74,6 +78,7 @@ export function applyFrame(frame: SseFrame): void {
       devices: updatedDevices,
       stale: snapshot.stale,
       connected: snapshot.connected,
+      portalEnabled: snapshot.portalEnabled,
     }
     notifySubscribers()
   } else if (validFrame.type === 'degraded') {
@@ -90,6 +95,13 @@ export function applyFrame(frame: SseFrame): void {
       devices: updatedDevices,
       stale: validFrame.stale,
       connected: snapshot.connected,
+      portalEnabled: snapshot.portalEnabled,
+    }
+    notifySubscribers()
+  } else if (validFrame.type === 'portal') {
+    snapshot = {
+      ...snapshot,
+      portalEnabled: validFrame.enabled,
     }
     notifySubscribers()
   }
@@ -100,6 +112,17 @@ export function setConnected(connected: boolean): void {
   snapshot = {
     ...snapshot,
     connected,
+  }
+  notifySubscribers()
+}
+
+// Exported so App can seed the value from /api/session. Guests have their
+// stream closed when the portal is disabled, so they cannot rely on the
+// 'portal' SSE frame; the session response is their source of truth.
+export function setPortalEnabled(enabled: boolean): void {
+  snapshot = {
+    ...snapshot,
+    portalEnabled: enabled,
   }
   notifySubscribers()
 }

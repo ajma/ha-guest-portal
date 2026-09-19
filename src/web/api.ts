@@ -1,5 +1,6 @@
 import type { z } from 'zod'
 import {
+  AdminPortalResponse,
   type AllowlistRow,
   AllowlistResponse,
   type CatalogEntry,
@@ -149,6 +150,38 @@ export async function putAllowlist(devices: AllowlistRow[]): Promise<ApiResult<v
 
   if (!response.ok) {
     // Call unauthorized callback on 401
+    if (response.status === 401 && unauthorizedCallback !== null) {
+      unauthorizedCallback()
+    }
+
+    return {
+      ok: false,
+      status: response.status,
+    }
+  }
+
+  return { ok: true, data: undefined }
+}
+
+export async function getAdminPortal(): Promise<
+  ApiResult<{ enabled: boolean; integrationToken: string; portalId: string }>
+> {
+  const response = await fetch('/api/admin/portal', {
+    credentials: 'same-origin',
+  })
+
+  return handleResponse(response, AdminPortalResponse)
+}
+
+export async function putAdminPortal(enabled: boolean): Promise<ApiResult<void>> {
+  const response = await fetch('/api/admin/portal', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+    credentials: 'same-origin',
+  })
+
+  if (!response.ok) {
     if (response.status === 401 && unauthorizedCallback !== null) {
       unauthorizedCallback()
     }
