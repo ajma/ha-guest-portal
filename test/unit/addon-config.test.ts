@@ -3,15 +3,21 @@ import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 
 const projectRoot = join(import.meta.dirname, "..", "..");
-const configPath = join(projectRoot, "addon", "config.yaml");
-const runPath = join(projectRoot, "addon", "run.sh");
-const dockerfilePath = join(projectRoot, "addon", "Dockerfile");
+const configPath = join(projectRoot, "config.yaml");
+const runPath = join(projectRoot, "run.sh");
+const dockerfilePath = join(projectRoot, "Dockerfile");
 const packagePath = join(projectRoot, "package.json");
 
 describe("Home Assistant add-on configuration", () => {
-	it("config.yaml exists and is readable", () => {
+	it("config.yaml and Dockerfile are at repository root", () => {
+		// The repository root is the add-on folder - config.yaml and Dockerfile
+		// must be at the root for the Supervisor to recognize and build the add-on
 		const config = readFileSync(configPath, "utf-8");
+		const dockerfile = readFileSync(dockerfilePath, "utf-8");
 		expect(config.length).toBeGreaterThan(0);
+		expect(dockerfile.length).toBeGreaterThan(0);
+		expect(configPath).toBe(join(projectRoot, "config.yaml"));
+		expect(dockerfilePath).toBe(join(projectRoot, "Dockerfile"));
 	});
 
 	it("homeassistant_api is true", () => {
@@ -83,7 +89,7 @@ describe("Home Assistant add-on configuration", () => {
 		expect(script.length).toBeGreaterThan(0);
 	});
 
-	it("run.sh exports all six environment variables", () => {
+	it("run.sh exports all seven environment variables in add-on mode", () => {
 		const script = readFileSync(runPath, "utf-8");
 		expect(script).toMatch(/export\s+HA_BASE_URL/);
 		expect(script).toMatch(/export\s+HA_WS_URL/);
@@ -92,6 +98,7 @@ describe("Home Assistant add-on configuration", () => {
 		expect(script).toMatch(/export\s+ADMIN_PASSWORD/);
 		expect(script).toMatch(/export\s+PORT/);
 		expect(script).toMatch(/export\s+DB_PATH/);
+		expect(script).toMatch(/export\s+INGRESS_PORT/);
 	});
 
 	it("HA_WS_URL points at /core/websocket not /api/websocket", () => {
@@ -116,5 +123,21 @@ describe("Home Assistant add-on configuration", () => {
 		// Match FROM node:24-alpine (not AS builder)
 		const runtimeFromMatch = dockerfile.match(/^FROM node:24-alpine\s*$/m);
 		expect(runtimeFromMatch).toBeTruthy();
+	});
+
+	it("Dockerfile has no USER directive (add-on runs as root, compose sets user)", () => {
+		const dockerfile = readFileSync(dockerfilePath, "utf-8");
+		// The Dockerfile should not contain a USER directive
+		// Add-on runs as root; docker-compose.yml sets user: node for plain Docker
+		expect(dockerfile).not.toMatch(/^USER\s+/m);
+	});
+
+	it("run.sh detects add-on mode via SUPERVISOR_TOKEN, not file presence", () => {
+		const script = readFileSync(runPath, "utf-8");
+		// Mode detection must key on SUPERVISOR_TOKEN (app cannot set environment)
+		// not on /data/options.json presence (app can write /data in plain Docker)
+		expect(script).toMatch(/if\s+\[\s+-n\s+"\$SUPERVISOR_TOKEN"\s+\]/);
+		// Must not use file presence as the mode switch
+		expect(script).not.toMatch(/if\s+\[\s+-f\s+\/data\/options\.json\s+\]/);
 	});
 });

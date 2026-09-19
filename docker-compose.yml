@@ -4,6 +4,7 @@ services:
     image: ha-guest-portal:latest
     container_name: ha-guest-portal
     restart: unless-stopped
+    user: node
 
     # Bind to a specific LAN IP, NOT 0.0.0.0
     # This service has no transport security (plain HTTP, shared passwords).

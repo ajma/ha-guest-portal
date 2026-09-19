@@ -41,7 +41,7 @@ The add-on supports two access methods:
 
 - **Guest access via direct port**: Share the LAN address with guests: `http://homeassistant.local:8080` (or your HA instance IP). Guests log in with the guest password.
 
-No Home Assistant token is needed — the Supervisor provides it automatically. See `addon/DOCS.md` for detailed add-on documentation.
+No Home Assistant token is needed — the Supervisor provides it automatically. See `DOCS.md` for detailed add-on documentation.
 
 ### Docker Compose (Recommended)
 
