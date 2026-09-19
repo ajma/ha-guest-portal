@@ -1,0 +1,27 @@
+services:
+  ha-guest-portal:
+    build: .
+    image: ha-guest-portal:latest
+    container_name: ha-guest-portal
+    restart: unless-stopped
+
+    # Bind to a specific LAN IP, NOT 0.0.0.0
+    # This service has no transport security (plain HTTP, shared passwords).
+    # Binding to a LAN interface prevents it from becoming reachable outside
+    # the network if the router is later misconfigured or port-forwarded.
+    # Replace 192.168.1.10 with your server's actual LAN IP address.
+    ports:
+      - "192.168.1.10:8080:8080"
+
+    volumes:
+      - portal-data:/data
+
+    env_file:
+      - .env
+
+    environment:
+      - PORT=8080
+      - DB_PATH=/data/portal.db
+
+volumes:
+  portal-data:

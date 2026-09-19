@@ -233,5 +233,16 @@ export function createRoutes(deps: Deps) {
 
       return c.json({ ok: true })
     },
+
+    // GET /api/health
+    // Unauthenticated healthcheck for Docker HEALTHCHECK.
+    // Reports process health, not Home Assistant reachability — if HA is
+    // unreachable we return 200 with haStale:true rather than failing, because
+    // restarting the container does not fix HA connectivity and would drop all
+    // guest sessions. The portal can still serve pages and actuate devices over
+    // REST even when the WebSocket is down.
+    async health(c: HonoContext) {
+      return c.json({ ok: true, haStale: ha.stale })
+    },
   }
 }

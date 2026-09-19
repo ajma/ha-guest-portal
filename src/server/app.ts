@@ -32,6 +32,7 @@ export function createApp(deps: Deps) {
   // Auth routes (no session required)
   app.post('/api/login', routes.login)
   app.post('/api/logout', routes.logout)
+  app.get('/api/health', routes.health)
 
   // Session-protected routes
   app.get('/api/session', requireSession, routes.session)

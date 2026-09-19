@@ -604,4 +604,31 @@ describe('Guest API routes', () => {
       expect(text).not.toContain('SPA')
     })
   })
+
+  describe('Health endpoint', () => {
+    it('GET /api/health returns 200 without session and reports haStale', async () => {
+      const res = await fetch(`${baseUrl}/api/health`)
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body).toHaveProperty('ok', true)
+      expect(body).toHaveProperty('haStale')
+      expect(typeof body.haStale).toBe('boolean')
+    })
+
+    it('GET /api/health reports haStale=true when HA connection is dropped', async () => {
+      // Drop the fake HA connection
+      fake.drop()
+
+      // Wait for staleness to propagate
+      await new Promise((resolve) => setTimeout(resolve, 100))
+
+      const res = await fetch(`${baseUrl}/api/health`)
+      expect(res.status).toBe(200)
+
+      const body = await res.json()
+      expect(body.ok).toBe(true)
+      expect(body.haStale).toBe(true)
+    })
+  })
 })
