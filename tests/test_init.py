@@ -72,10 +72,6 @@ async def test_setup_entry_retries_when_the_portal_is_unreachable(
     assert entry.state is ConfigEntryState.SETUP_RETRY
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Reauth flow arrives in Task 17; the stub config flow has no async_step_reauth",
-)
 async def test_setup_entry_starts_reauth_on_a_rejected_token(
     hass: HomeAssistant, entry: MockConfigEntry
 ):

@@ -28,6 +28,7 @@
     },
     "abort": {
       "already_configured": "This Guest Portal is already set up.",
+      "cannot_connect": "Could not reach the Guest Portal at that address.",
       "reauth_successful": "Reconnected to the Guest Portal."
     }
   },
