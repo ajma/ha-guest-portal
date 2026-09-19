@@ -1,15 +1,16 @@
-import { useEffect, useState, useRef, type ReactElement } from 'react'
+import { useCallback, useEffect, useState, useRef, type ReactElement } from 'react'
 import type { Role } from '@shared/api.js'
 import { getSession, logout, setUnauthorizedCallback } from './api.js'
 import { Admin } from './routes/Admin.js'
 import { Guest } from './routes/Guest.js'
 import { Login } from './routes/Login.js'
-import { useDeviceStore } from './store.js'
+import { PortalDisabled } from './routes/PortalDisabled.js'
+import { setPortalEnabled, useDeviceStore } from './store.js'
 import { appPath } from './path.js'
 
 export function App(): ReactElement {
   const [role, setRole] = useState<Role | null | 'loading'>('loading')
-  const { connected } = useDeviceStore()
+  const { connected, portalEnabled } = useDeviceStore()
   const prevConnectedRef = useRef<boolean>(false)
 
   // Register unauthorized callback on mount
@@ -28,6 +29,9 @@ export function App(): ReactElement {
     async function checkSession(): Promise<void> {
       const session = await getSession()
       setRole(session?.role ?? null)
+      if (session !== null) {
+        setPortalEnabled(session.portalEnabled)
+      }
     }
 
     void checkSession()
@@ -43,12 +47,37 @@ export function App(): ReactElement {
         const session = await getSession()
         if (session === null) {
           setRole(null)
+          return
         }
+        setPortalEnabled(session.portalEnabled)
       }
 
       void recheckSession()
     }
   }, [connected, role])
+
+  const recheckPortal = useCallback(async (): Promise<void> => {
+    const session = await getSession()
+    if (session === null) {
+      setRole(null)
+      return
+    }
+    setPortalEnabled(session.portalEnabled)
+  }, [])
+
+  // While a guest is looking at the disabled screen their stream is closed, so
+  // nothing will tell them the portal came back. Poll until it does.
+  useEffect(() => {
+    if (portalEnabled || role !== 'guest') return
+
+    const timer = setInterval(() => {
+      void recheckPortal()
+    }, 15_000)
+
+    return () => {
+      clearInterval(timer)
+    }
+  }, [portalEnabled, role, recheckPortal])
 
   function handleLoginSuccess(newRole: Role): void {
     setRole(newRole)
@@ -65,6 +94,16 @@ export function App(): ReactElement {
 
   if (role === null) {
     return <Login onSuccess={handleLoginSuccess} />
+  }
+
+  if (role === 'guest' && !portalEnabled) {
+    return (
+      <PortalDisabled
+        onRetry={() => {
+          void recheckPortal()
+        }}
+      />
+    )
   }
 
   // Routing logic
