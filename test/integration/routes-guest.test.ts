@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import type { Server } from 'node:http'
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { HaClient } from '../../src/server/ha/client.ts'
 import { type LoginRateLimiter, SESSION_COOKIE, SessionStore } from '../../src/server/http/auth.ts'
 import { SseHub } from '../../src/server/http/sse.ts'
@@ -56,32 +59,17 @@ async function waitForFrame(frames: SseFrame[], type: string, ms = 5000): Promis
   return false
 }
 
-// Several tests below need a known index.html, but the server's static root is
-// the real build output (app.ts: serveStatic({ root: './dist/web' })). Writing
-// a stub straight into it leaves the built SPA clobbered for every later
-// consumer — notably Playwright, which would then screenshot a blank page and
-// still produce a perfectly valid-looking image. Snapshot it and put it back.
-const INDEX = './dist/web/index.html'
+// Several tests below need a known index.html. The static root is configurable
+// precisely so they can have one without touching the real build output: a stub
+// written into dist/web clobbers the built SPA for every later consumer, and
+// Playwright would then screenshot a blank page and still produce a perfectly
+// valid-looking image.
+const WEB_ROOT = mkdtempSync(join(tmpdir(), 'portal-web-'))
+const INDEX = join(WEB_ROOT, 'index.html')
 
 describe('Guest API routes', () => {
-  let savedIndex: string | null = null
-
-  beforeAll(async () => {
-    const { readFileSync } = await import('node:fs')
-    try {
-      savedIndex = readFileSync(INDEX, 'utf-8')
-    } catch {
-      savedIndex = null
-    }
-  })
-
-  afterAll(async () => {
-    const { rmSync, writeFileSync } = await import('node:fs')
-    if (savedIndex === null) {
-      rmSync(INDEX, { force: true })
-    } else {
-      writeFileSync(INDEX, savedIndex)
-    }
+  afterAll(() => {
+    rmSync(WEB_ROOT, { recursive: true, force: true })
   })
 
   let fake: FakeHomeAssistant
@@ -159,6 +147,7 @@ describe('Guest API routes', () => {
       ingressPort: undefined,
       dbPath: ':memory:',
       trustProxy: undefined,
+      webRoot: WEB_ROOT,
     }
 
     // Create HA client
@@ -615,8 +604,6 @@ describe('Guest API routes', () => {
 
   describe('Static file serving', () => {
     it('serves SPA index.html for non-API paths', async () => {
-      const { mkdirSync, writeFileSync } = await import('node:fs')
-      mkdirSync('./dist/web', { recursive: true })
       writeFileSync(INDEX, '<html><body>SPA</body></html>')
 
       const res = await fetch(`${baseUrl}/admin`)
@@ -664,8 +651,6 @@ describe('Guest API routes', () => {
 
   describe('HTML injection', () => {
     async function writeStubIndex(): Promise<void> {
-      const { mkdirSync, writeFileSync } = await import('node:fs')
-      mkdirSync('./dist/web', { recursive: true })
       writeFileSync(
         INDEX,
         '<!DOCTYPE html>\n<html lang="en">\n  <head>\n    <title>t</title>\n  </head>\n  <body></body>\n</html>',

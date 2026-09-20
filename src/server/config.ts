@@ -36,6 +36,15 @@ export type Config = {
   ingressPort: number | undefined
   dbPath: string
   trustProxy: string | undefined
+  /**
+   * Directory the built SPA is served from. Defaults to the build output.
+   *
+   * This exists so tests can point the static root at a scratch directory.
+   * They need a known index.html to assert against, and when the root was
+   * hardcoded the only way to get one was to write into dist/web — which
+   * clobbered the real build for everything downstream, Playwright included.
+   */
+  webRoot?: string
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv): Config {

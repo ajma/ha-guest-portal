@@ -25,10 +25,16 @@ export type Env = {
  *
  * Returns null when index.html is missing (an unbuilt checkout).
  */
+const DEFAULT_WEB_ROOT = './dist/web'
+
+function webRootFor(deps: Deps): string {
+  return deps.cfg.webRoot ?? DEFAULT_WEB_ROOT
+}
+
 function renderIndexHtml(deps: Deps, baseHref: string): string | null {
   let html: string
   try {
-    html = readFileSync('./dist/web/index.html', 'utf-8')
+    html = readFileSync(`${webRootFor(deps)}/index.html`, 'utf-8')
   } catch {
     return null
   }
@@ -122,8 +128,8 @@ export function createApp(deps: Deps) {
   })
 
   // Static file serving with SPA fallback
-  // Serve built SPA from dist/web
-  app.use('/*', serveStatic({ root: './dist/web' }))
+  // Serve built SPA from the configured web root (the build output by default)
+  app.use('/*', serveStatic({ root: webRootFor(deps) }))
 
   // SPA fallback - serve index.html for non-API 404s
   app.use('/*', async (c) => {
