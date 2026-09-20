@@ -102,10 +102,23 @@ export function PortalToggle(): ReactElement {
     setSaving(true)
     setError(null)
 
-    const result = await api.putAdminPortal(next)
+    // No function in src/web/api.ts guards fetch, so an offline browser rejects
+    // here. Unguarded, `setSaving(false)` never runs and the optimistic flip is
+    // never reverted — on a kill switch that is the worst possible failure: the
+    // owner is shown "Disabled — guests are blocked" while the server still has
+    // the portal on and guests are still logging in. The checkbox is also
+    // `disabled={saving}`, so the control would stay dead until reload.
+    let saved = false
+    try {
+      const result = await api.putAdminPortal(next)
+      saved = result.ok
+    } catch {
+      saved = false
+    }
+
     setSaving(false)
 
-    if (!result.ok) {
+    if (!saved) {
       setEnabled(!next)
       setError('Failed to update the portal. Try again.')
     }

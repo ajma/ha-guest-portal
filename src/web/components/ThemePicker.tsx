@@ -84,10 +84,22 @@ export function ThemePicker(): ReactElement {
     setSaving(true)
     setError(null)
 
-    const result = await api.putAdminTheme(id)
+    // No function in src/web/api.ts guards fetch, so an offline browser rejects
+    // here. Unguarded, `setSaving(false)` never runs: the optimistic selection
+    // is never reverted, the `saving` guard above makes the picker permanently
+    // inert until reload, and the rejection escapes unhandled. Same shape as
+    // `PortalTitleField.commit`.
+    let saved = false
+    try {
+      const result = await api.putAdminTheme(id)
+      saved = result.ok
+    } catch {
+      saved = false
+    }
+
     setSaving(false)
 
-    if (!result.ok) {
+    if (!saved) {
       setSelected(previous)
       setError('Failed to change the theme. Try again.')
     }

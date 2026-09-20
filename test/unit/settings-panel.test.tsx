@@ -152,6 +152,57 @@ describe('SettingsPanel', () => {
     expect(field.value).toBe('Guest Portal')
   })
 
+  // The same rejection PortalTitleField already guards against, on the other
+  // two controls. They live here rather than in theme-picker.test.tsx and
+  // portal-toggle-ui.test.tsx so the assertion runs against the real components
+  // as the panel mounts them.
+  it('reverts the theme and stays usable when the network drops', async () => {
+    vi.mocked(api.putAdminTheme).mockRejectedValueOnce(new Error('offline'))
+    render(<SettingsPanel onClose={() => {}} />)
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeTruthy())
+
+    await userEvent.click(screen.getByRole('radio', { name: /tiles/i }))
+
+    await waitFor(() => expect(screen.getByTestId('theme-picker-error')).toBeTruthy())
+    // Unreverted, the owner sees the new theme selected while the server still
+    // serves the old one to guests.
+    expect((screen.getByRole('radio', { name: /classic/i }) as HTMLInputElement).checked).toBe(true)
+
+    // And the picker is not wedged: without the catch, `saving` stays true and
+    // `choose` returns at its own guard forever, so this second pick would
+    // never reach the api at all.
+    await userEvent.click(screen.getByRole('radio', { name: /tiles/i }))
+    await waitFor(() =>
+      expect((screen.getByRole('radio', { name: /tiles/i }) as HTMLInputElement).checked).toBe(
+        true,
+      ),
+    )
+    expect(api.putAdminTheme).toHaveBeenCalledTimes(2)
+  })
+
+  it('reverts the kill switch and stays usable when the network drops', async () => {
+    vi.mocked(api.putAdminPortal).mockRejectedValueOnce(new Error('offline'))
+    render(<SettingsPanel onClose={() => {}} />)
+    await waitFor(() => expect(killSwitch()).toBeTruthy())
+
+    await userEvent.click(killSwitch())
+
+    await waitFor(() => expect(screen.getByTestId('portal-toggle-error')).toBeTruthy())
+    // The worst instance of this bug: unreverted, the owner is told guests are
+    // blocked while the server still has the portal on and guests are still
+    // logging in. `killSwitch()` matches on the 'guests can log in' label, so
+    // finding it at all is the revert.
+    expect(killSwitch().checked).toBe(true)
+    expect(screen.queryByTestId('portal-disabled-banner')).toBeNull()
+    // The checkbox is `disabled={saving}`, so a stuck `saving` is also a dead
+    // kill switch.
+    expect(killSwitch().disabled).toBe(false)
+
+    await userEvent.click(killSwitch())
+    await waitFor(() => expect(screen.getByTestId('portal-disabled-banner')).toBeTruthy())
+    expect(api.putAdminPortal).toHaveBeenCalledTimes(2)
+  })
+
   it('caps the field at the length the server accepts', async () => {
     // Over-long titles are a 400, which would surface as a mysterious failed
     // save; the field refuses the extra characters instead.
