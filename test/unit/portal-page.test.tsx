@@ -476,12 +476,21 @@ describe('Portal page', () => {
     // The page's own chrome (header buttons, the edit-mode banner, the orphan
     // flag) sits inside a themed Shell; a literal here would be visible in
     // every theme but one.
-    const src = readFileSync('src/web/routes/Portal.tsx', 'utf-8')
-    expect(src).not.toMatch(
-      /\b(bg|text|border)-(gray|blue|red|green|yellow|indigo|purple|pink|slate|zinc)-\d{2,3}\b/,
-    )
-    expect(src).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
-    expect(src).not.toMatch(/\b(rgb|rgba|hsl|hsla)\(/)
-    expect(src).not.toMatch(/['"](?:white|black)['"]/)
+    //
+    // EntityPicker is scanned here rather than in `entity-picker.test.tsx`
+    // because this page is what mounts it: it renders inside `pickerBody()` →
+    // `<section style={panel}>`, which sets `color: var(--text)`. A row
+    // hardcoded to `white` therefore put light-grey device names on a white
+    // background in every dark theme — invisible to a test that only asks what
+    // the picker does.
+    for (const path of ['src/web/routes/Portal.tsx', 'src/web/components/EntityPicker.tsx']) {
+      const src = readFileSync(path, 'utf-8')
+      expect(src, path).not.toMatch(
+        /\b(bg|text|border)-(gray|blue|red|green|yellow|indigo|purple|pink|slate|zinc)-\d{2,3}\b/,
+      )
+      expect(src, path).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+      expect(src, path).not.toMatch(/\b(rgb|rgba|hsl|hsla)\(/)
+      expect(src, path).not.toMatch(/['"](?:white|black)['"]/)
+    }
   })
 })

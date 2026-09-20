@@ -1,10 +1,50 @@
 import type { CatalogEntry } from '@shared/api.js'
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from 'react'
 
 interface EntityPickerProps {
   entities: CatalogEntry[]
   exclude: string[]
   onSelect: (entity: CatalogEntry) => void
+}
+
+// Colours, radius and font come from the theme's CSS variables, as with the
+// other owner surfaces. This is not a theme component and adds no slot to
+// `Theme['components']`.
+//
+// The literals this replaced were not merely off-palette, they were unreadable:
+// the picker opens inside the Add-device panel, which sets `color: var(--text)`,
+// so an option row hardcoded to `white` put light-grey device names on white in
+// every dark theme.
+const searchInput: CSSProperties = {
+  padding: '8px',
+  fontSize: '14px',
+  fontFamily: 'inherit',
+  color: 'var(--text)',
+  backgroundColor: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--tileRadius)',
+  width: '100%',
+}
+
+const listbox: CSSProperties = {
+  margin: '4px 0 0 0',
+  padding: 0,
+  color: 'var(--text)',
+  backgroundColor: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--tileRadius)',
+  maxHeight: '300px',
+  overflow: 'auto',
+}
+
+const optionArea: CSSProperties = { fontSize: '12px', color: 'var(--textMuted)', marginTop: '2px' }
+
+const optionId: CSSProperties = { fontSize: '11px', color: 'var(--textMuted)', marginTop: '2px' }
+
+const optionUnsupported: CSSProperties = {
+  fontSize: '11px',
+  color: 'var(--danger)',
+  marginTop: '4px',
 }
 
 export function EntityPicker({ entities, exclude, onSelect }: EntityPickerProps): ReactElement {
@@ -163,29 +203,10 @@ export function EntityPicker({ entities, exclude, onSelect }: EntityPickerProps)
         onChange={handleInputChange}
         onKeyDown={handleKeyDown}
         placeholder="Search entities..."
-        style={{
-          padding: '8px',
-          fontSize: '14px',
-          border: '1px solid #ccc',
-          borderRadius: '4px',
-          width: '100%',
-        }}
+        style={searchInput}
       />
       {isOpen && filtered.length > 0 && (
-        <div
-          id="entity-listbox"
-          role="listbox"
-          ref={listboxRef}
-          style={{
-            margin: '4px 0 0 0',
-            padding: 0,
-            border: '1px solid #ccc',
-            borderRadius: '4px',
-            maxHeight: '300px',
-            overflow: 'auto',
-            backgroundColor: 'white',
-          }}
-        >
+        <div id="entity-listbox" role="listbox" ref={listboxRef} style={listbox}>
           {filtered.map((entity, index) => (
             <div
               key={entity.entityId}
@@ -204,22 +225,17 @@ export function EntityPicker({ entities, exclude, onSelect }: EntityPickerProps)
               style={{
                 padding: '8px 12px',
                 cursor: entity.supported ? 'pointer' : 'not-allowed',
-                backgroundColor: index === activeIndex ? '#e6f2ff' : 'white',
+                // --surfaceActive rather than the accent: this marks which row
+                // the arrow keys are on, not a selection, and an accent fill
+                // would read as "already added".
+                backgroundColor: index === activeIndex ? 'var(--surfaceActive)' : 'var(--surface)',
                 opacity: entity.supported ? 1 : 0.6,
               }}
             >
               <div style={{ fontWeight: 500 }}>{entity.name}</div>
-              <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>
-                {entity.area ?? 'No area'}
-              </div>
-              <div style={{ fontSize: '11px', color: '#999', marginTop: '2px' }}>
-                {entity.entityId}
-              </div>
-              {!entity.supported && (
-                <div style={{ fontSize: '11px', color: '#d9534f', marginTop: '4px' }}>
-                  Device type not supported
-                </div>
-              )}
+              <div style={optionArea}>{entity.area ?? 'No area'}</div>
+              <div style={optionId}>{entity.entityId}</div>
+              {!entity.supported && <div style={optionUnsupported}>Device type not supported</div>}
             </div>
           ))}
         </div>
