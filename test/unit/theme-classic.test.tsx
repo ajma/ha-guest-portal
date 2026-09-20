@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { cleanup, render, screen } from '@testing-library/react'
+import type { ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Device } from '@shared/api.js'
 import type { SupportedDomain } from '@shared/devices.js'
@@ -157,6 +158,209 @@ describe('classic theme', () => {
     expect(screen.getByRole('button', { name: 'Lock' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Unlock' })).toBeTruthy()
     expect(screen.getByText('Locked')).toBeTruthy()
+  })
+
+  it('fills the icon circle with the state colour at 20% and the glyph at full strength', () => {
+    // Home Assistant's ha-tile-icon: a layer of the state colour at opacity
+    // 0.2 behind a glyph in the same colour, undimmed. Kills the previous
+    // design — a solid --accent circle with an --accentText glyph — and any
+    // mutant that drops the fade and paints the pill solid.
+    const ToggleTile = slotOf('ToggleTile')
+    const { container } = render(
+      <ToggleTile
+        device={device('light', { state: { state: 'on', attributes: {}, stale: false } })}
+        disabled={false}
+      />,
+    )
+
+    const layer = container.querySelector('[data-testid="tile-icon-bg"]')
+    expect(layer).not.toBeNull()
+    expect(layer?.getAttribute('style')).toContain('var(--stateLightActive)')
+    expect(layer?.className).toContain('opacity-[0.2]')
+
+    const glyph = container.querySelector('svg')?.parentElement
+    expect(glyph?.getAttribute('style')).toContain('var(--stateLightActive)')
+    // The glyph must not sit inside the faded layer, or it inherits the 20%.
+    expect(layer?.contains(glyph ?? null)).toBe(false)
+  })
+
+  it('colours the icon by domain and state rather than from one accent', () => {
+    // Kills a tile that hardcodes a single token: every pair below would be
+    // identical, and an off light would look the same as an on one.
+    const ToggleTile = slotOf('ToggleTile')
+    const LockTile = slotOf('LockTile')
+    const CoverTile = slotOf('CoverTile')
+
+    function glyphStyle(ui: ReactElement): string {
+      const { container, unmount } = render(ui)
+      const style = container.querySelector('svg')?.parentElement?.getAttribute('style') ?? ''
+      unmount()
+      return style
+    }
+
+    const on = { state: 'on', attributes: {}, stale: false }
+    const off = { state: 'off', attributes: {}, stale: false }
+
+    expect(glyphStyle(<ToggleTile device={device('light', { state: on })} disabled={false} />)) //
+      .toContain('var(--stateLightActive)')
+    expect(glyphStyle(<ToggleTile device={device('light', { state: off })} disabled={false} />)) //
+      .toContain('var(--stateInactive)')
+    expect(glyphStyle(<ToggleTile device={device('fan', { state: on })} disabled={false} />)) //
+      .toContain('var(--stateFanActive)')
+    expect(
+      glyphStyle(
+        <CoverTile
+          device={device('cover', { state: { state: 'open', attributes: {}, stale: false } })}
+          disabled={false}
+        />,
+      ),
+    ).toContain('var(--stateCoverActive)')
+    expect(glyphStyle(<LockTile device={device('lock')} disabled={false} />)) //
+      .toContain('var(--stateLockLocked)')
+  })
+
+  it('greys the icon of a stale device instead of showing its last colour', () => {
+    // A stale light reports Unknown, so painting it amber would assert a state
+    // the portal does not actually know.
+    const ToggleTile = slotOf('ToggleTile')
+    const { container } = render(
+      <ToggleTile
+        device={device('light', { state: { state: 'on', attributes: {}, stale: true } })}
+        disabled={false}
+      />,
+    )
+
+    expect(container.querySelector('svg')?.parentElement?.getAttribute('style')).toContain(
+      'var(--stateInactive)',
+    )
+  })
+
+  it('carries no switch graphic — the row is icon and text only', () => {
+    // Home Assistant's tile card has no switch: the whole tile is the control
+    // and the icon colour carries the state. Kills a re-added decorative
+    // control, which is the single most visible departure from HA's tile.
+    const ToggleTile = slotOf('ToggleTile')
+    render(<ToggleTile device={device('light')} disabled={false} />)
+
+    const row = screen.getByRole('button', { name: 'Thing' })
+    expect(row.children).toHaveLength(2)
+  })
+
+  it('puts the cover controls in a row beneath the info row, filled neutral', () => {
+    // Home Assistant's features slot sits BELOW the icon-and-text row, never
+    // inline to its right, and each control keeps ha-control-button's default
+    // background — the neutral --disabled-color at 20%, not the state colour.
+    // card-feature-styles.ts hands the state colour to the focus ring only.
+    const CoverTile = slotOf('CoverTile')
+    render(
+      <CoverTile
+        device={device('cover', { state: { state: 'open', attributes: {}, stale: false } })}
+        disabled={false}
+      />,
+    )
+
+    const open = screen.getByRole('button', { name: 'Open' })
+    const infoRow = screen.getByText('Thing').parentElement?.parentElement
+    expect(infoRow).not.toBeNull()
+    // Kills the previous layout, where the controls were children of the row.
+    expect(infoRow?.contains(open)).toBe(false)
+
+    const fill = open.querySelector('[data-testid="control-button-bg"]')
+    expect(fill?.getAttribute('style')).toContain('var(--controlNeutral)')
+    // Kills the state-tinted implementation this replaced: an open cover is
+    // purple on its icon, and the control must not pick that up.
+    expect(fill?.getAttribute('style')).not.toContain('var(--stateCoverActive)')
+    expect(fill?.className).toContain('opacity-[0.2]')
+  })
+
+  it('gives the feature buttons the same neutral fill whatever the state is', () => {
+    // The discriminating half of the rule. Asserting "neutral" alone passes for
+    // a stub that hardcodes one colour everywhere AND for an implementation
+    // that still varies but happens to be neutral in the sampled state; this
+    // contrasts two states of the same domain and two different domains.
+    //
+    // The icon circles MUST still differ across the same pair, or the tile
+    // would have lost its state cue altogether rather than moved it.
+    const LockTile = slotOf('LockTile')
+    const CoverTile = slotOf('CoverTile')
+
+    function fillsOf(ui: ReactElement, names: readonly string[]): string[] {
+      const { unmount } = render(ui)
+      const fills = names.map((name) => {
+        const button = screen.getByRole('button', { name })
+        return (
+          button.querySelector('[data-testid="control-button-bg"]')?.getAttribute('style') ?? ''
+        )
+      })
+      unmount()
+      return fills
+    }
+
+    function iconFillOf(ui: ReactElement): string {
+      const { container, unmount } = render(ui)
+      const style =
+        container.querySelector('[data-testid="tile-icon-bg"]')?.getAttribute('style') ?? ''
+      unmount()
+      return style
+    }
+
+    const lockedLock = <LockTile device={device('lock')} disabled={false} />
+    const unlockedLock = (
+      <LockTile
+        device={device('lock', { state: { state: 'unlocked', attributes: {}, stale: false } })}
+        disabled={false}
+      />
+    )
+    const openCover = (
+      <CoverTile
+        device={device('cover', { state: { state: 'open', attributes: {}, stale: false } })}
+        disabled={false}
+      />
+    )
+
+    const locked = fillsOf(lockedLock, ['Lock', 'Unlock'])
+    const unlocked = fillsOf(unlockedLock, ['Lock', 'Unlock'])
+    const cover = fillsOf(openCover, ['Open', 'Close'])
+
+    // Every feature button on every tile carries the one neutral fill.
+    for (const fill of [...locked, ...unlocked, ...cover]) {
+      expect(fill).toContain('var(--controlNeutral)')
+    }
+    // Kills the old per-action tinting: Lock was green and Unlock red.
+    expect(new Set([...locked, ...unlocked, ...cover]).size).toBe(1)
+
+    // ...while the state cue itself survives, on the icon where HA puts it.
+    expect(iconFillOf(lockedLock)).toContain('var(--stateLockLocked)')
+    expect(iconFillOf(unlockedLock)).toContain('var(--stateLockUnlocked)')
+    expect(iconFillOf(lockedLock)).not.toBe(iconFillOf(unlockedLock))
+  })
+
+  it('sizes a feature button the way Home Assistant does', () => {
+    // --feature-height is --ha-space-9 (36px, `h-9`) and the radius is
+    // --ha-border-radius-md (8px). Kills the 40px button this replaced, and a
+    // fill layer that is opaque rather than HA's 20%.
+    const CoverTile = slotOf('CoverTile')
+    render(
+      <CoverTile
+        device={device('cover', { state: { state: 'closed', attributes: {}, stale: false } })}
+        disabled={false}
+      />,
+    )
+
+    const open = screen.getByRole('button', { name: 'Open' })
+    expect(open.className).toContain('h-9')
+    expect(open.className).not.toContain('h-10')
+    expect(open.className).toContain('rounded-[8px]')
+    expect(open.className).toContain('font-medium')
+    expect(open.className).toContain('text-[var(--text)]')
+    expect(
+      open.querySelector('[data-testid="control-button-bg"]')?.className,
+      'the fill must stay at 20% or the label loses contrast',
+    ).toContain('opacity-[0.2]')
+
+    // --control-button-group-spacing: 12px between buttons, i.e. `gap-3`.
+    const row = open.parentElement
+    expect(row?.className).toContain('gap-3')
   })
 
   it('uses no hardcoded colours — every colour comes from a token', () => {

@@ -74,7 +74,7 @@ for (const theme of listThemes()) {
     const stored = await page.request.put(`${baseUrl}/api/admin/theme`, { data: { theme: id } })
     expect(stored.status(), `PUT /api/admin/theme rejected ${id}`).toBe(200)
 
-    await page.setViewportSize({ width: 420, height: 320 })
+    await page.setViewportSize({ width: 420, height: 380 })
     await page.goto(baseUrl)
 
     // Prove the page under the camera is actually the theme being captured.

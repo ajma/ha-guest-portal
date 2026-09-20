@@ -14,11 +14,21 @@ const sampleTokens: ThemeTokens = {
   accentText: 'accentText-value',
   danger: 'danger-value',
   border: 'border-value',
+  controlNeutral: 'controlNeutral-value',
   tileRadius: 'tileRadius-value',
   tileGap: 'tileGap-value',
   tilePadding: 'tilePadding-value',
   fontFamily: 'fontFamily-value',
   shadow: 'shadow-value',
+  stateInactive: 'stateInactive-value',
+  stateLightActive: 'stateLightActive-value',
+  stateSwitchActive: 'stateSwitchActive-value',
+  stateFanActive: 'stateFanActive-value',
+  stateCoverActive: 'stateCoverActive-value',
+  stateLockLocked: 'stateLockLocked-value',
+  stateLockUnlocked: 'stateLockUnlocked-value',
+  stateLockJammed: 'stateLockJammed-value',
+  stateTransitioning: 'stateTransitioning-value',
 }
 
 // Hand-written, not derived from TOKEN_NAMES or tokensToCss, so it cannot pass
@@ -34,11 +44,21 @@ const expectedCss = [
   '  --accentText: accentText-value;',
   '  --danger: danger-value;',
   '  --border: border-value;',
+  '  --controlNeutral: controlNeutral-value;',
   '  --tileRadius: tileRadius-value;',
   '  --tileGap: tileGap-value;',
   '  --tilePadding: tilePadding-value;',
   '  --fontFamily: fontFamily-value;',
   '  --shadow: shadow-value;',
+  '  --stateInactive: stateInactive-value;',
+  '  --stateLightActive: stateLightActive-value;',
+  '  --stateSwitchActive: stateSwitchActive-value;',
+  '  --stateFanActive: stateFanActive-value;',
+  '  --stateCoverActive: stateCoverActive-value;',
+  '  --stateLockLocked: stateLockLocked-value;',
+  '  --stateLockUnlocked: stateLockUnlocked-value;',
+  '  --stateLockJammed: stateLockJammed-value;',
+  '  --stateTransitioning: stateTransitioning-value;',
 ].join('\n')
 
 describe('TOKEN_NAMES', () => {

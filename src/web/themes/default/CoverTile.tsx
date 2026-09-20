@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { CONTROL_NEUTRAL_FILL } from '../stateColor.js'
 import { useCoverDevice } from '../../hooks/useCoverDevice.js'
 import type { TileProps } from '../types.js'
 
@@ -6,12 +7,13 @@ export function CoverTile({ device, disabled }: TileProps): ReactElement {
   const d = useCoverDevice(device, disabled)
 
   const inactive = disabled || d.pending || d.isStale
-  const primaryClass = inactive
+  // Open/Stop/Close are feature buttons, and Home Assistant leaves those
+  // neutral: the cover's purple/orange/grey belongs to the icon, not to the
+  // controls. All three therefore share one fill and differ only by label.
+  const actionClass = inactive
     ? 'bg-[var(--surfaceActive)] text-[var(--textMuted)]'
-    : 'bg-[var(--accent)] text-[var(--accentText)]'
-  const secondaryClass = inactive
-    ? 'bg-[var(--surfaceActive)] text-[var(--textMuted)]'
-    : 'bg-[var(--surfaceActive)] text-[var(--text)]'
+    : 'text-[var(--text)]'
+  const actionStyle = inactive ? undefined : { backgroundColor: CONTROL_NEUTRAL_FILL }
 
   return (
     <div className="p-[var(--tilePadding)] rounded-[var(--tileRadius)] bg-[var(--surface)] border border-[var(--border)]">
@@ -27,7 +29,8 @@ export function CoverTile({ device, disabled }: TileProps): ReactElement {
             onClick={d.open}
             disabled={d.pending || disabled}
             aria-describedby={d.error !== null ? `${device.entityId}-error` : undefined}
-            className={`flex-1 py-3 px-4 rounded-[var(--tileRadius)] font-medium disabled:cursor-not-allowed ${primaryClass}`}
+            className={`flex-1 py-3 px-4 rounded-[var(--tileRadius)] font-medium disabled:cursor-not-allowed ${actionClass}`}
+            style={actionStyle}
           >
             Open
           </button>
@@ -39,7 +42,8 @@ export function CoverTile({ device, disabled }: TileProps): ReactElement {
             onClick={d.stop}
             disabled={d.pending || disabled}
             aria-describedby={d.error !== null ? `${device.entityId}-error` : undefined}
-            className={`flex-1 py-3 px-4 rounded-[var(--tileRadius)] font-medium disabled:cursor-not-allowed ${secondaryClass}`}
+            className={`flex-1 py-3 px-4 rounded-[var(--tileRadius)] font-medium disabled:cursor-not-allowed ${actionClass}`}
+            style={actionStyle}
           >
             Stop
           </button>
@@ -51,7 +55,8 @@ export function CoverTile({ device, disabled }: TileProps): ReactElement {
             onClick={d.close}
             disabled={d.pending || disabled}
             aria-describedby={d.error !== null ? `${device.entityId}-error` : undefined}
-            className={`flex-1 py-3 px-4 rounded-[var(--tileRadius)] font-medium disabled:cursor-not-allowed ${primaryClass}`}
+            className={`flex-1 py-3 px-4 rounded-[var(--tileRadius)] font-medium disabled:cursor-not-allowed ${actionClass}`}
+            style={actionStyle}
           >
             Close
           </button>

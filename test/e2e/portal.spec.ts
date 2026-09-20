@@ -6,18 +6,32 @@ import { startHarness, startHarnessBootOrder, type TestHarness } from './harness
  * custom property. These read the colour actually painted, so the assertions
  * track `tokens.ts` rather than restating it.
  *
- * classic puts the accent on the icon circle (the tile's first span), not on
- * the card: the card staying neutral is what distinguishes it from the
- * flood-fill themes.
+ * classic follows Home Assistant's tile card: the state colour goes on the icon
+ * circle, not on the card, and it is chosen per (domain, state) rather than
+ * from one global accent — an active light is amber, not the blue `--accent`.
+ * The circle is a layer of that colour at 20% behind a full-strength glyph, so
+ * the layer's background-color is the token exactly and the fade is its own
+ * opacity.
  */
-async function accentRgb(tile: Locator): Promise<string> {
-  const hex = await tile.evaluate((el) => getComputedStyle(el).getPropertyValue('--accent').trim())
+async function tokenRgb(tile: Locator, token: string): Promise<string> {
+  const hex = await tile.evaluate(
+    (el, name) => getComputedStyle(el).getPropertyValue(name).trim(),
+    token,
+  )
   const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16))
   return `rgb(${r}, ${g}, ${b})`
 }
 
 async function iconCircleBg(tile: Locator): Promise<string> {
-  return tile.locator('span').first().evaluate((el) => getComputedStyle(el).backgroundColor)
+  return tile
+    .locator('[data-testid="tile-icon-bg"]')
+    .evaluate((el) => getComputedStyle(el).backgroundColor)
+}
+
+async function iconCircleOpacity(tile: Locator): Promise<string> {
+  return tile
+    .locator('[data-testid="tile-icon-bg"]')
+    .evaluate((el) => getComputedStyle(el).opacity)
 }
 
 let harness: TestHarness
@@ -153,13 +167,24 @@ test.describe('Portal E2E', () => {
     // Verify the tile is visibly painted as 'on'.
     // This used to assert the Tailwind class bg-blue-500, which the themed
     // tiles no longer emit — every colour now comes from a token. classic also
-    // paints the accent on the icon circle rather than the whole card; a card
-    // that stays neutral is what separates it from the flood-fill themes.
-    // Read the accent off the token so this tracks tokens.ts instead of
-    // duplicating it.
+    // paints the state colour on the icon circle rather than the whole card; a
+    // card that stays neutral is what separates it from the flood-fill themes.
+    // Read the colour off the token so this tracks tokens.ts instead of
+    // duplicating it, and off the LIGHT-ACTIVE token specifically: Home
+    // Assistant colours an on light amber, and asserting `--accent` here would
+    // pass for a tile that ignored the domain entirely.
     await expect(lightTile).toHaveAttribute('aria-pressed', 'true')
-    // transition-colors means the paint lags the text update; poll for it.
-    await expect.poll(() => iconCircleBg(lightTile)).toBe(await accentRgb(lightTile))
+    // The circle has a 180ms colour transition, so the paint lags the text
+    // update; poll for it.
+    await expect.poll(() => iconCircleBg(lightTile)).toBe(
+      await tokenRgb(lightTile, '--stateLightActive'),
+    )
+    // The circle is the state colour at 20%, not a solid fill. Park the pointer
+    // off the tile first: it is still resting where the click landed, and
+    // hovering a tile deliberately lifts the fill to 35%, as Home Assistant's
+    // does.
+    await page.mouse.move(0, 0)
+    await expect.poll(() => iconCircleOpacity(lightTile)).toBe('0.2')
   })
 
   test('staleness: disconnect triggers stale UI state', async ({ page }) => {
@@ -214,8 +239,11 @@ test.describe('Portal E2E', () => {
     // Verify the stale tile is NOT painted as active.
     // This compared against Tailwind's blue-500, which the themed tiles never
     // emit — so it passed regardless and proved nothing. Compare against the
-    // accent the theme actually uses, on the element that actually carries it.
-    await expect.poll(() => iconCircleBg(tile)).not.toBe(await accentRgb(tile))
+    // colour an active light actually takes, on the element that carries it,
+    // and pin the colour it should have instead: `not.toBe` alone would be
+    // satisfied by a circle painted any wrong colour at all.
+    await expect.poll(() => iconCircleBg(tile)).toBe(await tokenRgb(tile, '--stateInactive'))
+    expect(await iconCircleBg(tile)).not.toBe(await tokenRgb(tile, '--stateLightActive'))
 
     // Screenshot: Stale state
     await page.screenshot({

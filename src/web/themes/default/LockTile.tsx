@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react'
+import { CONTROL_NEUTRAL_FILL } from '../stateColor.js'
 import { useLockDevice } from '../../hooks/useLockDevice.js'
 import type { TileProps } from '../types.js'
 
@@ -6,11 +7,15 @@ export function LockTile({ device, disabled }: TileProps): ReactElement {
   const d = useLockDevice(device, disabled)
 
   const inactive = disabled || d.pending || d.isStale
-  function actionClass(danger: boolean): string {
-    if (inactive) return 'bg-[var(--surfaceActive)] text-[var(--textMuted)]'
-    return danger
-      ? 'bg-[var(--danger)] text-[var(--accentText)]'
-      : 'bg-[var(--accent)] text-[var(--accentText)]'
+  function actionClass(): string {
+    return inactive ? 'bg-[var(--surfaceActive)] text-[var(--textMuted)]' : 'text-[var(--text)]'
+  }
+
+  // Neutral, not green-for-lock and red-for-unlock. Home Assistant tints the
+  // ICON by state and leaves the feature buttons alone, so Lock and Unlock look
+  // the same and are told apart by their labels.
+  function actionStyle(): { backgroundColor: string } | undefined {
+    return inactive ? undefined : { backgroundColor: CONTROL_NEUTRAL_FILL }
   }
 
   return (
@@ -29,7 +34,8 @@ export function LockTile({ device, disabled }: TileProps): ReactElement {
               onClick={d.requestUnlock}
               disabled={d.pending || disabled}
               aria-describedby={d.error !== null ? `${device.entityId}-error` : undefined}
-              className={`flex-1 py-3 px-4 rounded-[var(--tileRadius)] font-semibold disabled:opacity-50 disabled:cursor-not-allowed ${actionClass(true)}`}
+              className={`flex-1 py-3 px-4 rounded-[var(--tileRadius)] font-semibold disabled:opacity-50 disabled:cursor-not-allowed ${actionClass()}`}
+              style={actionStyle()}
             >
               Confirm Unlock
             </button>
@@ -51,7 +57,8 @@ export function LockTile({ device, disabled }: TileProps): ReactElement {
               onClick={d.lock}
               disabled={d.pending || disabled}
               aria-describedby={d.error !== null ? `${device.entityId}-error` : undefined}
-              className={`flex-1 py-3 px-4 rounded-[var(--tileRadius)] font-semibold disabled:cursor-not-allowed ${actionClass(false)}`}
+              className={`flex-1 py-3 px-4 rounded-[var(--tileRadius)] font-semibold disabled:cursor-not-allowed ${actionClass()}`}
+              style={actionStyle()}
             >
               Lock
             </button>
@@ -63,7 +70,8 @@ export function LockTile({ device, disabled }: TileProps): ReactElement {
               onClick={d.requestUnlock}
               disabled={d.pending || disabled}
               aria-describedby={d.error !== null ? `${device.entityId}-error` : undefined}
-              className={`flex-1 py-3 px-4 rounded-[var(--tileRadius)] font-semibold disabled:cursor-not-allowed ${actionClass(true)}`}
+              className={`flex-1 py-3 px-4 rounded-[var(--tileRadius)] font-semibold disabled:cursor-not-allowed ${actionClass()}`}
+              style={actionStyle()}
             >
               Unlock
             </button>

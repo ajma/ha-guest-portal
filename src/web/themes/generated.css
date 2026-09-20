@@ -2,7 +2,7 @@
 /* Regenerate with: pnpm themes:css */
 
 [data-theme='classic'] {
-  --appBg: #f2f4f7;
+  --appBg: #fafafa;
   --surface: #ffffff;
   --surfaceRaised: #ffffff;
   --surfaceActive: #f0f0f0;
@@ -11,12 +11,22 @@
   --accent: #03a9f4;
   --accentText: #ffffff;
   --danger: #db4437;
-  --border: #e0e0e0;
+  --border: rgba(0,0,0,0.12);
+  --controlNeutral: #bdbdbd;
   --tileRadius: 12px;
   --tileGap: 8px;
   --tilePadding: 16px;
-  --fontFamily: Roboto, 'Helvetica Neue', system-ui, sans-serif;
-  --shadow: 0 2px 2px rgba(0,0,0,0.14);
+  --fontFamily: Roboto, Noto, sans-serif;
+  --shadow: none;
+  --stateInactive: #9e9e9e;
+  --stateLightActive: #ffc107;
+  --stateSwitchActive: #ffc107;
+  --stateFanActive: #00bcd4;
+  --stateCoverActive: #926bc7;
+  --stateLockLocked: #4caf50;
+  --stateLockUnlocked: #f44336;
+  --stateLockJammed: #f44336;
+  --stateTransitioning: #ff9800;
 }
 @media (prefers-color-scheme: dark) {
   [data-theme='classic'] {
@@ -29,11 +39,21 @@
   --accent: #03a9f4;
   --accentText: #ffffff;
   --danger: #db4437;
-  --border: #2e2e2e;
+  --border: rgba(225,225,225,0.12);
+  --controlNeutral: #464646;
   --tileRadius: 12px;
   --tileGap: 8px;
   --tilePadding: 16px;
-  --fontFamily: Roboto, 'Helvetica Neue', system-ui, sans-serif;
-  --shadow: 0 2px 2px rgba(0,0,0,0.5);
+  --fontFamily: Roboto, Noto, sans-serif;
+  --shadow: none;
+  --stateInactive: #9e9e9e;
+  --stateLightActive: #ffc107;
+  --stateSwitchActive: #ffc107;
+  --stateFanActive: #00bcd4;
+  --stateCoverActive: #926bc7;
+  --stateLockLocked: #4caf50;
+  --stateLockUnlocked: #f44336;
+  --stateLockJammed: #f44336;
+  --stateTransitioning: #ff9800;
   }
 }

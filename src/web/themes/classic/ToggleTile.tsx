@@ -1,41 +1,44 @@
 import type { ReactElement } from 'react'
 import { parseDomain } from '@shared/devices.js'
 import { useToggleDevice } from '../../hooks/useToggleDevice.js'
+import { stateColorToken } from '../stateColor.js'
 import type { TileProps } from '../types.js'
 import { icon } from './icons.js'
+import { TILE_ROW_CLASS, TileCard, TileIcon, TileInfo, TileNote } from './tile.js'
 
 /**
- * Home Assistant's tile layout: circular icon on the left, name and state
- * stacked in the middle, the switch on the right. Only the icon circle and the
- * switch carry the accent colour — the card itself does not change on state,
- * which is what distinguishes `classic` from the flood-fill themes.
+ * Home Assistant's tile card: a circular icon on the left and the name and
+ * state stacked beside it. There is no switch graphic — the whole row is the
+ * control and the icon's colour is what carries the state. An amber circle
+ * means the light is on; grey means it is off.
  *
- * The whole row is the button, as it is in Home Assistant's own tile card. The
- * switch on the right is the affordance, not a separate hit target: an empty
- * 44x24 control is the only thing a guest could press, and it leaves the name
- * and state — the text that says what pressing would do — outside the
+ * The whole row is the button, as it is in Home Assistant's own tile card: an
+ * empty 44x24 switch would be the only thing a guest could press, and it leaves
+ * the name and state — the text that says what pressing would do — outside the
  * accessible control entirely.
  */
 export function ToggleTile({ device, disabled }: TileProps): ReactElement {
   const d = useToggleDevice(device, disabled)
   const domain = parseDomain(device.entityId)
 
+  // A stale device has no known state, so it takes the inactive grey rather
+  // than the colour of whatever it was last seen doing.
+  const token = stateColorToken(domain, d.isStale ? 'unavailable' : d.isOn ? 'on' : 'off')
+  const glyph = domain !== null && icon(domain, d.isOn ? 'on' : 'off')
+
   if (!d.canActivate) {
     return (
-      <div className="flex items-center gap-3 p-[var(--tilePadding)] rounded-[var(--tileRadius)] bg-[var(--surface)] shadow-[var(--shadow)]">
-        <span className="flex items-center justify-center shrink-0 w-10 h-10 rounded-full bg-[var(--surfaceActive)] text-[var(--textMuted)]">
-          {domain !== null && icon(domain, 'off')}
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="font-medium text-[var(--text)] truncate">{d.label}</div>
-          <div className="text-sm text-[var(--textMuted)]">No actions available</div>
+      <TileCard>
+        <div className={TILE_ROW_CLASS}>
+          <TileIcon token={stateColorToken(domain, 'unavailable')} glyph={glyph} />
+          <TileInfo primary={d.label} secondary="No actions available" />
         </div>
-      </div>
+      </TileCard>
     )
   }
 
   return (
-    <div className="p-[var(--tilePadding)] rounded-[var(--tileRadius)] bg-[var(--surface)] shadow-[var(--shadow)]">
+    <TileCard>
       <button
         type="button"
         onClick={d.activate}
@@ -43,45 +46,18 @@ export function ToggleTile({ device, disabled }: TileProps): ReactElement {
         aria-label={d.label}
         aria-pressed={d.isOn}
         aria-describedby={d.error !== null ? `${device.entityId}-error` : undefined}
-        className="flex items-center gap-3 w-full text-left disabled:cursor-not-allowed"
+        className={`group ${TILE_ROW_CLASS} disabled:cursor-not-allowed`}
       >
-        <span
-          className={`flex items-center justify-center shrink-0 w-10 h-10 rounded-full transition-colors ${
-            d.isOn
-              ? 'bg-[var(--accent)] text-[var(--accentText)]'
-              : 'bg-[var(--surfaceActive)] text-[var(--textMuted)]'
-          }`}
-        >
-          {domain !== null && icon(domain, d.isOn ? 'on' : 'off')}
-        </span>
-
-        <span className="min-w-0 flex-1">
-          <span className="block font-medium text-[var(--text)] truncate">{d.label}</span>
-          <span className="block text-sm text-[var(--textMuted)]">{d.stateText}</span>
-        </span>
-
-        <span
-          aria-hidden="true"
-          className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${
-            d.isOn ? 'bg-[var(--accent)]' : 'bg-[var(--surfaceActive)]'
-          }`}
-        >
-          <span
-            className={`absolute top-[3px] w-[18px] h-[18px] rounded-full transition-all ${
-              d.isOn ? 'left-[23px] bg-[var(--accentText)]' : 'left-[3px] bg-[var(--textMuted)]'
-            }`}
-          />
-        </span>
+        <TileIcon token={token} glyph={glyph} />
+        <TileInfo primary={d.label} secondary={d.stateText} />
       </button>
 
-      {d.isStale && (
-        <div className="text-sm text-[var(--textMuted)] mt-2">Not connected to Home Assistant</div>
-      )}
+      {d.isStale && <TileNote>Not connected to Home Assistant</TileNote>}
       {d.error !== null && (
-        <div id={`${device.entityId}-error`} className="text-sm text-[var(--danger)] mt-2">
+        <TileNote id={`${device.entityId}-error`} danger>
           {d.error}
-        </div>
+        </TileNote>
       )}
-    </div>
+    </TileCard>
   )
 }

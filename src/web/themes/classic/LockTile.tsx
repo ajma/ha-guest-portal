@@ -1,95 +1,83 @@
 import type { ReactElement } from 'react'
 import { parseDomain } from '@shared/devices.js'
 import { useLockDevice } from '../../hooks/useLockDevice.js'
+import { stateColorToken } from '../stateColor.js'
 import type { TileProps } from '../types.js'
 import { icon } from './icons.js'
+import {
+  ControlButton,
+  TILE_ROW_CLASS,
+  TileCard,
+  TileFeatures,
+  TileIcon,
+  TileInfo,
+  TileNote,
+} from './tile.js'
 
+/**
+ * Home Assistant's tile card with a lock feature row. A locked lock is green,
+ * an unlocked or jammed one red, one mid-turn orange — on the ICON. The feature
+ * buttons are neutral: Home Assistant does not paint Lock green and Unlock red,
+ * and the consequence of the tap is carried by the label and, below, by the
+ * confirmation note.
+ *
+ * The unlock confirmation is this portal's own addition, not Home Assistant's —
+ * a guest portal does not open a door on one stray tap. It keeps the control
+ * button shape, and the danger colour lives in the note beneath it.
+ */
 export function LockTile({ device, disabled }: TileProps): ReactElement {
   const d = useLockDevice(device, disabled)
   const domain = parseDomain(device.entityId)
-  const inactive = disabled || d.pending || d.isStale
-
-  function actionClass(danger: boolean): string {
-    if (inactive) return 'bg-[var(--surfaceActive)] text-[var(--textMuted)]'
-    return danger
-      ? 'bg-[var(--danger)] text-[var(--accentText)]'
-      : 'bg-[var(--accent)] text-[var(--accentText)]'
-  }
+  const token = stateColorToken(domain, d.isStale ? 'unavailable' : device.state.state)
+  const describedBy = d.error !== null ? `${device.entityId}-error` : undefined
+  const busy = d.pending || disabled
 
   return (
-    <div className="p-[var(--tilePadding)] rounded-[var(--tileRadius)] bg-[var(--surface)] shadow-[var(--shadow)]">
-      <div className="flex items-center gap-3">
-        <span className="flex items-center justify-center shrink-0 w-10 h-10 rounded-full bg-[var(--surfaceActive)] text-[var(--textMuted)]">
-          {domain !== null && icon(domain, d.isLocked ? 'locked' : 'unlocked')}
-        </span>
-
-        <div className="min-w-0 flex-1">
-          <div className="font-medium text-[var(--text)] truncate">{d.label}</div>
-          <div className="text-sm text-[var(--textMuted)]">{d.stateText}</div>
-        </div>
-
-        {d.unlockConfirmPending ? (
-          <div className="flex shrink-0 gap-1">
-            <button
-              type="button"
-              onClick={d.requestUnlock}
-              disabled={d.pending || disabled}
-              aria-describedby={d.error !== null ? `${device.entityId}-error` : undefined}
-              className={`py-2 px-3 text-sm font-semibold rounded-[var(--tileRadius)] disabled:opacity-50 disabled:cursor-not-allowed ${actionClass(true)}`}
-            >
-              Confirm Unlock
-            </button>
-            <button
-              type="button"
-              onClick={d.cancelUnlock}
-              disabled={d.pending || disabled}
-              className="py-2 px-3 text-sm font-semibold rounded-[var(--tileRadius)] bg-[var(--surfaceActive)] text-[var(--text)] disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Cancel
-            </button>
-          </div>
-        ) : (
-          <div className="flex shrink-0 gap-1">
-            {d.canLock && (
-              <button
-                type="button"
-                onClick={d.lock}
-                disabled={d.pending || disabled}
-                aria-describedby={d.error !== null ? `${device.entityId}-error` : undefined}
-                className={`py-2 px-3 text-sm font-semibold rounded-[var(--tileRadius)] disabled:cursor-not-allowed ${actionClass(false)}`}
-              >
-                Lock
-              </button>
-            )}
-
-            {d.canUnlock && (
-              <button
-                type="button"
-                onClick={d.requestUnlock}
-                disabled={d.pending || disabled}
-                aria-describedby={d.error !== null ? `${device.entityId}-error` : undefined}
-                className={`py-2 px-3 text-sm font-semibold rounded-[var(--tileRadius)] disabled:cursor-not-allowed ${actionClass(true)}`}
-              >
-                Unlock
-              </button>
-            )}
-          </div>
-        )}
+    <TileCard>
+      <div className={TILE_ROW_CLASS}>
+        <TileIcon
+          token={token}
+          glyph={domain !== null && icon(domain, d.isLocked ? 'locked' : 'unlocked')}
+        />
+        <TileInfo primary={d.label} secondary={d.stateText} />
       </div>
 
+      {d.unlockConfirmPending ? (
+        <TileFeatures>
+          <ControlButton onClick={d.requestUnlock} disabled={busy} describedBy={describedBy}>
+            Confirm Unlock
+          </ControlButton>
+          <ControlButton onClick={d.cancelUnlock} disabled={busy}>
+            Cancel
+          </ControlButton>
+        </TileFeatures>
+      ) : (
+        <TileFeatures>
+          {d.canLock && (
+            <ControlButton onClick={d.lock} disabled={busy} describedBy={describedBy}>
+              Lock
+            </ControlButton>
+          )}
+
+          {d.canUnlock && (
+            <ControlButton onClick={d.requestUnlock} disabled={busy} describedBy={describedBy}>
+              Unlock
+            </ControlButton>
+          )}
+        </TileFeatures>
+      )}
+
       {d.unlockConfirmPending && (
-        <div aria-live="polite" className="text-sm font-medium text-[var(--danger)] mt-2">
+        <TileNote danger live>
           Confirm unlock?
-        </div>
+        </TileNote>
       )}
-      {d.isStale && (
-        <div className="text-sm text-[var(--textMuted)] mt-2">Not connected to Home Assistant</div>
-      )}
+      {d.isStale && <TileNote>Not connected to Home Assistant</TileNote>}
       {d.error !== null && (
-        <div id={`${device.entityId}-error`} className="text-sm text-[var(--danger)] mt-2">
+        <TileNote id={`${device.entityId}-error`} danger>
           {d.error}
-        </div>
+        </TileNote>
       )}
-    </div>
+    </TileCard>
   )
 }
