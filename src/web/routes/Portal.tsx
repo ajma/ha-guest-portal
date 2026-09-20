@@ -440,7 +440,34 @@ export function Portal({ role, onLogout }: PortalProps): ReactElement {
 
     children.push(
       <div key="__ghost">
-        {adding ? (
+        <button
+          type="button"
+          style={ghostButton}
+          onClick={() => {
+            setAdding(true)
+            void loadCatalog()
+          }}
+        >
+          + Add device
+        </button>
+      </div>,
+    )
+
+    children.push(
+      <div key="__mode-banner" role="status" style={modeBanner}>
+        Edit mode — tap a device to change it. Changes save as you make them.
+      </div>,
+    )
+  }
+
+  if (adding) {
+    // The picker is an overlay, not an expanding grid cell. Expanded in place it
+    // inherits one column's width — half a phone screen under `tiles` — which is
+    // not enough for a search box above a scrolling list of every entity in the
+    // house. It uses the same backdrop as the other two overlays.
+    children.push(
+      <div key="__overlay" data-testid="picker-overlay" style={overlayBackdrop}>
+        <div style={overlayInner}>
           <section style={panel}>
             <div style={panelHeader}>
               <h2 style={panelHeading}>Add a device</h2>
@@ -456,29 +483,10 @@ export function Portal({ role, onLogout }: PortalProps): ReactElement {
             </div>
             {pickerBody()}
           </section>
-        ) : (
-          <button
-            type="button"
-            style={ghostButton}
-            onClick={() => {
-              setAdding(true)
-              void loadCatalog()
-            }}
-          >
-            + Add device
-          </button>
-        )}
+        </div>
       </div>,
     )
-
-    children.push(
-      <div key="__mode-banner" role="status" style={modeBanner}>
-        Edit mode — tap a device to change it. Changes save as you make them.
-      </div>,
-    )
-  }
-
-  if (mode === 'settings') {
+  } else if (mode === 'settings') {
     children.push(
       <div key="__overlay" style={overlayBackdrop}>
         <div style={overlayInner}>

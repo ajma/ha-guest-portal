@@ -260,6 +260,36 @@ describe('Portal page', () => {
       expect(screen.queryByRole('button', { name: /add device/i })).toBeNull()
     })
 
+    // Kills: the picker expanding inside its grid cell, which is what it used
+    // to do. A cell is one column wide — half a phone screen under `tiles` —
+    // and a search box above a scrolling list of every entity in the house does
+    // not fit in it. The other two overlays already sat over the page; this one
+    // did not.
+    it('opens the picker over the page, not inside the grid cell', async () => {
+      const user = userEvent.setup()
+      seed()
+      renderPortal('admin')
+      await enterEditMode(user)
+
+      const ghost = screen.getByRole('button', { name: /add device/i })
+      await user.click(ghost)
+
+      const search = await screen.findByRole('combobox')
+
+      // Not a descendant of the grid cell the ghost button lives in.
+      const ghostCell = ghost.closest('div')
+      expect(ghostCell).not.toBeNull()
+      expect(ghostCell?.contains(search)).toBe(false)
+
+      // That alone is not enough, and an earlier version of this test stopped
+      // there: the overlay is pushed as its own entry in the Shell's children,
+      // so without being lifted out of the flow it is simply a *different* grid
+      // cell — one column wide, which is the bug. Pin the lift.
+      const backdrop = search.closest('[data-testid="picker-overlay"]')
+      expect(backdrop).not.toBeNull()
+      expect((backdrop as HTMLElement | null)?.style.position).toBe('fixed')
+    })
+
     // Kills: leaving edit mode keeping `editingId`, which reopens the last
     // editor the next time the owner enters edit mode.
     it('forgets the open editor when edit mode is left', async () => {
