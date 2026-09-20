@@ -1,6 +1,6 @@
-import { useState, type ReactElement } from 'react'
+import type { ReactElement } from 'react'
 import type { Device } from '@shared/api.js'
-import { performAction } from '../api.js'
+import { useCoverDevice } from '../hooks/useCoverDevice.js'
 import { StaleBadge } from './StaleBadge.js'
 
 type CoverTileProps = {
@@ -8,53 +8,15 @@ type CoverTileProps = {
   disabled: boolean
 }
 
-type CoverAction = 'open_cover' | 'close_cover' | 'stop_cover'
-
 export function CoverTile({ device, disabled }: CoverTileProps): ReactElement {
-  const [error, setError] = useState<string | null>(null)
-  const [pending, setPending] = useState(false)
-
-  const isStale = device.state.stale
-  const currentState = device.state.state
-
-  // Determine which actions are allowed
-  const canOpen = device.allowedActions.includes('open_cover')
-  const canClose = device.allowedActions.includes('close_cover')
-  const canStop = device.allowedActions.includes('stop_cover')
-
-  async function handleAction(action: CoverAction): Promise<void> {
-    if (pending || disabled) return
-
-    setError(null)
-    setPending(true)
-
-    try {
-      const result = await performAction(device.entityId, action)
-
-      if (!result.ok) {
-        setError('Action failed')
-      }
-    } finally {
-      setPending(false)
-    }
-  }
-
-  // Render state text
-  function getStateText(): string {
-    if (isStale) return 'Unknown'
-    if (pending) return 'Updating...'
-    if (currentState === 'opening') return 'Opening'
-    if (currentState === 'closing') return 'Closing'
-    if (currentState === 'open') return 'Open'
-    if (currentState === 'closed') return 'Closed'
-    return currentState
-  }
+  const { isStale, pending, error, stateText, canOpen, canClose, canStop, open, close, stop } =
+    useCoverDevice(device, disabled)
 
   return (
     <div className="p-4 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800">
       <div className="mb-3">
         <div className="font-semibold text-lg">{device.label}</div>
-        <div className="text-base text-gray-700 dark:text-gray-300">{getStateText()}</div>
+        <div className="text-base text-gray-700 dark:text-gray-300">{stateText}</div>
       </div>
 
       <div className="flex gap-2">
@@ -62,7 +24,7 @@ export function CoverTile({ device, disabled }: CoverTileProps): ReactElement {
           <button
             type="button"
             onClick={() => {
-              void handleAction('open_cover')
+              void open()
             }}
             disabled={pending || disabled}
             aria-describedby={error !== null ? `${device.entityId}-error` : undefined}
@@ -82,7 +44,7 @@ export function CoverTile({ device, disabled }: CoverTileProps): ReactElement {
           <button
             type="button"
             onClick={() => {
-              void handleAction('stop_cover')
+              void stop()
             }}
             disabled={pending || disabled}
             aria-describedby={error !== null ? `${device.entityId}-error` : undefined}
@@ -102,7 +64,7 @@ export function CoverTile({ device, disabled }: CoverTileProps): ReactElement {
           <button
             type="button"
             onClick={() => {
-              void handleAction('close_cover')
+              void close()
             }}
             disabled={pending || disabled}
             aria-describedby={error !== null ? `${device.entityId}-error` : undefined}
