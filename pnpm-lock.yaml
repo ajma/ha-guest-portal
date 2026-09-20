@@ -11,9 +11,6 @@ importers:
       '@hono/node-server':
         specifier: ^1.14.3
         version: 1.19.17(hono@4.13.8)
-      '@material-symbols/svg-400':
-        specifier: 0.47.4
-        version: 0.47.4
       '@mdi/js':
         specifier: ^7.4.47
         version: 7.4.47
@@ -36,6 +33,9 @@ importers:
       '@biomejs/biome':
         specifier: ^2.5.14
         version: 2.5.14
+      '@material-symbols/svg-400':
+        specifier: ^0.47.4
+        version: 0.47.4
       '@playwright/test':
         specifier: ^1.63.0
         version: 1.63.0

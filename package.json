@@ -22,7 +22,6 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.14.3",
-    "@material-symbols/svg-400": "0.47.4",
     "@mdi/js": "^7.4.47",
     "hono": "^4.7.11",
     "react": "^19.0.0",
@@ -31,6 +30,7 @@
     "zod": "^4.0.1"
   },
   "devDependencies": {
+    "@material-symbols/svg-400": "^0.47.4",
     "@biomejs/biome": "^2.5.14",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
