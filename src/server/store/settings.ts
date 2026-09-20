@@ -2,12 +2,14 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
+import { DEFAULT_THEME_ID, isThemeId, type ThemeId } from '../../shared/themes.js'
 
 export type PortalEnabledListener = (enabled: boolean) => void
 
 const KEY_PORTAL_ENABLED = 'portal_enabled'
 const KEY_INTEGRATION_TOKEN = 'integration_token'
 const KEY_PORTAL_ID = 'portal_id'
+const KEY_PORTAL_THEME = 'portal_theme'
 
 const SettingRowSchema = z.object({
   value: z.string(),
@@ -65,6 +67,18 @@ export class SettingsStore {
     for (const listener of this.listeners) {
       listener(enabled)
     }
+  }
+
+  getTheme(): ThemeId {
+    // An absent or unrecognised value reads back as the default rather than
+    // throwing: a row naming a theme that has since been deleted must degrade,
+    // not take the portal down.
+    const stored = this.read(KEY_PORTAL_THEME)
+    return isThemeId(stored) ? stored : DEFAULT_THEME_ID
+  }
+
+  setTheme(id: ThemeId): void {
+    this.write(KEY_PORTAL_THEME, id)
   }
 
   /**

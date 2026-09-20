@@ -66,4 +66,18 @@ describe('SettingsStore', () => {
     const other = new SettingsStore(openDb(':memory:'))
     expect(other.getIntegrationToken()).not.toBe(settings.getIntegrationToken())
   })
+
+  it('defaults the theme to classic', () => {
+    expect(settings.getTheme()).toBe('classic')
+  })
+
+  it('persists a theme across store instances', () => {
+    settings.setTheme('tiles')
+    expect(new SettingsStore(db).getTheme()).toBe('tiles')
+  })
+
+  it('reads an unrecognised stored theme back as classic', () => {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('portal_theme', 'bogus')").run()
+    expect(settings.getTheme()).toBe('classic')
+  })
 })

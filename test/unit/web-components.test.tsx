@@ -2,6 +2,82 @@ import { render, screen, waitFor, cleanup } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
+// Helper to create a URL-routed fetch mock that returns appropriate responses
+// based on the endpoint, avoiding order-dependent mockResolvedValueOnce chains
+function createFetchMock(options: {
+  sessionRole?: 'admin' | 'guest'
+  sessionPortalEnabled?: boolean
+  loginResponse?: Response
+} = {}) {
+  const {
+    sessionRole = 'guest',
+    sessionPortalEnabled = true,
+    loginResponse,
+  } = options
+
+  return vi.fn((input: string | URL | Request) => {
+    const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+
+    if (urlStr.includes('/api/session')) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ role: sessionRole, portalEnabled: sessionPortalEnabled }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    }
+
+    if (urlStr.includes('/api/admin/entities')) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ entities: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    }
+
+    if (urlStr.includes('/api/admin/allowlist')) {
+      return Promise.resolve(
+        new Response(JSON.stringify({ devices: [], orphaned: [] }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    }
+
+    if (urlStr.includes('/api/admin/portal')) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            enabled: sessionPortalEnabled,
+            integrationToken: 'test',
+            portalId: 'test',
+            theme: 'classic',
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
+      )
+    }
+
+    if (urlStr.includes('/api/login')) {
+      if (loginResponse) {
+        return Promise.resolve(loginResponse)
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ role: sessionRole, portalEnabled: sessionPortalEnabled }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+    }
+
+    return Promise.reject(new Error(`Unmocked fetch to ${urlStr}`))
+  })
+}
+
 describe('Login component', () => {
   beforeEach(() => {
     global.fetch = vi.fn()
@@ -15,12 +91,12 @@ describe('Login component', () => {
   it('shows distinct message for wrong password', async () => {
     const { Login } = await import('../../src/web/routes/Login.js')
 
-    vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: 'Unauthorized' }), {
+    global.fetch = createFetchMock({
+      loginResponse: new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { 'Content-Type': 'application/json' },
       }),
-    )
+    })
 
     const onSuccess = vi.fn()
     render(<Login onSuccess={onSuccess} />)
@@ -41,15 +117,15 @@ describe('Login component', () => {
   it('shows distinct message for rate limiting', async () => {
     const { Login } = await import('../../src/web/routes/Login.js')
 
-    vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: 'Too Many Requests' }), {
+    global.fetch = createFetchMock({
+      loginResponse: new Response(JSON.stringify({ error: 'Too Many Requests' }), {
         status: 429,
         headers: {
           'Content-Type': 'application/json',
           'Retry-After': '60',
         },
       }),
-    )
+    })
 
     const onSuccess = vi.fn()
     render(<Login onSuccess={onSuccess} />)
@@ -71,12 +147,10 @@ describe('Login component', () => {
   it('calls onSuccess with role on successful login', async () => {
     const { Login } = await import('../../src/web/routes/Login.js')
 
-    vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ role: 'admin', portalEnabled: true }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+    global.fetch = createFetchMock({
+      sessionRole: 'admin',
+      sessionPortalEnabled: true,
+    })
 
     const onSuccess = vi.fn()
     render(<Login onSuccess={onSuccess} />)
@@ -112,12 +186,14 @@ describe('App component', () => {
   it('renders Login when no session', async () => {
     const { App } = await import('../../src/web/App.js')
 
-    vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      ),
+    ) as typeof fetch
 
     render(<App />)
 
@@ -129,12 +205,10 @@ describe('App component', () => {
   it('renders guest screen with guest session', async () => {
     const { App } = await import('../../src/web/App.js')
 
-    vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+    global.fetch = createFetchMock({
+      sessionRole: 'guest',
+      sessionPortalEnabled: true,
+    })
 
     render(<App />)
 
@@ -146,37 +220,10 @@ describe('App component', () => {
   it('renders admin screen only for admin role at /admin', async () => {
     const { App } = await import('../../src/web/App.js')
 
-    // Mock session check
-    vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ role: 'admin', portalEnabled: true }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
-
-    // Mock getCatalog
-    vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ entities: [] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
-
-    // Mock getAllowlist
-    vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ devices: [], orphaned: [] }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
-
-    // Mock getAdminPortal (called by PortalToggle)
-    vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ enabled: true, integrationToken: 'test', portalId: 'test' }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+    global.fetch = createFetchMock({
+      sessionRole: 'admin',
+      sessionPortalEnabled: true,
+    })
 
     // Simulate /admin path
     Object.defineProperty(window, 'location', {
@@ -195,12 +242,10 @@ describe('App component', () => {
   it('does not render admin screen for guest at /admin', async () => {
     const { App } = await import('../../src/web/App.js')
 
-    vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    )
+    global.fetch = createFetchMock({
+      sessionRole: 'guest',
+      sessionPortalEnabled: true,
+    })
 
     // Simulate /admin path
     Object.defineProperty(window, 'location', {
@@ -222,12 +267,10 @@ describe('App component', () => {
       const { App } = await import('../../src/web/App.js')
 
       // Initial session check succeeds
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
+      global.fetch = createFetchMock({
+        sessionRole: 'guest',
+        sessionPortalEnabled: true,
+      })
 
       render(<App />)
 
@@ -236,12 +279,14 @@ describe('App component', () => {
       })
 
       // Simulate a 401 response (triggers unauthorized callback)
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
+      global.fetch = vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        ),
+      ) as typeof fetch
 
       const { getDevices } = await import('../../src/web/api.js')
       await getDevices()
@@ -270,12 +315,10 @@ describe('App component', () => {
       const { App } = await import('../../src/web/App.js')
 
       // Initial session check succeeds
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
+      global.fetch = createFetchMock({
+        sessionRole: 'guest',
+        sessionPortalEnabled: true,
+      })
 
       const { rerender } = render(<App />)
 
@@ -287,12 +330,14 @@ describe('App component', () => {
       mockConnected = false
 
       // Session check now fails
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
+      global.fetch = vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        ),
+      ) as typeof fetch
 
       // Trigger re-render
       rerender(<App />)
@@ -324,12 +369,10 @@ describe('App component', () => {
       const { App } = await import('../../src/web/App.js')
 
       // Initial session check succeeds
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
+      global.fetch = createFetchMock({
+        sessionRole: 'guest',
+        sessionPortalEnabled: true,
+      })
 
       const { rerender } = render(<App />)
 
@@ -340,13 +383,8 @@ describe('App component', () => {
       // Simulate transient connection drop
       mockConnected = false
 
-      // Session check still succeeds
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
+      // Session check still succeeds - keep using the same mock
+      // (createFetchMock returns success responses by default)
 
       // Trigger re-render
       rerender(<App />)
@@ -371,40 +409,10 @@ describe('App component', () => {
       // `!portalEnabled`, this test would fail.
       const { App } = await import('../../src/web/App.js')
 
-      // Mock session check returning admin with portalEnabled=false
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'admin', portalEnabled: false }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-
-      // Mock getCatalog
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ entities: [] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-
-      // Mock getAllowlist
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ devices: [], orphaned: [] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-
-      // Mock getAdminPortal (called by PortalToggle)
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ enabled: false, integrationToken: 'test', portalId: 'test' }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+      global.fetch = createFetchMock({
+        sessionRole: 'admin',
+        sessionPortalEnabled: false,
+      })
 
       // Simulate /admin path
       Object.defineProperty(window, 'location', {
@@ -433,40 +441,10 @@ describe('App component', () => {
 
       const setIntervalSpy = vi.spyOn(global, 'setInterval')
 
-      // Mock session check returning admin with portalEnabled=false
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'admin', portalEnabled: false }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-
-      // Mock getCatalog
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ entities: [] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-
-      // Mock getAllowlist
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ devices: [], orphaned: [] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-
-      // Mock getAdminPortal (called by PortalToggle)
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({ enabled: false, integrationToken: 'test', portalId: 'test' }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
+      global.fetch = createFetchMock({
+        sessionRole: 'admin',
+        sessionPortalEnabled: false,
+      })
 
       // Simulate /admin path so admin screen renders
       Object.defineProperty(window, 'location', {
@@ -496,13 +474,10 @@ describe('App component', () => {
 
       const setIntervalSpy = vi.spyOn(global, 'setInterval')
 
-      // Mock session check returning guest with portalEnabled=true
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
+      global.fetch = createFetchMock({
+        sessionRole: 'guest',
+        sessionPortalEnabled: true,
+      })
 
       render(<App />)
 
@@ -530,21 +505,11 @@ describe('App component', () => {
 
       const getSessionSpy = vi.spyOn(apiModule, 'getSession')
 
-      // Initial session check: guest with portalEnabled=false
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'guest', portalEnabled: false }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-
-      // Mock response for the first poll (after 15s)
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'guest', portalEnabled: false }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
+      // Use the router for all session checks
+      global.fetch = createFetchMock({
+        sessionRole: 'guest',
+        sessionPortalEnabled: false,
+      })
 
       // Mock store to initially return portalEnabled=false
       let portalEnabled = false
@@ -617,14 +582,6 @@ describe('App component', () => {
 
       vi.useFakeTimers({ shouldAdvanceTime: true })
 
-      // Initial session check: guest with portalEnabled=false
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'guest', portalEnabled: false }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-
       // Mock store to initially return portalEnabled=false, then true
       let portalEnabled = false
       vi.spyOn(storeModule, 'useDeviceStore').mockImplementation(() => ({
@@ -634,6 +591,25 @@ describe('App component', () => {
         stale: false,
       }))
 
+      // Start with portalEnabled=false, then switch to true after the first poll
+      let callCount = 0
+      global.fetch = vi.fn((input: string | URL | Request) => {
+        const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+
+        if (urlStr.includes('/api/session')) {
+          callCount++
+          const enabled = callCount > 1
+          return Promise.resolve(
+            new Response(JSON.stringify({ role: 'guest', portalEnabled: enabled }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          )
+        }
+
+        return Promise.reject(new Error(`Unmocked fetch to ${urlStr}`))
+      }) as typeof fetch
+
       const { rerender } = render(<App />)
 
       await vi.runOnlyPendingTimersAsync()
@@ -641,14 +617,6 @@ describe('App component', () => {
       await waitFor(() => {
         expect(screen.queryByTestId('portal-disabled-screen')).not.toBeNull()
       })
-
-      // Mock the next getSession to return portalEnabled=true
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
 
       // Update the store state
       portalEnabled = true
