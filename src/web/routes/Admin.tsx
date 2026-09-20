@@ -4,6 +4,7 @@ import type { AllowlistRow, CatalogEntry } from '@shared/api.js'
 import { DOMAIN_ACTIONS, parseDomain } from '@shared/devices.js'
 import { EntityPicker } from '../components/EntityPicker.js'
 import { PortalToggle } from '../components/PortalToggle.js'
+import { ThemePicker } from '../components/ThemePicker.js'
 import * as api from '../api.js'
 
 type AdminProps = {
@@ -189,6 +190,7 @@ export function Admin({ onLogout }: AdminProps): ReactElement {
     return (
       <div data-testid="admin-screen">
         <h1>Admin Portal</h1>
+        <ThemePicker />
         <PortalToggle />
         <p>Loading...</p>
       </div>
@@ -199,6 +201,7 @@ export function Admin({ onLogout }: AdminProps): ReactElement {
     return (
       <div data-testid="admin-screen">
         <h1>Admin Portal</h1>
+        <ThemePicker />
         <PortalToggle />
         <p style={{ color: '#d9534f', fontWeight: 500 }}>{error}</p>
         <button
@@ -225,6 +228,7 @@ export function Admin({ onLogout }: AdminProps): ReactElement {
     return (
       <div data-testid="admin-screen">
         <h1>Admin Portal</h1>
+        <ThemePicker />
         <PortalToggle />
         <p>No catalog data</p>
       </div>
@@ -267,6 +271,7 @@ export function Admin({ onLogout }: AdminProps): ReactElement {
           </button>
         </div>
 
+        <ThemePicker />
         <PortalToggle />
 
         <section style={{ marginBottom: '24px' }}>

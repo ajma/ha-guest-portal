@@ -1,5 +1,24 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Locator, type Page } from '@playwright/test'
 import { startHarness, startHarnessBootOrder, type TestHarness } from './harness.js'
+
+/**
+ * The themed tiles carry no palette classes — every colour resolves from a CSS
+ * custom property. These read the colour actually painted, so the assertions
+ * track `tokens.ts` rather than restating it.
+ *
+ * classic puts the accent on the icon circle (the tile's first span), not on
+ * the card: the card staying neutral is what distinguishes it from the
+ * flood-fill themes.
+ */
+async function accentRgb(tile: Locator): Promise<string> {
+  const hex = await tile.evaluate((el) => getComputedStyle(el).getPropertyValue('--accent').trim())
+  const [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16))
+  return `rgb(${r}, ${g}, ${b})`
+}
+
+async function iconCircleBg(tile: Locator): Promise<string> {
+  return tile.locator('span').first().evaluate((el) => getComputedStyle(el).backgroundColor)
+}
 
 let harness: TestHarness
 
@@ -131,8 +150,16 @@ test.describe('Portal E2E', () => {
     // Step 9: Verify the tile updates to 'On' without page reload (SSE working)
     await expect(lightTile).toContainText('On', { timeout: 3000 })
 
-    // Verify the tile has the blue 'on' styling
-    await expect(lightTile).toHaveClass(/bg-blue-500/)
+    // Verify the tile is visibly painted as 'on'.
+    // This used to assert the Tailwind class bg-blue-500, which the themed
+    // tiles no longer emit — every colour now comes from a token. classic also
+    // paints the accent on the icon circle rather than the whole card; a card
+    // that stays neutral is what separates it from the flood-fill themes.
+    // Read the accent off the token so this tracks tokens.ts instead of
+    // duplicating it.
+    await expect(lightTile).toHaveAttribute('aria-pressed', 'true')
+    // transition-colors means the paint lags the text update; poll for it.
+    await expect.poll(() => iconCircleBg(lightTile)).toBe(await accentRgb(lightTile))
   })
 
   test('staleness: disconnect triggers stale UI state', async ({ page }) => {
@@ -184,11 +211,11 @@ test.describe('Portal E2E', () => {
     await expect(tile).toContainText('Unknown', { timeout: 5000 })
     await expect(tile).not.toBeDisabled()
 
-    // Verify the stale tile is NOT painted as the active blue
-    const bg = await tile.evaluate((el) => window.getComputedStyle(el).backgroundColor)
-    // Tailwind v4 blue-500 in oklch is oklch(62.3% .214 259.815)
-    // which computes to approximately rgb(59, 130, 246)
-    expect(bg).not.toBe('rgb(59, 130, 246)')
+    // Verify the stale tile is NOT painted as active.
+    // This compared against Tailwind's blue-500, which the themed tiles never
+    // emit — so it passed regardless and proved nothing. Compare against the
+    // accent the theme actually uses, on the element that actually carries it.
+    await expect.poll(() => iconCircleBg(tile)).not.toBe(await accentRgb(tile))
 
     // Screenshot: Stale state
     await page.screenshot({
@@ -308,6 +335,50 @@ test.describe('Portal E2E', () => {
       // Verify the guest is back on the device list, not on the login screen
       // This proves sessions were blocked, not destroyed
       await expect(guestPage.getByLabel('Password')).not.toBeVisible()
+    } finally {
+      await adminContext.close()
+      await guestContext.close()
+    }
+  })
+
+  test('an admin selects a theme and a guest sees it', async ({ browser }) => {
+    const { baseUrl } = harness
+
+    const adminContext = await browser.newContext()
+    const guestContext = await browser.newContext()
+    const adminPage = await adminContext.newPage()
+    const guestPage = await guestContext.newPage()
+
+    try {
+      await adminPage.goto(`${baseUrl}/admin`)
+      await adminPage.getByLabel('Password').fill('test-admin-password')
+      await adminPage.getByRole('button', { name: 'Log in' }).click()
+
+      // Park the stored theme somewhere else first. `classic` is the default,
+      // so without this the test would pass against a picker that saves
+      // nothing at all — the guest would see `classic` either way.
+      const parked = await adminPage.request.put(`${baseUrl}/api/admin/theme`, {
+        data: { theme: 'tiles' },
+      })
+      expect(parked.status()).toBe(200)
+      await adminPage.goto(`${baseUrl}/admin`)
+
+      await expect(adminPage.getByRole('radiogroup')).toBeVisible()
+
+      // Wait for the save itself, not just the optimistic repaint: the guest
+      // navigation below must not race the write.
+      const saved = adminPage.waitForResponse(
+        (response) =>
+          response.url().endsWith('/api/admin/theme') && response.request().method() === 'PUT',
+      )
+      await adminPage.getByRole('radio', { name: /classic/i }).click()
+      expect((await saved).status()).toBe(200)
+
+      // The guest's document must carry the chosen theme on first paint —
+      // this is the property the whole injection design exists for, and it
+      // would fail if the server served a cached or unmutated index.html.
+      await guestPage.goto(baseUrl)
+      await expect(guestPage.locator('html')).toHaveAttribute('data-theme', 'classic')
     } finally {
       await adminContext.close()
       await guestContext.close()
