@@ -11,14 +11,22 @@ export function EntityPicker({ entities, exclude, onSelect }: EntityPickerProps)
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(-1)
   const [isOpen, setIsOpen] = useState(false)
+  const [showUnsupported, setShowUnsupported] = useState(false)
   const listboxRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
   const excludeSet = new Set(exclude)
 
-  // Filter entities by query and exclusions
+  // Count unsupported entities for the toggle label
+  const unsupportedCount = entities.filter((e) => !e.supported && !excludeSet.has(e.entityId))
+    .length
+
+  // Filter entities by query, exclusions, and supported status
   const filtered = entities.filter((entity) => {
     if (excludeSet.has(entity.entityId)) return false
+
+    // Hide unsupported entities unless the toggle is on
+    if (!entity.supported && !showUnsupported) return false
 
     const lowerQuery = query.toLowerCase()
     const matchesName = entity.name.toLowerCase().includes(lowerQuery)
@@ -123,6 +131,26 @@ export function EntityPicker({ entities, exclude, onSelect }: EntityPickerProps)
 
   return (
     <div ref={containerRef}>
+      {unsupportedCount > 0 && (
+        <label
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            marginBottom: '8px',
+            fontSize: '14px',
+            cursor: 'pointer',
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={showUnsupported}
+            onChange={(e) => setShowUnsupported(e.target.checked)}
+            style={{ cursor: 'pointer' }}
+          />
+          Show {unsupportedCount} unsupported device{unsupportedCount !== 1 ? 's' : ''}
+        </label>
+      )}
       <input
         type="text"
         role="combobox"

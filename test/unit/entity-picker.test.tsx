@@ -109,11 +109,28 @@ describe('EntityPicker', () => {
     expect(options.some((opt) => opt.textContent?.includes('Living Room Lamp'))).toBe(true)
   })
 
-  it('unsupported entry is shown, not selectable, and displays a reason', async () => {
+  it('unsupported entities are hidden by default', async () => {
     const user = userEvent.setup()
 
     const onSelect = vi.fn()
     render(<EntityPicker entities={entities} exclude={[]} onSelect={onSelect} />)
+
+    const input = screen.getByRole('combobox')
+    await user.type(input, 'thermostat')
+
+    // Should not show any results since unsupported entities are hidden
+    expect(screen.queryByRole('listbox')).toBeNull()
+  })
+
+  it('toggle reveals unsupported entries which are not selectable and display a reason', async () => {
+    const user = userEvent.setup()
+
+    const onSelect = vi.fn()
+    render(<EntityPicker entities={entities} exclude={[]} onSelect={onSelect} />)
+
+    // Toggle to show unsupported entities
+    const checkbox = screen.getByRole('checkbox')
+    await user.click(checkbox)
 
     const input = screen.getByRole('combobox')
     await user.type(input, 'thermostat')
@@ -126,6 +143,86 @@ describe('EntityPicker', () => {
     expect(unsupportedOption?.textContent).toMatch(/Upstairs Thermostat/)
     expect(unsupportedOption?.getAttribute('aria-disabled')).toBe('true')
     expect(unsupportedOption?.textContent).toMatch(/not supported/i)
+  })
+
+  it('toggle shows correct count of unsupported entities', async () => {
+    const onSelect = vi.fn()
+    render(<EntityPicker entities={entities} exclude={[]} onSelect={onSelect} />)
+
+    const checkbox = screen.getByRole('checkbox')
+    const label = checkbox.parentElement
+
+    expect(label?.textContent).toMatch(/Show 1 unsupported device/)
+  })
+
+  it('toggle uses plural when count is not 1', async () => {
+    const multipleUnsupported: CatalogEntry[] = [
+      ...entities,
+      {
+        entityId: 'climate.downstairs',
+        name: 'Downstairs Thermostat',
+        area: 'Living Room',
+        domain: 'climate',
+        supported: false,
+      },
+    ]
+
+    const onSelect = vi.fn()
+    render(<EntityPicker entities={multipleUnsupported} exclude={[]} onSelect={onSelect} />)
+
+    const checkbox = screen.getByRole('checkbox')
+    const label = checkbox.parentElement
+
+    expect(label?.textContent).toMatch(/Show 2 unsupported devices/)
+  })
+
+  it('search works with toggle off (only supported entities)', async () => {
+    const user = userEvent.setup()
+
+    const onSelect = vi.fn()
+    render(<EntityPicker entities={entities} exclude={[]} onSelect={onSelect} />)
+
+    const input = screen.getByRole('combobox')
+    await user.type(input, 'light')
+
+    const listbox = screen.getByRole('listbox')
+    const options = within(listbox).getAllByRole('option')
+
+    // Should only show supported lights
+    expect(options).toHaveLength(2)
+    expect(options.some((opt) => opt.textContent?.includes('Porch Light'))).toBe(true)
+    expect(options.some((opt) => opt.textContent?.includes('Living Room Lamp'))).toBe(true)
+    expect(options.some((opt) => opt.textContent?.includes('Thermostat'))).toBe(false)
+  })
+
+  it('search works with toggle on (includes unsupported entities)', async () => {
+    const user = userEvent.setup()
+
+    const onSelect = vi.fn()
+    render(<EntityPicker entities={entities} exclude={[]} onSelect={onSelect} />)
+
+    // Toggle to show unsupported
+    const checkbox = screen.getByRole('checkbox')
+    await user.click(checkbox)
+
+    const input = screen.getByRole('combobox')
+    await user.type(input, 'room')
+
+    const listbox = screen.getByRole('listbox')
+    const options = within(listbox).getAllByRole('option')
+
+    // Should show both supported and unsupported matches
+    expect(options.length).toBeGreaterThan(0)
+    expect(options.some((opt) => opt.textContent?.includes('Living Room Lamp'))).toBe(true)
+  })
+
+  it('toggle is hidden when there are no unsupported entities', async () => {
+    const supportedOnly: CatalogEntry[] = entities.filter((e) => e.supported)
+
+    const onSelect = vi.fn()
+    render(<EntityPicker entities={supportedOnly} exclude={[]} onSelect={onSelect} />)
+
+    expect(screen.queryByRole('checkbox')).toBeNull()
   })
 
   it('ArrowDown then Enter selects the first match', async () => {
@@ -292,6 +389,10 @@ describe('EntityPicker', () => {
 
     const onSelect = vi.fn()
     render(<EntityPicker entities={entities} exclude={[]} onSelect={onSelect} />)
+
+    // Toggle to show unsupported entities
+    const checkbox = screen.getByRole('checkbox')
+    await user.click(checkbox)
 
     const input = screen.getByRole('combobox')
     await user.type(input, 'thermostat')
