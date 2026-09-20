@@ -5,6 +5,8 @@ import { ThemePicker } from './ThemePicker.js'
 
 export type SettingsPanelProps = {
   onClose: () => void
+  /** Forwarded to `PortalTitleField`: the new name, after a successful save. */
+  onTitleChange?: ((title: string) => void) | undefined
 }
 
 // As with TileEditor: every colour, radius and font comes from the theme's CSS
@@ -54,7 +56,7 @@ const closeButton: CSSProperties = {
  * now: three small independent fetches when a panel opens are cheaper than a
  * shared provider, and each control already recovers from its own load failure.
  */
-export function SettingsPanel({ onClose }: SettingsPanelProps): ReactElement {
+export function SettingsPanel({ onClose, onTitleChange }: SettingsPanelProps): ReactElement {
   return (
     <section data-testid="settings-panel" aria-label="Settings" style={panel}>
       <div style={header}>
@@ -64,7 +66,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps): ReactElement {
         </button>
       </div>
 
-      <PortalTitleField />
+      <PortalTitleField onSaved={onTitleChange} />
       <ThemePicker />
       <PortalToggle />
     </section>

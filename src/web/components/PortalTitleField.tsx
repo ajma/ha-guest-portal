@@ -2,7 +2,16 @@ import type { CSSProperties, ReactElement } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import { MAX_PORTAL_TITLE_LENGTH, normalizePortalTitle } from '@shared/portalTitle.js'
 import * as api from '../api.js'
-import { readPortalTitle } from '../portalTitle.js'
+import { readPortalTitle, writePortalTitle } from '../portalTitle.js'
+
+export type PortalTitleFieldProps = {
+  /**
+   * Called with the normalised title after a successful save, so the page
+   * around this field can update its own header. Writing the attribute back is
+   * not enough on its own: React does not re-render on a DOM attribute change.
+   */
+  onSaved?: ((title: string) => void) | undefined
+}
 
 // Colours, radius and font come from the theme's CSS variables, as with the
 // other owner surfaces. This is not a theme component and adds no slot to
@@ -47,7 +56,7 @@ const FIELD_ID = 'portal-title-field'
  * cursor; `draft === null` means "no pending edit", which is also how a failed
  * save reverts — dropping the draft exposes the last known-good value again.
  */
-export function PortalTitleField(): ReactElement {
+export function PortalTitleField({ onSaved }: PortalTitleFieldProps): ReactElement {
   // Seeded from the injected attribute so the field is populated on first
   // paint, then replaced by the stored value once the fetch answers. The two
   // agree unless another session renamed the portal since this page loaded.
@@ -110,10 +119,18 @@ export function PortalTitleField(): ReactElement {
 
       // The server stores the normalised value, so clearing the field visibly
       // snaps back to the default instead of appearing to save a blank.
-      setCommitted(normalizePortalTitle(next))
+      const normalized = normalizePortalTitle(next)
+      setCommitted(normalized)
       setDraft(null)
+
+      // The injected attribute is the whole page's source for the title, and
+      // the server writes it once at page load. Left stale, the owner's own
+      // header and browser tab keep the old name until they reload — which is
+      // exactly the indirection this restructure exists to remove.
+      writePortalTitle(normalized)
+      onSaved?.(normalized)
     },
-    [committed],
+    [committed, onSaved],
   )
 
   function commitDraft(): void {

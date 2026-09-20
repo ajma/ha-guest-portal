@@ -115,6 +115,17 @@ describe('Portal page', () => {
       expect(screen.getByRole('button', { name: /log out/i })).toBeTruthy()
       expect(screen.queryByRole('button', { name: /^edit$/i })).toBeNull()
       expect(screen.queryByRole('button', { name: /^settings$/i })).toBeNull()
+
+      // The three assertions above cannot tell absent from hidden: Testing
+      // Library leaves `display: none` out of the accessibility tree, so a page
+      // that built `headerActions` for everyone and hid it from guests with one
+      // CSS declaration passes every one of them. `hidden: true` puts those
+      // nodes back in scope.
+      expect(screen.queryByRole('button', { name: /^edit$/i, hidden: true })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^settings$/i, hidden: true })).toBeNull()
+      // And in the markup rather than the tree, because a hidden control is one
+      // stylesheet away from being an operable one.
+      expect(document.body.textContent).not.toContain('Settings')
     })
 
     // Kills: headerActions never built, or never handed to the Shell.
@@ -146,6 +157,33 @@ describe('Portal page', () => {
       renderPortal('guest')
 
       expect(screen.getByRole('heading', { name: 'Beach House' })).toBeTruthy()
+    })
+
+    // Kills: a Shell title read from the injected attribute during render, as
+    // this page did. The attribute is written once by the server, so the owner
+    // renamed the portal in the panel and their own header kept the old name
+    // until they reloaded — the exact indirection this restructure removes.
+    // Guests still need a reload, by design; the owner editing the page does
+    // not.
+    it('moves the header when the owner saves a new name, with no reload', async () => {
+      const user = userEvent.setup()
+      document.documentElement.dataset.portalTitle = 'Guest Portal'
+      seed()
+      renderPortal('admin')
+
+      // Level 1 specifically: the settings panel itself contains an h2 reading
+      // 'Guest Portal' (the kill switch's section heading), so an unqualified
+      // heading query cannot tell the page header from it.
+      expect(screen.getByRole('heading', { level: 1, name: 'Guest Portal' })).toBeTruthy()
+
+      await user.click(screen.getByRole('button', { name: 'Settings' }))
+      const field = await screen.findByLabelText(/portal name/i)
+      await user.clear(field)
+      await user.type(field, 'Beach House')
+      await user.tab()
+
+      expect(await screen.findByRole('heading', { level: 1, name: 'Beach House' })).toBeTruthy()
+      expect(screen.queryByRole('heading', { level: 1, name: 'Guest Portal' })).toBeNull()
     })
   })
 

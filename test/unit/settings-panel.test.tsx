@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MAX_PORTAL_TITLE_LENGTH } from '@shared/portalTitle.js'
+import { DEFAULT_PORTAL_TITLE, MAX_PORTAL_TITLE_LENGTH } from '@shared/portalTitle.js'
 import { SettingsPanel } from '../../src/web/components/SettingsPanel.tsx'
 import * as api from '../../src/web/api.ts'
 
@@ -36,6 +36,8 @@ describe('SettingsPanel', () => {
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
+    document.documentElement.removeAttribute('data-portal-title')
+    document.title = ''
   })
 
   it('holds the theme picker, the kill switch and the title field', async () => {
@@ -67,6 +69,68 @@ describe('SettingsPanel', () => {
     await userEvent.tab()
 
     await waitFor(() => expect(api.putAdminTitle).toHaveBeenCalledWith('Beach House'))
+  })
+
+  it('writes the saved name back over the one the server injected', async () => {
+    // The server writes this attribute once, at page load; it is where the rest
+    // of the page — the header, and a later remount — reads the title from.
+    document.documentElement.dataset.portalTitle = 'Guest Portal'
+    render(<SettingsPanel onClose={() => {}} />)
+    const field = await screen.findByLabelText(/portal name/i)
+
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Beach House')
+    await userEvent.tab()
+
+    await waitFor(() => expect(document.documentElement.dataset.portalTitle).toBe('Beach House'))
+    // The <title> element is server-rendered too, and just as stale.
+    expect(document.title).toBe('Beach House')
+  })
+
+  it('tells the page around it what was saved', async () => {
+    // An attribute write does not re-render React, so the write above cannot
+    // move the header on its own.
+    const onTitleChange = vi.fn()
+    render(<SettingsPanel onClose={() => {}} onTitleChange={onTitleChange} />)
+    const field = await screen.findByLabelText(/portal name/i)
+
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Beach House')
+    await userEvent.tab()
+
+    await waitFor(() => expect(onTitleChange).toHaveBeenCalledWith('Beach House'))
+  })
+
+  it('reports the normalised name the server stored, not the raw input', async () => {
+    const onTitleChange = vi.fn()
+    render(<SettingsPanel onClose={() => {}} onTitleChange={onTitleChange} />)
+    const field = await screen.findByLabelText(/portal name/i)
+
+    // Clearing the field stores the default. A header showing a blank name
+    // would disagree with what the server serves guests.
+    await userEvent.clear(field)
+    await userEvent.tab()
+
+    await waitFor(() => expect(onTitleChange).toHaveBeenCalledWith(DEFAULT_PORTAL_TITLE))
+    expect(document.documentElement.dataset.portalTitle).toBe(DEFAULT_PORTAL_TITLE)
+  })
+
+  it('leaves the injected name alone when the save fails', async () => {
+    vi.mocked(api.putAdminTitle).mockResolvedValue({ ok: false, status: 500 })
+    document.documentElement.dataset.portalTitle = 'Guest Portal'
+    const onTitleChange = vi.fn()
+    render(<SettingsPanel onClose={() => {}} onTitleChange={onTitleChange} />)
+    const field = await screen.findByLabelText(/portal name/i)
+
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Beach House')
+    await userEvent.tab()
+
+    await waitFor(() => expect(screen.getByTestId('portal-title-error')).toBeTruthy())
+    // A header that moved on a failed save is worse than one that never moves:
+    // it says the rename took when the server refused it.
+    expect(document.documentElement.dataset.portalTitle).toBe('Guest Portal')
+    expect(onTitleChange).not.toHaveBeenCalled()
   })
 
   it('saves the title on Enter, without leaving the field', async () => {

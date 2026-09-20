@@ -255,6 +255,18 @@ export function Portal({ role, onLogout }: PortalProps): ReactElement {
   const [orphaned, setOrphaned] = useState<string[]>([])
   const [orphanCheckFailed, setOrphanCheckFailed] = useState(false)
 
+  // Held as state, seeded once from the attribute the server injected.
+  //
+  // The alternative — calling `readPortalTitle()` in the render body, as this
+  // did — is only correct while nothing on the page can change the title. The
+  // settings panel can, and a DOM attribute write does not re-render React, so
+  // the owner renamed the portal and watched their own header keep the old
+  // name. A callback from the panel is the smallest thing that closes it: the
+  // title is one value owned by the page that renders the header, and the
+  // panel is a child telling its parent what it saved. `PortalTitleField` also
+  // writes the attribute back, so a later remount and the browser tab agree.
+  const [title, setTitle] = useState(readPortalTitle)
+
   // Connect to the device store on mount
   useEffect(() => {
     const teardown = connectDeviceStore()
@@ -474,6 +486,7 @@ export function Portal({ role, onLogout }: PortalProps): ReactElement {
             onClose={() => {
               show('normal')
             }}
+            onTitleChange={setTitle}
           />
         </div>
       </div>,
@@ -530,7 +543,7 @@ export function Portal({ role, onLogout }: PortalProps): ReactElement {
 
   return (
     <Shell
-      title={readPortalTitle()}
+      title={title}
       loggingOut={loggingOut}
       onLogout={() => {
         void handleLogout()
