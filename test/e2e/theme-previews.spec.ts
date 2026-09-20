@@ -118,7 +118,14 @@ for (const theme of listThemes()) {
     // large a colour change as this UI can make — still passed, so every
     // colour-only change slipped through and the previews would silently rot.
     //
-    // 0.001 still absorbs a few hundred pixels of text antialiasing.
+    // 0.001 is ~160px of a 159,600px frame, and it has to stay that tight.
+    // The icon circle carrying a tile's state colour is only ~1,018px AND is
+    // drawn as a 20% tint rather than a solid fill, so repainting it green to
+    // purple moves far fewer pixels past `threshold` than its area suggests:
+    // measured, 0.003 lets that change through undetected. The flakiness this
+    // tightness used to cause came from text antialiasing, and is fixed at the
+    // source by the deterministic font rendering flags in playwright.config.ts
+    // rather than by raising the floor past the signal.
     await expect(page).toHaveScreenshot(`${id}.png`, {
       threshold: 0.1,
       maxDiffPixelRatio: 0.001,
