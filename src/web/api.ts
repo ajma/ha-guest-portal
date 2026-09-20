@@ -9,6 +9,7 @@ import {
   type Role,
   SessionResponse,
 } from '@shared/api.js'
+import type { ThemeId } from '@shared/themes.js'
 
 type ApiSuccess<T> = { ok: true; data: T }
 type ApiError = { ok: false; status: number; retryAfter: number } | { ok: false; status: number }
@@ -164,7 +165,7 @@ export async function putAllowlist(devices: AllowlistRow[]): Promise<ApiResult<v
 }
 
 export async function getAdminPortal(): Promise<
-  ApiResult<{ enabled: boolean; integrationToken: string; portalId: string }>
+  ApiResult<{ enabled: boolean; integrationToken: string; portalId: string; theme: ThemeId }>
 > {
   const response = await fetch('/api/admin/portal', {
     credentials: 'same-origin',
@@ -178,6 +179,28 @@ export async function putAdminPortal(enabled: boolean): Promise<ApiResult<void>>
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled }),
+    credentials: 'same-origin',
+  })
+
+  if (!response.ok) {
+    if (response.status === 401 && unauthorizedCallback !== null) {
+      unauthorizedCallback()
+    }
+
+    return {
+      ok: false,
+      status: response.status,
+    }
+  }
+
+  return { ok: true, data: undefined }
+}
+
+export async function putAdminTheme(theme: ThemeId): Promise<ApiResult<void>> {
+  const response = await fetch('/api/admin/theme', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ theme }),
     credentials: 'same-origin',
   })
 

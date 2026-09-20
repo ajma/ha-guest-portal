@@ -206,6 +206,7 @@ describe('API client', () => {
             enabled: false,
             integrationToken: 'a'.repeat(64),
             portalId: '11111111-1111-1111-1111-111111111111',
+            theme: 'classic',
           }),
           {
             status: 200,

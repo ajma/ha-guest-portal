@@ -4,6 +4,7 @@ import type { Deps } from './routes-guest.js'
 import {
   AdminPortalPutRequest,
   AdminPortalResponse,
+  AdminThemePutRequest,
   AllowlistPutRequest,
   AllowlistResponse,
   CatalogResponse,
@@ -81,6 +82,7 @@ export function mountAdminRoutes(app: Hono<Env>, deps: Deps): void {
         enabled: settings.getPortalEnabled(),
         integrationToken: settings.getIntegrationToken(),
         portalId: settings.getPortalId(),
+        theme: settings.getTheme(),
       }),
     )
   })
@@ -104,5 +106,25 @@ export function mountAdminRoutes(app: Hono<Env>, deps: Deps): void {
     settings.setPortalEnabled(parseResult.data.enabled)
 
     return c.json({ enabled: parseResult.data.enabled })
+  })
+
+  // PUT /api/admin/theme - choose the guest-facing theme
+  app.put('/api/admin/theme', async (c) => {
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ error: 'Invalid JSON' }, 400)
+    }
+
+    const parseResult = AdminThemePutRequest.safeParse(body)
+    if (!parseResult.success) {
+      const firstIssue = parseResult.error.issues[0]
+      return c.json({ error: firstIssue ? firstIssue.message : 'Invalid request' }, 400)
+    }
+
+    settings.setTheme(parseResult.data.theme)
+
+    return c.json({ theme: parseResult.data.theme })
   })
 }

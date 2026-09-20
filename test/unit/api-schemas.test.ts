@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   AdminPortalPutRequest,
   AdminPortalResponse,
+  AdminThemePutRequest,
   AllowlistPutRequest,
   AllowlistResponse,
   CatalogResponse,
@@ -353,6 +354,7 @@ describe('portal toggle schemas', () => {
         enabled: true,
         integrationToken: 'a'.repeat(64),
         portalId: '11111111-1111-1111-1111-111111111111',
+        theme: 'classic',
       }).enabled,
     ).toBe(true)
   })
@@ -390,5 +392,27 @@ describe('portal toggle schemas', () => {
       },
     })
     expect(parsed.lastInteraction?.kind).toBe('action')
+  })
+})
+
+describe('theme schemas', () => {
+  it('requires theme on the admin portal response', () => {
+    expect(
+      AdminPortalResponse.safeParse({
+        enabled: true,
+        integrationToken: 'a'.repeat(64),
+        portalId: '11111111-1111-1111-1111-111111111111',
+      }).success,
+    ).toBe(false)
+  })
+
+  it('rejects an unknown theme id', () => {
+    expect(AdminThemePutRequest.safeParse({ theme: 'bogus' }).success).toBe(false)
+  })
+
+  it('accepts each known theme id', () => {
+    for (const id of ['tiles', 'cards', 'classic']) {
+      expect(AdminThemePutRequest.parse({ theme: id }).theme).toBe(id)
+    }
   })
 })

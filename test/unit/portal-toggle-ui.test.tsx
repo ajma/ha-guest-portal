@@ -14,6 +14,7 @@ describe('PortalToggle', () => {
         enabled: true,
         integrationToken: 'a'.repeat(64),
         portalId: '11111111-1111-1111-1111-111111111111',
+        theme: 'classic',
       },
     })
     vi.mocked(api.putAdminPortal).mockResolvedValue({ ok: true, data: undefined })
@@ -47,6 +48,7 @@ describe('PortalToggle', () => {
         enabled: false,
         integrationToken: 'a'.repeat(64),
         portalId: '11111111-1111-1111-1111-111111111111',
+        theme: 'classic',
       },
     })
 
@@ -101,6 +103,7 @@ describe('PortalToggle', () => {
         enabled: true,
         integrationToken: 'a'.repeat(64),
         portalId: '11111111-1111-1111-1111-111111111111',
+        theme: 'classic',
       },
     })
 
@@ -123,6 +126,7 @@ describe('PortalToggle', () => {
         enabled: false,
         integrationToken: 'a'.repeat(64),
         portalId: '11111111-1111-1111-1111-111111111111',
+        theme: 'classic',
       },
     })
     vi.mocked(api.putAdminPortal).mockResolvedValue({ ok: false, status: 500 })
@@ -159,6 +163,7 @@ describe('PortalToggle', () => {
         enabled: true,
         integrationToken: 'a'.repeat(64),
         portalId: '11111111-1111-1111-1111-111111111111',
+        theme: 'classic',
       },
     })
 
@@ -176,6 +181,7 @@ describe('PortalToggle', () => {
         enabled: false,
         integrationToken: 'a'.repeat(64),
         portalId: '11111111-1111-1111-1111-111111111111',
+        theme: 'classic',
       },
     })
 

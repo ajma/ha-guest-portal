@@ -519,6 +519,7 @@ describe('Admin API routes', () => {
       expect(body.enabled).toBe(true)
       expect(body.integrationToken).toMatch(/^[0-9a-f]{64}$/)
       expect(body.portalId).toMatch(/^[0-9a-f-]{36}$/)
+      expect(body.theme).toBe('classic')
     })
 
     it('refuses a guest', async () => {
@@ -567,6 +568,54 @@ describe('Admin API routes', () => {
 
       expect(res.status).toBe(400)
       expect(settings.getPortalEnabled()).toBe(true)
+    })
+  })
+
+  describe('theme routes', () => {
+    it('reports the current theme on the portal route', async () => {
+      const res = await fetch(`${baseUrl}/api/admin/portal`, { headers: { cookie: adminCookie } })
+      expect((await res.json()).theme).toBe('classic')
+    })
+
+    it('sets a theme', async () => {
+      const res = await fetch(`${baseUrl}/api/admin/theme`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({ theme: 'tiles' }),
+      })
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ theme: 'tiles' })
+      expect(settings.getTheme()).toBe('tiles')
+    })
+
+    it('rejects an unknown theme and leaves the stored value alone', async () => {
+      const res = await fetch(`${baseUrl}/api/admin/theme`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({ theme: 'bogus' }),
+      })
+
+      expect(res.status).toBe(400)
+      expect(settings.getTheme()).toBe('classic')
+    })
+
+    it('refuses a guest', async () => {
+      const res = await fetch(`${baseUrl}/api/admin/theme`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', cookie: guestCookie },
+        body: JSON.stringify({ theme: 'tiles' }),
+      })
+      expect(res.status).toBe(403)
+    })
+
+    it('refuses an anonymous request', async () => {
+      const res = await fetch(`${baseUrl}/api/admin/theme`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme: 'tiles' }),
+      })
+      expect(res.status).toBe(401)
     })
   })
 })

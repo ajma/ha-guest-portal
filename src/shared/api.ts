@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { DOMAIN_ACTIONS, parseDomain } from './devices.js'
+import { THEME_IDS } from './themes.js'
 
 // Role types
 export type Role = 'guest' | 'admin'
@@ -163,10 +164,15 @@ export const AdminPortalResponse = z.object({
   enabled: z.boolean(),
   integrationToken: z.string(),
   portalId: z.string(),
+  theme: z.enum(THEME_IDS),
 })
 
 export const AdminPortalPutRequest = z.object({
   enabled: z.boolean(),
+})
+
+export const AdminThemePutRequest = z.object({
+  theme: z.enum(THEME_IDS),
 })
 
 const InteractionSchema = z.object({
