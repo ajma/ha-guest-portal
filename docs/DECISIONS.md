@@ -129,6 +129,71 @@ generator rather than at the import. That was an invisible constraint on what a 
 contain, which the contract never meant to impose; it cost `cards` its icon imports.
 A theme's `tokens.ts` is pure data behind a type-only import, so it loads anywhere.
 
+**The Shell contract gained a `headerActions` slot, guarded by a contract test that
+iterates every registered theme.** The slot carries the owner's Edit and Settings
+buttons, and a theme that accepts the prop and silently drops it locks an owner out of
+their own settings — with no other visible symptom, because the portal still renders
+perfectly for everyone including that owner. No other test would notice, so
+`test/unit/shell-contract.test.tsx` renders each registered theme's Shell with a sentinel
+button and a known title and asserts both appear, with a non-empty guard on the list so an
+empty registry cannot satisfy the loop vacuously. Reversal cost: none worth taking —
+deleting the test restores a failure mode whose only report is a support question.
+
+**Owner surfaces read theme tokens but are not theme components.** The tile editor,
+entity picker, settings panel and title field take their colours, radius and font from
+the CSS variables, so they adopt every theme's palette — dark mode and future themes
+included — while adding no slot to `Theme['components']`. A theme is still one folder
+plus one registry line. This reverses the themes plan's instruction to leave the admin
+surface unthemed, which was right for a separate page and wrong for a panel that opens
+over a themed grid. Reversal cost: hex literals return, and the panels look pasted onto
+whichever themes they were not designed against.
+
+## The portal page
+
+**Owners edit the portal itself; there is no admin page.** You cannot tell what you are
+shipping from a screen that looks nothing like it — the old `Admin.tsx` listed devices as
+rows of form controls while guests got a themed grid, and it carried its own header, list,
+layout and save model to do it. Role now feeds exactly one decision: whether the Shell is
+handed `headerActions`. Reversing means reintroducing a whole surface that duplicates the
+themed grid.
+
+**Edits save immediately; there is no Save button.** The page holds a live SSE stream, so
+batching edits locally would mean reconciling every incoming snapshot against uncommitted
+local changes. Writing on every mutation keeps the stream authoritative: `useAllowlistEditor`
+holds an optimistic overlay only while a request is in flight and drops it in a `finally`,
+so the grid converges on what the server actually stored. The cost is that there is no undo,
+which is why removal — the one destructive edit — asks for confirmation inline.
+
+**A device added from the picker starts with no allowed actions.** It appears to guests
+immediately, as an inert tile that can do nothing until the owner ticks the actions to
+allow: a light, switch, fan or `input_boolean` says "No actions available" in so many
+words, while a lock or cover simply renders with no buttons at all. Adding a lock therefore
+cannot make it openable before it has been configured. The alternative, a persisted hidden
+flag, adds a column and a whole visibility concept to the data model to solve what is
+really a cosmetic problem. One consequence was not anticipated: an inert tile has nothing
+focusable in it, so edit mode needs an explicit per-tile Edit button for keyboard parity —
+intercepting the tap alone is not enough.
+
+**Reordering uses arrows, not drag, and the arrows stay available for a device the portal
+cannot actuate.** Drag is the most fragile part of this on touch and the hardest to make
+accessible; Move up and Move down work with a keyboard and a screen reader, and adding drag
+later is a pure enhancement with no data implications. An entity whose domain the portal
+cannot operate still keeps its arrows, because position is domain-independent — the owner
+may want to move it precisely *because* it is inert. Only the action checkboxes disappear
+for such a device.
+
+**The portal title is injected into the HTML, not fetched.** Same mechanism and the same
+reasoning as the theme: the server writes `data-portal-title` and `<title>` in the pass
+that already rewrites the document, so the header is right on first paint and no public
+endpoint exists purely to serve one string to guests. The settings field additionally
+reads `GET /api/admin/portal` when it opens, so an owner sees a rename made from another
+session rather than the value their own page was loaded with. It is owner-supplied text
+written into HTML, so it is escaped at the injection point and tested with a hostile value
+— and both replacements take a function replacer, because `String.prototype.replace`
+expands `$&` and `` $` `` in a string replacement and HTML-escaping does not defuse them.
+Clearing the field stores the default `Guest Portal` rather than a blank, decided in
+`normalizePortalTitle` and applied on read as well as write.
+
 ## Security
 
 **This application is the security boundary.** Home Assistant cannot issue a token scoped
@@ -247,8 +312,10 @@ because a native module needs musl prebuilds or a full toolchain in Alpine.
 
 - Anyone with the guest password can operate every exposed device, including locks.
   Mitigated by per-device `allowedActions` and a confirmation step on unlock.
-- Renaming an entity in Home Assistant orphans its allowlist row. The admin UI flags
-  orphaned rows rather than failing silently.
+- Renaming an entity in Home Assistant orphans its allowlist row. Edit mode flags the
+  orphaned tile rather than failing silently — the check is a `getAllowlist()` fetch on
+  entering edit mode, because an orphan is defined by an absence and the SSE stream
+  carries only the devices that exist.
 - The rate limiter uses fixed windows, so 120 attempts are possible across a window
   boundary (60 in each of two windows — the intended total; only the instantaneous rate
   doubles).
@@ -287,3 +354,25 @@ because a native module needs musl prebuilds or a full toolchain in Alpine.
   previews. What the unit tests do assert is the resolved token name reaching the DOM: a
   lit lamp takes `--stateLightActive`, a locked door `--stateLockLocked`, and the three are
   distinct. That covers the colour *logic*; the rendering is the snapshot's job.
+- **Known gap — nothing in `src/web/api.ts` guards `fetch` against a network throw.** There
+  is not one `try`/`catch` in the file: each function converts an HTTP failure into
+  `{ ok: false, status }` and lets an offline, aborted or DNS-failed request reject instead.
+  Every `void somePromise()` call site is therefore a potential unhandled rejection, and the
+  visible symptom is the wrong one — the optimistic change reverts with no error shown. The
+  allowlist editor and the portal title field each catch their own, and the orphan and
+  catalog loads in `Portal.tsx` do too; the class is untouched. Fixing it in one api function
+  was rejected as an inconsistency pretending to be a fix — either all of them return a
+  network failure as `{ ok: false }`, or none do.
+- **Known gap — two owners editing at once will clobber each other.** Every edit PUTs the
+  whole allowlist, so the last write wins and the other owner's concurrent change is gone
+  with nothing to indicate it happened. Acceptable for a single-household add-on with one
+  admin password; the fix is per-device endpoints or an ETag on the allowlist, and neither
+  is worth the complexity at this size.
+- **Accepted risk — the base-href hardening in `src/server/app.ts` is untested.** The
+  `<base href>` interpolation shares the `$`-expansion and unescaped-value defect fixed for
+  the portal title, and was fixed the same way, but the ingress listener has no integration
+  coverage: reaching it needs a request that appears to come from the Supervisor at
+  `172.30.32.2`. The value comes from the `x-ingress-path` header on a connection the
+  Supervisor gate has already accepted, so it is Supervisor-controlled rather than
+  guest-controlled, which is why a two-line fix shaped exactly like the proven one was
+  accepted without a test rather than left in place.

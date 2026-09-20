@@ -53,14 +53,82 @@ The container port (right side) must remain 9123 and should not be modified.
 
 **Upgrade note:** If your saved configuration still contains a `port:` line from an earlier version, remove it — the option no longer exists.
 
+## Editing the portal
+
+Open the portal from your Home Assistant sidebar and you land on the same page
+your guests see, with two extra buttons in the header: **Edit** and **Settings**.
+Guests never see either one — for a guest the buttons are absent, not greyed out.
+
+### Edit
+
+Click **Edit** and the grid becomes an editing surface: every device gets a
+dashed outline, and the button you clicked now reads **Done**. In edit mode,
+tapping a device opens its editor instead of operating it — tapping a lamp will
+not switch the lamp on. Each device also carries its own small **Edit** button,
+which is the way in for a device that has no buttons of its own.
+
+A device's editor lets you:
+
+- **rename it** — this is the name guests see, and it need not match the name in
+  Home Assistant
+- **choose what guests can do with it** — tick only the actions you want to
+  allow, such as unlock but not lock
+- **move it up or down** — the order here is the order guests see
+- **remove it** — guests lose access to it straight away
+
+At the end of the grid is a dashed **+ Add device** tile. Click it to search your
+Home Assistant devices and pick one to expose.
+
+If a device you added has since been renamed or removed in Home Assistant, its
+tile is outlined in red and labelled as orphaned. Remove it and add the device
+again under its new name.
+
+Click **Done** when you have finished.
+
+### Settings
+
+**Settings** opens a panel over the portal holding three things: the portal's
+name, the theme, and the switch that turns the guest side on and off. Each is
+described in its own section below. Close the panel when you are done — as with
+editing, nothing here needs saving.
+
+### Two things worth knowing before you start
+
+**A device you add appears to your guests straight away, and can do nothing
+until you say what it may do.** A newly added device arrives with no actions
+allowed at all: a lamp, switch or fan says "No actions available" on its tile,
+and a lock or blind simply has no buttons on it. This is deliberate — it means
+adding a lock can never make it openable before you have decided what a guest
+may do with it. Tick the actions you want and the tile becomes usable within a
+second or two, on your guests' screens as well as your own.
+
+**Every change saves the moment you make it.** There is no Save button, and
+there is no undo. Renaming a device, ticking an action, moving a tile and
+removing a device all take effect immediately, and a guest looking at the portal
+sees the result at once. That is why removing a device asks you to confirm: it
+is the one change you cannot simply make again.
+
+## Naming the portal
+
+**Settings** has a **Portal name** field. The name you type appears in the portal
+header and in the browser tab, for your guests and for you.
+
+Press Enter, or click outside the field, to save it. Clearing the field restores
+the default name, `Guest Portal` — the header is never left blank. Names are
+limited to 60 characters.
+
+A guest who already has the portal open keeps the old name until their next page
+load. The setting survives add-on restarts and updates.
+
 ## Turning the guest portal on and off
 
-The add-on's admin page (click the add-on in your Home Assistant sidebar) has a
-**Guest Portal** toggle at the top. Turning it off:
+Click **Settings** in the portal header. The **Guest Portal** switch at the
+bottom of the panel turns the guest side on and off. Turning it off:
 
 - refuses guest logins, even with the correct password
 - blocks guests who are already signed in, and drops their live updates
-- leaves this admin page, and the allowlist, fully usable
+- leaves the portal fully usable for you — you can still edit devices and change
+  settings
 
 Guest sessions are blocked, not destroyed. When you turn the portal back on,
 anyone who kept their tab open returns automatically without signing in again.
@@ -69,7 +137,7 @@ The setting survives add-on restarts and updates.
 
 ## Choosing a theme
 
-The admin page has a **Theme** picker showing three small pictures of the portal.
+**Settings** has a **Theme** picker showing three small pictures of the portal.
 Click one to change how the guest portal looks. The three are:
 
 - **Classic** — the look of Home Assistant itself. Each device is a wide row: a
@@ -89,7 +157,8 @@ Click one to change how the guest portal looks. The three are:
 
 The theme applies to everything a guest sees: the login screen, the device list,
 and the "temporarily unavailable" message shown while the portal is switched off.
-It does not change this admin page, which only you see.
+Your own Edit and Settings panels follow it too — they take their colours from
+whichever theme you have chosen, so they never look pasted on top of the portal.
 
 Whichever you choose, it switches between a light and a dark appearance on its
 own, following whatever the guest's phone or laptop is already set to. There is
@@ -107,7 +176,8 @@ The portal supports two ways to access it:
 
 After installing the add-on, a "Home Assistant Guest Portal" entry appears in your Home Assistant sidebar. Click it to open the portal **with admin privileges, no password required**. This uses Home Assistant's ingress feature and authenticates you automatically.
 
-From there, click "Admin" to configure which devices guests can access.
+From there, click **Edit** to choose which devices guests can access, or
+**Settings** to name the portal, pick a theme, or turn the guest side off.
 
 ### Guest Access via Direct Port
 
@@ -119,12 +189,14 @@ Share the LAN address with your guests: `http://homeassistant.local:9123`. Guest
 
 1. Start the add-on
 2. Open the portal from the Home Assistant sidebar (admin access, no password)
-3. Click "Admin" to configure exposed devices:
-   - Choose entities from your Home Assistant instance
-   - Set friendly labels
-   - Select which actions are permitted (e.g., unlock but not lock)
-4. Click "Save"
-5. Share the direct port URL and guest password with your guests:
+3. Click **Edit**, then the **+ Add device** tile at the end of the grid, and
+   pick an entity from your Home Assistant instance
+4. Tap the new device's tile to give it a friendly name and tick the actions
+   guests are allowed to use (e.g. unlock but not lock). Until you tick
+   something the device is visible to guests but does nothing
+5. Click **Done**. There is no Save button — every change saved as you made it
+6. Optionally click **Settings** to name the portal and choose a theme
+7. Share the direct port URL and guest password with your guests:
    - URL: `http://homeassistant.local:9123` (or your LAN IP)
    - Password: The guest password you configured
 
@@ -141,7 +213,7 @@ This portal is designed for deployment on a trusted home network.
 ## Accepted Risks
 
 - **Shared credentials**: Anyone with the guest password can operate every exposed device, including locks. Do not expose devices you cannot afford to have controlled by any guest.
-- **Entity renaming**: If you rename an entity in Home Assistant, the portal's allowlist entry becomes orphaned and the device will appear as unavailable. You must re-add it in the portal's admin UI.
+- **Entity renaming**: If you rename an entity in Home Assistant, the portal's allowlist entry becomes orphaned and the device will appear as unavailable. Edit mode outlines an orphaned tile in red; remove it there and add the device again under its new name.
 - **Environment variable exposure**: The Supervisor provides full Core API access to the add-on. Treat add-on configuration access as equivalent to full access to all exposed devices.
 
 ## Support

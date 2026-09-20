@@ -119,7 +119,6 @@ if [ "$HA_MODE" = "real" ]; then
 
   ───────────────────────────────────────────────
    Guest / admin UI   http://localhost:5173
-   Admin screen       http://localhost:5173/admin
    Passwords          from .env (GUEST_PASSWORD / ADMIN_PASSWORD)
    Home Assistant     ${HA_BASE_URL}  (REAL)
    Portal DB          ${DB_PATH}
@@ -134,7 +133,6 @@ else
    Guest / admin UI   http://localhost:5173
    Guest password     dev-guest-password
    Admin password     dev-admin-password
-   Admin screen       http://localhost:5173/admin
    Fake HA            http://127.0.0.1:${FAKE_HA_PORT}
   ───────────────────────────────────────────────
    Ctrl-C to stop everything.

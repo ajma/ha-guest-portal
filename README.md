@@ -70,7 +70,7 @@ under Settings → Devices & Services. Click **Configure**. No credentials neede
 
 **Docker Compose installations:** go to Settings → Devices & Services → Add
 Integration → Home Assistant Guest Portal, and enter the host, port, and the
-integration token shown on the portal's admin page under "Show token".
+integration token shown in the portal's **Settings** panel under "Show token".
 
 The integration requires **Python 3.14.2+**, which is satisfied by Home Assistant
 2026.9 and newer.
@@ -185,14 +185,18 @@ Replace `192.168.1.10` with your server's LAN IP address.
 
 1. Navigate to `http://<your-server-ip>:9123` in a web browser
 2. Log in using the admin password you configured
-3. Click the "Admin" link or navigate to `/admin`
-4. Select which devices to expose to guests:
-   - Choose entities from your Home Assistant instance
-   - Set friendly labels
-   - Select which actions are permitted (e.g., unlock but not lock)
-5. Click "Save"
-6. Optionally pick one of the three guest portal themes from the admin page's theme picker (see `DOCS.md`)
-7. Share the guest portal URL and guest password with your guests
+3. Click **Edit** in the header. There is no separate admin page — you edit the
+   portal itself, and guests see neither button
+4. Click the **+ Add device** tile at the end of the grid and choose an entity
+   from your Home Assistant instance
+5. Tap the new device's tile to set a friendly label and tick which actions are
+   permitted (e.g., unlock but not lock). A device with nothing ticked is
+   visible to guests but inert
+6. Click **Done**. Every change saved as you made it; there is no Save button
+   and no undo
+7. Optionally click **Settings** to name the portal and pick one of the three
+   guest portal themes (see `DOCS.md`)
+8. Share the guest portal URL and guest password with your guests
 
 Guests can now control only the devices you've explicitly allowed.
 
@@ -215,8 +219,8 @@ This portal is designed for deployment on a trusted home network behind a router
 
 - **Two shared passwords**: one for guests (device control), one for admins (device selection)
 - **Server-side allowlist**: Only explicitly approved entities and actions are permitted
-- **Kill-switch**: the guest surface can be disabled from the add-on admin page or
-  from Home Assistant, without affecting the admin surface
+- **Kill-switch**: the guest surface can be disabled from the portal's Settings
+  panel or from Home Assistant, without affecting an owner's own access
 - **Token isolation**: The Home Assistant access token never reaches a browser
 - **Network isolation**: Bind to a LAN interface only; no TLS (relies on physical network boundary)
 - **Session cookies**: HttpOnly, SameSite=Lax (no Secure flag — this is plain HTTP on LAN)
@@ -224,7 +228,7 @@ This portal is designed for deployment on a trusted home network behind a router
 ## Accepted Risks
 
 - **Shared credentials**: Anyone with the guest password can operate every exposed device, including locks. Do not expose devices you cannot afford to have controlled by any guest.
-- **Entity renaming**: If you rename an entity in Home Assistant, the portal's allowlist entry becomes orphaned and the device will appear as unavailable. You must re-add it in the portal's admin UI.
+- **Entity renaming**: If you rename an entity in Home Assistant, the portal's allowlist entry becomes orphaned and the device will appear as unavailable. Edit mode flags the orphaned tile; remove it there and add the device again.
 - **No per-entity token scoping**: Home Assistant's long-lived access tokens cannot be scoped to specific entities. The portal enforces the allowlist in application code. Use a non-admin HA user account to limit blast radius.
 - **Environment variable exposure**: Anyone with access to the Docker daemon on the host can read the Home Assistant token and both passwords via `docker inspect`. Treat host access as equivalent to full access to the portal and all exposed devices.
 
