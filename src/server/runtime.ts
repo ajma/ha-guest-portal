@@ -29,6 +29,11 @@ const SUPERVISOR_ADDRESS = '172.30.32.2' as const
  * Hono and outside any try/catch, so that throw took the process down — an
  * unauthenticated remote kill on the guest-facing port. Only the pathname is
  * ever needed, and it requires no parsing.
+ *
+ * Matching is now on the raw target (before normalization), so dot-segment
+ * variants (`/foo/../api/stream`), backslash, and absolute-form requests
+ * (`http://evil.com/api/stream`) deliberately no longer match the intercept.
+ * This is a fail-closed tightening.
  */
 export function requestPathname(rawUrl: string | undefined): string {
   const raw = rawUrl ?? '/'
@@ -166,51 +171,63 @@ export function createRuntime(deps: Deps): Runtime {
     req: import('node:http').IncomingMessage,
     res: import('node:http').ServerResponse,
   ) {
-    // Normalize single trailing slash
-    let pathname = requestPathname(req.url)
-    if (pathname.endsWith('/') && pathname.length > 1) {
-      pathname = pathname.slice(0, -1)
-    }
+    try {
+      // Normalize single trailing slash
+      let pathname = requestPathname(req.url)
+      if (pathname.endsWith('/') && pathname.length > 1) {
+        pathname = pathname.slice(0, -1)
+      }
 
-    // Intercept /api/stream before Hono sees it
-    if (pathname === '/api/stream' && req.method === 'GET') {
-      // Check session
-      const role = checkSession(req.headers.cookie, sessions)
-      if (!role) {
-        res.writeHead(401, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'Unauthorized' }))
+      // Intercept /api/stream before Hono sees it
+      if (pathname === '/api/stream' && req.method === 'GET') {
+        // Check session
+        const role = checkSession(req.headers.cookie, sessions)
+        if (!role) {
+          res.writeHead(401, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Unauthorized' }))
+          return
+        }
+
+        if (settings.blocksGuest(role)) {
+          res.writeHead(403, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'portal_disabled' }))
+          return
+        }
+
+        // Session valid - handle SSE
+        hub.add(res, role)
+
+        // Send initial snapshot immediately
+        const allowlistRows = allowlist.list()
+        const states = ha.getStates()
+        const stale = ha.stale
+
+        const devices = assembleDevices(allowlistRows, states, stale)
+
+        const snapshot: SseFrame = SseFrameSchema.parse({
+          type: 'snapshot',
+          devices,
+          stale,
+        })
+
+        hub.send(res, snapshot)
+        // Response now owned by hub
         return
       }
 
-      if (settings.blocksGuest(role)) {
-        res.writeHead(403, { 'Content-Type': 'application/json' })
-        res.end(JSON.stringify({ error: 'portal_disabled' }))
-        return
+      // All other routes go through Hono
+      honoListener(req, res)
+    } catch (error) {
+      console.error('Uncaught error in handleDirectRequest:', error)
+      // Only send 500 if headers not already sent
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Internal Server Error' }))
+      } else {
+        // Headers already sent, destroy the socket
+        res.destroy()
       }
-
-      // Session valid - handle SSE
-      hub.add(res, role)
-
-      // Send initial snapshot immediately
-      const allowlistRows = allowlist.list()
-      const states = ha.getStates()
-      const stale = ha.stale
-
-      const devices = assembleDevices(allowlistRows, states, stale)
-
-      const snapshot: SseFrame = SseFrameSchema.parse({
-        type: 'snapshot',
-        devices,
-        stale,
-      })
-
-      hub.send(res, snapshot)
-      // Response now owned by hub
-      return
     }
-
-    // All other routes go through Hono
-    honoListener(req, res)
   }
 
   // Ingress port request handler - enforces Supervisor source check first
@@ -222,43 +239,56 @@ export function createRuntime(deps: Deps): Runtime {
 
     // Ingress listener security gate: ONLY Supervisor connections allowed
     // This must be the first check - before static serving, before SSE, before Hono
+    // Keep this outside try/catch - it must not become reachable through an error path
     if (!isFromSupervisor(remoteAddress)) {
       res.writeHead(403, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'Forbidden' }))
       return
     }
 
-    // Valid Supervisor request - continue to handler logic
-    // Normalize single trailing slash
-    let pathname = requestPathname(req.url)
-    if (pathname.endsWith('/') && pathname.length > 1) {
-      pathname = pathname.slice(0, -1)
+    try {
+      // Valid Supervisor request - continue to handler logic
+      // Normalize single trailing slash
+      let pathname = requestPathname(req.url)
+      if (pathname.endsWith('/') && pathname.length > 1) {
+        pathname = pathname.slice(0, -1)
+      }
+
+      // Intercept /api/stream before Hono sees it
+      if (pathname === '/api/stream' && req.method === 'GET') {
+        // Supervisor-authenticated request - grant admin access without session
+        hub.add(res, 'admin')
+
+        // Send initial snapshot immediately
+        const allowlistRows = allowlist.list()
+        const states = ha.getStates()
+        const stale = ha.stale
+
+        const devices = assembleDevices(allowlistRows, states, stale)
+
+        const snapshot: SseFrame = SseFrameSchema.parse({
+          type: 'snapshot',
+          devices,
+          stale,
+        })
+
+        hub.send(res, snapshot)
+        return
+      }
+
+      // All other routes go through Hono (which will grant admin via middleware)
+      honoListener(req, res)
+    } catch (error) {
+      console.error('Uncaught error in handleIngressRequest:', error)
+      // Only send 500 if headers not already sent
+      if (!res.headersSent) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: 'Internal Server Error' }))
+      } else {
+        // Headers already sent, destroy the socket
+        res.destroy()
+      }
     }
-
-    // Intercept /api/stream before Hono sees it
-    if (pathname === '/api/stream' && req.method === 'GET') {
-      // Supervisor-authenticated request - grant admin access without session
-      hub.add(res, 'admin')
-
-      // Send initial snapshot immediately
-      const allowlistRows = allowlist.list()
-      const states = ha.getStates()
-      const stale = ha.stale
-
-      const devices = assembleDevices(allowlistRows, states, stale)
-
-      const snapshot: SseFrame = SseFrameSchema.parse({
-        type: 'snapshot',
-        devices,
-        stale,
-      })
-
-      hub.send(res, snapshot)
-      return
-    }
-
-    // All other routes go through Hono (which will grant admin via middleware)
-    honoListener(req, res)
   }
 
   // Create HTTP server(s)

@@ -18,6 +18,11 @@ describe('requestPathname', () => {
     expect(requestPathname('/foo?a=1#section')).toBe('/foo')
   })
 
+  it('extracts pathname with hash before query', () => {
+    // This is the discriminating case: naive "cut at ? else #" gives "/a#f"
+    expect(requestPathname('/a#f?b=c')).toBe('/a')
+  })
+
   it('handles protocol-relative URLs like //', () => {
     expect(requestPathname('//')).toBe('//')
   })
