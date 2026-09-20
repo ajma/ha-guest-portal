@@ -212,6 +212,43 @@ expands `$&` and `` $` `` in a string replacement and HTML-escaping does not def
 Clearing the field stores the default `Guest Portal` rather than a blank, decided in
 `normalizePortalTitle` and applied on read as well as write.
 
+## The installable portal
+
+**No API response is ever cached.** Not device state, not the session, not the catalog:
+`public/sw.js` returns early for `/api/*` and lets it fail exactly as the network fails.
+The reason is not stale tile text — device state arrives over SSE, not over a cached GET,
+so a cached `/api/devices` would not paint an hour-old "Locked" onto a tile. What actually
+happens is worse, and was measured rather than argued: with the guard removed, an offline
+reload restores the *entire signed-in portal* — the header, Log out, the device area — so
+a guest nowhere near the house is shown a portal that looks like it is working. Reversing
+it swaps a screen that admits it cannot reach the house for one that quietly pretends it
+can. `test/e2e/offline.spec.ts` fails the moment the guard goes, which is how the property
+is held.
+
+**The offline screen says "can't reach", not "you're not home".** All the app detects is
+that the session request rejected. The portal is reachable over a VPN from anywhere and
+unreachable from the sofa when the add-on is stopped, so the screen is headed `Can't reach
+the guest portal` and offers the likely cause — "You may need to be on the home Wi-Fi" —
+without claiming to have measured it, plus a **Retry** button that re-runs the check.
+Reversal cost: a confident wrong diagnosis in the one screen a guest sees when nothing
+else is working.
+
+**Icons are committed, not generated during the build.** The production image is built by
+Docker, which cannot be assumed to have ImageMagick, and a build step that quietly
+produced no icons would leave the app uninstallable with every check green.
+`scripts/generate-icons.sh` exists to make the PNGs reproducible; the PNGs are the
+artefact. Reversal cost: the build gains a dependency whose absence is invisible.
+
+**The service worker caches at runtime rather than from a build manifest.** It stores
+same-origin static GETs as they are fetched instead of being handed a generated list of
+hashed filenames, which keeps `sw.js` short enough to read in one sitting. The price is
+that the shell is available offline only after one online visit *under the worker* — not
+merely after one online visit. On the very first load the worker has only just claimed the
+page, so that document and its bundles were fetched uncontrolled and nothing was cached.
+Real guests get the second visit for free, installing on one and tapping the icon on
+another, but it is why `test/e2e/offline.spec.ts` performs an extra online reload before
+going offline: without knowing this, that reload reads as padding and invites deletion.
+
 ## Security
 
 **This application is the security boundary.** Home Assistant cannot issue a token scoped
@@ -394,3 +431,43 @@ because a native module needs musl prebuilds or a full toolchain in Alpine.
   Supervisor gate has already accepted, so it is Supervisor-controlled rather than
   guest-controlled, which is why a two-line fix shaped exactly like the proven one was
   accepted without a test rather than left in place.
+- **Known gap — `theme_color` cannot follow the chosen theme.** The manifest and the
+  `<meta name="theme-color">` are both fixed at `#fafafa`, the default theme's `appBg`,
+  because the OS reads them before any stylesheet loads and the owner's theme is only
+  known once the server has injected `data-theme` into the document. It is OS chrome
+  rather than app surface, so an owner on a dark theme gets a pale splash and then the
+  right colours.
+- **Accepted risk — a LAN-only restriction was designed and dropped.** An option to
+  reject non-private source addresses was specified and then removed before
+  implementation: under the add-on's Docker bridge networking the container may see the
+  bridge gateway's address rather than the client's, and the gateway's address is itself
+  private, so the gate would have passed everything while appearing to work. A security
+  control that fails open silently is worse than none. The portal stays reachable from
+  any network that can route to it, governed by the password.
+- **Known gap — installing the portal, and the offline screen with it, needs an `https://`
+  origin.** Service workers and install prompts are both restricted to secure contexts,
+  and this portal serves plain HTTP on the LAN by design — it has no TLS and relies on the
+  physical network boundary. `127.0.0.1` counts as secure, which is why the offline e2e in
+  `test/e2e/offline.spec.ts` passes against the harness; a guest on
+  `http://homeassistant.local:9123` is not in a secure context, so Chrome and Android
+  offer no install prompt and `registerServiceWorker()` returns at its first line. iOS
+  still adds a Home Screen icon that opens without Safari's chrome, but with no worker
+  there is no cached shell, so out of range it lands on Safari's error page rather than
+  the portal's. The feature is complete and correct; it simply does nothing until the
+  portal is fronted by HTTPS, which is a deployment change rather than a code one.
+- **Known gap — the `'serviceWorker' in navigator` guard in `registerServiceWorker()` is
+  not pinned by a test, by construction.** The implementation also wraps `register()` in a
+  `try`/`catch`, which it needs for browsers that throw synchronously out of a
+  policy-disabled worker registry, and that same `catch` swallows the `TypeError` from
+  reading `.register` off a missing `serviceWorker`. Deleting the guard is therefore
+  behaviourally indistinguishable from keeping it and no test can tell them apart. The
+  guard stays anyway: "unsupported" is a condition to test for, not an exception to catch.
+  The test carrying the gap says so in a comment, so the next reader does not assume
+  coverage that is not there.
+- **Known gap — the brand icon is a flat single-colour square.** `brand/icon.png` is
+  65,536 pixels of `#3D5A80` and nothing else, so every generated icon is a correctly
+  sized, genuinely rendered plain blue square, and the installed home-screen icon is too.
+  The 179/205/281-byte file sizes under `public/icons/` are a consequence of that, not
+  truncation — worth recording, because "the icon is 179 bytes" otherwise reads as a bug
+  in the generator. This is content, not code: drop real artwork in at `brand/icon.png`
+  and re-run `scripts/generate-icons.sh` to regenerate all three.

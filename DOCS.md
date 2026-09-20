@@ -185,6 +185,46 @@ Share the LAN address with your guests: `http://homeassistant.local:9123`. Guest
 
 **Admins can also use the direct port** by logging in with the admin password instead of the guest password.
 
+## Add the portal to your home screen
+
+A guest who has to hunt for a URL will not use the portal twice. Once they have
+the portal open in a browser, they can keep it as an icon:
+
+- **iPhone or iPad** — tap **Share** in Safari, scroll down the list, and tap
+  **Add to Home Screen**. The name under the icon can be edited before tapping
+  **Add**.
+- **Android, and Chrome on a computer** — the browser offers to install it. That
+  is a prompt asking to install the app, or a small install icon at the
+  right-hand end of the address bar; on Android it also appears in the browser's
+  menu as **Install app** or **Add to Home screen**.
+
+Tapping the icon afterwards opens the portal on its own, with no address bar and
+no tabs around it, so it looks like an app rather than a web page.
+
+It is still the same portal, though, and it still has to be able to reach your
+house. When it cannot — the guest has left, or the add-on is stopped — the app
+says so itself: a page headed **Can't reach the guest portal**, suggesting they
+may need to be on the home Wi-Fi, with a **Retry** button that tries again. That
+is the portal talking, not the browser's error page about a hostname your guest
+has never heard of.
+
+### What this needs from your setup
+
+Browsers only allow an app to be installed, and only allow it to keep a copy of
+itself for when the network is gone, on a secure (`https://`) address. The
+portal is served over plain `http://` on your own network, so today:
+
+- **Android and Chrome on a computer** will not offer to install it from a plain
+  `http://` address. There is no prompt and no address-bar icon to click.
+- **iPhone and iPad** will still add the icon, and it will still open without
+  Safari's chrome around it — but nothing is stored for when the network is out
+  of reach, so opening it away from the house shows Safari's own error page
+  rather than the portal's **Can't reach the guest portal** page.
+
+Putting the portal behind HTTPS is not something the add-on does for you; it
+needs a reverse proxy in front of it. Everything above works as described once
+guests reach the portal over an `https://` address.
+
 ## First-Run Setup
 
 1. Start the add-on

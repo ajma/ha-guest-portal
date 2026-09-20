@@ -40,6 +40,8 @@ The add-on supports two access methods:
 
 - **Guest access via direct port**: Share the LAN address with guests: `http://homeassistant.local:9123` (or your HA instance IP). Guests log in with the guest password.
 
+- **Add to home screen**: guests can keep the portal as an icon that opens without browser chrome, and it explains itself instead of showing a browser error when it cannot be reached — browsers require an `https://` address for this, so on a plain LAN address only iOS adds the icon. See `DOCS.md`.
+
 To change the published port, use the add-on's **Configuration → Network** panel in the Home Assistant UI. The container port must remain 9123.
 
 No Home Assistant token is needed — the Supervisor provides it automatically. See `DOCS.md` for detailed add-on documentation.
