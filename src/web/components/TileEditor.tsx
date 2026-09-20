@@ -115,7 +115,7 @@ export function TileEditor({ row, editor, onClose }: TileEditorProps): ReactElem
   const [confirmingRemove, setConfirmingRemove] = useState(false)
 
   const domain = parseDomain(row.entityId)
-  // An unsupported domain has no actions to offer and no meaningful place in the
+  // A domain the portal cannot operate has no actions to offer and no place in the
   // order — the tile renders inert. Naming and removing it still work.
   const actions: readonly string[] = domain === null ? [] : DOMAIN_ACTIONS[domain]
   const nameId = `tile-editor-label-${row.entityId}`

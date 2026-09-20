@@ -33,7 +33,12 @@ const listbox: CSSProperties = {
   backgroundColor: 'var(--surface)',
   border: '1px solid var(--border)',
   borderRadius: 'var(--tileRadius)',
-  maxHeight: '300px',
+  // Grows into whatever the dialog allows rather than stopping at a fixed
+  // height. The ghost tile only opens this; once open it is the whole task, so
+  // a short scroll window over a long list is wasted screen.
+  flex: '1 1 auto',
+  minHeight: 0,
+  maxHeight: 'min(60vh, 520px)',
   overflow: 'auto',
 }
 
@@ -50,10 +55,9 @@ export function EntityPicker({ entities, exclude, onSelect }: EntityPickerProps)
 
   const excludeSet = new Set(exclude)
 
-  // Unsupported entities are never offered. The portal cannot actuate them, so
-  // a row that can only be looked at is noise — and on a real installation it is
-  // most of the list: one house here had 2,495 unsupported entities against 353
-  // usable ones.
+  // Only entities the portal can actually operate are offered. A row that can
+  // be seen but never chosen is noise, and on a real installation it is most of
+  // the list: one house here had 2,495 such entities against 353 usable ones.
   const filtered = entities.filter((entity) => {
     if (!entity.supported) return false
     if (excludeSet.has(entity.entityId)) return false

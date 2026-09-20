@@ -109,7 +109,7 @@ describe('EntityPicker', () => {
     expect(options.some((opt) => opt.textContent?.includes('Living Room Lamp'))).toBe(true)
   })
 
-  it('never offers an unsupported entity, and gives no way to reveal one', async () => {
+  it('never offers an entity the portal cannot operate, and gives no way to reveal one', async () => {
     const user = userEvent.setup()
 
     const onSelect = vi.fn()
@@ -118,15 +118,15 @@ describe('EntityPicker', () => {
     const input = screen.getByRole('combobox')
     await user.type(input, 'thermostat')
 
-    // There is exactly one unsupported entity in `entities` and it matches this
+    // `entities` holds exactly one entity the portal cannot operate, and it matches this
     // search by name, so an empty listbox is the filter working rather than the
     // search missing.
     expect(screen.queryByRole('listbox')).toBeNull()
 
     // There used to be a checkbox that revealed them. The portal cannot actuate
-    // an unsupported entity, so revealing one only offered the owner a row that
-    // could not be chosen — and on a real installation those rows were most of
-    // the list. Its absence is the point of this assertion.
+    // one of these, so revealing it only offered the owner a row that could not
+    // be chosen — and on a real installation those rows were most of the list.
+    // Its absence is the point of this assertion.
     expect(screen.queryByRole('checkbox')).toBeNull()
   })
 
@@ -308,7 +308,7 @@ describe('EntityPicker', () => {
     expect(option.textContent).toMatch(/light\.porch/)
   })
 
-  it('cannot select an unsupported entity with the keyboard, because it is never listed', async () => {
+  it('cannot select an unoperable entity with the keyboard, because it is never listed', async () => {
     const user = userEvent.setup()
 
     const onSelect = vi.fn()

@@ -140,6 +140,18 @@ const overlayInner: CSSProperties = {
   overflowY: 'auto',
 }
 
+// The picker gets more room than the other two overlays. Settings and the tile
+// editor are short forms; this is a search over every entity in the house, and
+// the ghost tile exists only to open it.
+const pickerInner: CSSProperties = {
+  ...overlayInner,
+  maxWidth: '720px',
+  height: '100%',
+  display: 'flex',
+  flexDirection: 'column',
+  overflowY: 'visible',
+}
+
 const modeBanner: CSSProperties = {
   position: 'fixed',
   left: '50%',
@@ -184,8 +196,10 @@ function DeviceTile({
     return <LockTile device={device} disabled={disabled} />
   }
 
-  // Fallback for unsupported domains (shouldn't happen)
-  return <div>Unsupported device type: {domain}</div>
+  // Unreachable in practice: the picker only offers domains with a tile, and
+  // the server rejects an action on anything else. Rendering the label rather
+  // than a complaint about it keeps a stray row legible instead of alarming.
+  return <div>{device.label}</div>
 }
 
 /**
@@ -467,8 +481,8 @@ export function Portal({ role, onLogout }: PortalProps): ReactElement {
     // house. It uses the same backdrop as the other two overlays.
     children.push(
       <div key="__overlay" data-testid="picker-overlay" style={overlayBackdrop}>
-        <div style={overlayInner}>
-          <section style={panel}>
+        <div style={pickerInner}>
+          <section style={{ ...panel, flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
             <div style={panelHeader}>
               <h2 style={panelHeading}>Add a device</h2>
               <button

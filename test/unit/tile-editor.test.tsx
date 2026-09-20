@@ -228,7 +228,7 @@ describe('TileEditor', () => {
 
   // An entity whose domain this app does not support has no actions to offer.
   // It can still be named and removed, and must not crash the editor.
-  it('offers no action checkboxes for an unsupported domain, but still reorders', () => {
+  it('offers no action checkboxes for a domain the portal cannot operate, but still reorders', () => {
     const exoticRow: AllowlistRow = {
       entityId: 'vacuum.roomba',
       label: 'Roomba',
