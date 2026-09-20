@@ -7,6 +7,12 @@ describe('Server process smoke test', () => {
     const buildProc = spawn('pnpm', ['build'], {
       cwd: '/home/andm/workspace/ha-guest-portal',
       stdio: 'inherit', // Show build output
+      // vitest sets NODE_ENV=test, and an inherited NODE_ENV changes what Vite
+      // emits — it is what `import.meta.env.PROD` is derived from. Without this
+      // the artefact this test leaves in dist/ differs from a real build, and
+      // the next thing to read dist/ (the Playwright suite) tests something
+      // that will never ship.
+      env: { ...process.env, NODE_ENV: 'production' },
     })
 
     const buildCode = await new Promise<number | null>((resolve) => {
