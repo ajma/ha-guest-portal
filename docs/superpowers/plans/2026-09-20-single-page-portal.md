@@ -19,6 +19,7 @@
 - The owner surfaces (tile editor, entity picker, settings panel) read theme tokens via `var(--token)` but are **not** theme components. Do not add slots to `Theme['components']`.
 - Theme `.tsx` files are scanned by tests that fail on Tailwind palette classes, hex literals and `rgb(`/`rgba(`/`hsl(`/`hsla(`. Colours come from `var(--token)`; literals belong only in a theme's `tokens.ts`.
 - `pnpm format` must leave the tree unchanged (`biome format` is not part of `pnpm lint`; run it before committing).
+- **Import specifiers:** `src/web/` may use the `@shared/*` alias (Vite rewrites it). `src/server/` must NOT — it is built by plain `tsc`, which emits aliases unchanged and they fail at runtime. Use relative specifiers there, as every existing server file does.
 - Plain author commits only. **Never** add a `Co-Authored-By` trailer, a "Generated with Claude" footer, a 🤖 line, or any AI-attribution anywhere.
 - Do not run `pnpm dev` or `pnpm dev:real`, start Docker containers, or use `sudo`. A dev stack is live on ports 9123/5173. `pnpm build` and `pnpm test:e2e` are allowed where a task says so.
 - `test/e2e/screenshots/*.png` are rewritten by every e2e run — restore them (`git checkout --`) or commit them separately.
@@ -74,7 +75,7 @@
 **Files:**
 - Create: `src/shared/portalTitle.ts`, `test/unit/portal-title.test.ts`
 - Modify: `src/server/store/settings.ts`
-- Test: `test/unit/settings-store.test.ts` (existing — add cases)
+- Test: `test/unit/settings.test.ts` (existing — add cases)
 
 **Interfaces:**
 - Consumes: nothing.
@@ -159,7 +160,7 @@ Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Add the failing store test**
 
-Append to `test/unit/settings-store.test.ts`, inside the existing top-level `describe`:
+Append to `test/unit/settings.test.ts`, inside the existing top-level `describe`:
 
 ```ts
   it('returns the default title when nothing is stored', () => {
@@ -203,7 +204,12 @@ and the accessors beside `getTheme`/`setTheme`:
   }
 ```
 
-Import at the top: `import { DEFAULT_PORTAL_TITLE, normalizePortalTitle } from '@shared/portalTitle.js'`.
+Import at the top with a **relative** specifier: `import { DEFAULT_PORTAL_TITLE, normalizePortalTitle } from '../../shared/portalTitle.js'`.
+
+Nothing under `src/server/` uses the `@shared/*` alias, and it must not start here: the server is
+built by plain `tsc -p tsconfig.server.json`, which does not rewrite path aliases, so an aliased
+specifier would be emitted unchanged and fail at runtime under Node. Vite does rewrite them, which
+is why `src/web/` uses the alias freely.
 
 Normalising on read as well as write is deliberate: a row written by an older build, or edited in the database by hand, still yields something renderable.
 
@@ -213,7 +219,7 @@ Run: `pnpm lint && pnpm typecheck && pnpm vitest run`
 
 ```bash
 pnpm format
-git add src/shared/portalTitle.ts src/server/store/settings.ts test/unit/portal-title.test.ts test/unit/settings-store.test.ts
+git add src/shared/portalTitle.ts src/server/store/settings.ts test/unit/portal-title.test.ts test/unit/settings.test.ts
 git commit -m "feat: persist a configurable portal title"
 ```
 
