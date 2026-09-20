@@ -12,7 +12,13 @@ import type { ShellProps } from '../types.js'
  * action rather than a filled one — logging out is not the thing the page is
  * for.
  */
-export function Shell({ children, onLogout, loggingOut }: ShellProps): ReactElement {
+export function Shell({
+  children,
+  onLogout,
+  loggingOut,
+  title,
+  headerActions,
+}: ShellProps): ReactElement {
   return (
     <div
       data-testid="guest-screen"
@@ -20,15 +26,18 @@ export function Shell({ children, onLogout, loggingOut }: ShellProps): ReactElem
       style={{ fontFamily: 'var(--fontFamily)' }}
     >
       <header className="flex items-center justify-between px-[var(--tilePadding)] pt-[var(--tilePadding)] pb-4">
-        <h1 className="text-[22px] font-normal leading-none text-[var(--text)]">Guest Portal</h1>
-        <button
-          type="button"
-          onClick={onLogout}
-          disabled={loggingOut}
-          className="cursor-pointer rounded-full px-4 py-2 text-[14px] font-medium text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {loggingOut ? 'Logging out...' : 'Log out'}
-        </button>
+        <h1 className="text-[22px] font-normal leading-none text-[var(--text)]">{title}</h1>
+        <div className="flex items-center gap-2">
+          {headerActions}
+          <button
+            type="button"
+            onClick={onLogout}
+            disabled={loggingOut}
+            className="cursor-pointer rounded-full px-4 py-2 text-[14px] font-medium text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loggingOut ? 'Logging out...' : 'Log out'}
+          </button>
+        </div>
       </header>
 
       <div className="px-[var(--tilePadding)] pb-[var(--tilePadding)]">

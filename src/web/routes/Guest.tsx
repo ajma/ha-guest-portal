@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import type { Device } from '@shared/api.js'
+import { readPortalTitle } from '../portalTitle.js'
 import { connectDeviceStore, useDeviceStore } from '../store.js'
 import { activeTheme, componentsFor } from '../themes/active.js'
 import type { DEFAULT_COMPONENTS } from '../themes/default/index.js'
@@ -74,6 +75,7 @@ export function Guest({ onLogout }: GuestProps): ReactElement {
 
   return (
     <Shell
+      title={readPortalTitle()}
       loggingOut={loggingOut}
       onLogout={() => {
         void handleLogout()

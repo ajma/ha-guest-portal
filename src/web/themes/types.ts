@@ -9,6 +9,15 @@ export type ShellProps = {
   children: ReactElement | ReactElement[]
   onLogout: () => void
   loggingOut: boolean
+  /** The owner-configured portal name. Never hardcode a title in a Shell. */
+  title: string
+  /**
+   * Owner-only controls (Edit, Settings), or undefined for a guest. A Shell
+   * MUST render this when present — dropping it locks an owner out of their
+   * own settings with no other visible symptom. `test/unit/shell-contract.test.tsx`
+   * enforces it for every registered theme.
+   */
+  headerActions?: ReactElement
 }
 export type LoginProps = { onSuccess: (role: Role) => void }
 export type DisabledProps = { onRetry: () => void }

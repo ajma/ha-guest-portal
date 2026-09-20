@@ -350,7 +350,7 @@ describe('cards theme', () => {
     // contents on a phone and still use a desktop window.
     const Shell = slotOf('Shell')
     const { container } = render(
-      <Shell onLogout={() => undefined} loggingOut={false}>
+      <Shell title="Guest Portal" onLogout={() => undefined} loggingOut={false}>
         <div data-testid="child">card</div>
       </Shell>,
     )

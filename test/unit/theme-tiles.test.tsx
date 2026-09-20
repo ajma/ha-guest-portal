@@ -338,7 +338,7 @@ describe('tiles theme', () => {
     // is what every other theme here uses and what a copied Shell would give.
     const Shell = slotOf('Shell')
     const { container } = render(
-      <Shell onLogout={() => undefined} loggingOut={false}>
+      <Shell title="Guest Portal" onLogout={() => undefined} loggingOut={false}>
         <div data-testid="child">tile</div>
       </Shell>,
     )

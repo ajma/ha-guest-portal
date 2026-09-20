@@ -9,7 +9,13 @@ import type { ShellProps } from '../types.js'
  * Two columns at phone width is the theme, not a breakpoint accident — a
  * single column would turn the squares into rows and lose the shape entirely.
  */
-export function Shell({ children, onLogout, loggingOut }: ShellProps): ReactElement {
+export function Shell({
+  children,
+  onLogout,
+  loggingOut,
+  title,
+  headerActions,
+}: ShellProps): ReactElement {
   return (
     <div
       data-testid="guest-screen"
@@ -18,16 +24,19 @@ export function Shell({ children, onLogout, loggingOut }: ShellProps): ReactElem
     >
       <header className="flex items-center justify-between px-[var(--tilePadding)] pt-[var(--tilePadding)] pb-3">
         <h1 className="text-[24px] font-bold leading-none tracking-[-0.5px] text-[var(--text)]">
-          Guest Portal
+          {title}
         </h1>
-        <button
-          type="button"
-          onClick={onLogout}
-          disabled={loggingOut}
-          className="rounded-full bg-[var(--surface)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--text)] shadow-[var(--shadow)] disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {loggingOut ? 'Logging out...' : 'Log out'}
-        </button>
+        <div className="flex items-center gap-2">
+          {headerActions}
+          <button
+            type="button"
+            onClick={onLogout}
+            disabled={loggingOut}
+            className="rounded-full bg-[var(--surface)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--text)] shadow-[var(--shadow)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loggingOut ? 'Logging out...' : 'Log out'}
+          </button>
+        </div>
       </header>
 
       <div className="px-[var(--tilePadding)] pb-[var(--tilePadding)]">

@@ -6,7 +6,13 @@ import type { ShellProps } from '../types.js'
  * is the one place `--surfaceRaised` earns its keep — the toolbar must read as
  * elevated above `--appBg` in both modes.
  */
-export function Shell({ children, onLogout, loggingOut }: ShellProps): ReactElement {
+export function Shell({
+  children,
+  onLogout,
+  loggingOut,
+  title,
+  headerActions,
+}: ShellProps): ReactElement {
   return (
     <div
       data-testid="guest-screen"
@@ -14,15 +20,18 @@ export function Shell({ children, onLogout, loggingOut }: ShellProps): ReactElem
       style={{ fontFamily: 'var(--fontFamily)' }}
     >
       <header className="flex justify-between items-center px-[var(--tilePadding)] py-3 bg-[var(--surfaceRaised)] shadow-[var(--shadow)]">
-        <h1 className="text-xl font-medium text-[var(--text)]">Guest Portal</h1>
-        <button
-          type="button"
-          onClick={onLogout}
-          disabled={loggingOut}
-          className="px-4 py-2 text-sm font-medium rounded-[var(--tileRadius)] text-[var(--text)] bg-[var(--surfaceActive)] disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {loggingOut ? 'Logging out...' : 'Log out'}
-        </button>
+        <h1 className="text-xl font-medium text-[var(--text)]">{title}</h1>
+        <div className="flex items-center gap-2">
+          {headerActions}
+          <button
+            type="button"
+            onClick={onLogout}
+            disabled={loggingOut}
+            className="px-4 py-2 text-sm font-medium rounded-[var(--tileRadius)] text-[var(--text)] bg-[var(--surfaceActive)] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loggingOut ? 'Logging out...' : 'Log out'}
+          </button>
+        </div>
       </header>
 
       <div className="p-[var(--tilePadding)]">
