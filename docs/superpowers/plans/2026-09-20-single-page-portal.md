@@ -1465,6 +1465,22 @@ Add to `Portal`:
 
 The ghost tile fetches the catalog with `getCatalog()` when opened and renders the existing `EntityPicker`, excluding entity ids already present. Selecting one calls `editor.add(entry)`.
 
+**Orphaned devices — a gap in the spec, found during Task 6.** `GET /api/admin/allowlist`
+returns `orphaned: string[]` (allowlist entries with no matching entity in the catalog — the
+owner allowlisted something that has since been renamed, removed, or lost its integration), and
+`Admin.tsx` flags those rows. Neither the spec nor the rest of this plan mentions it, so deleting
+`admin-screen.test.tsx` in Task 9 would silently lose the behaviour. It belongs here rather than
+in `TileEditor`, because knowing *which* tile is orphaned is a property of the grid.
+
+Restore parity, no more: when edit mode is entered, call `getAllowlist()` and keep its `orphaned`
+array; render a visible marker on each tile whose `entityId` appears in it. Flag it to the owner
+in edit mode only — that is what `Admin.tsx` does today, and hiding such tiles from guests would
+be a behaviour change beyond restoring what exists. An orphaned tile must still be removable;
+removing it is the obvious remedy.
+
+Test it: a device present in `orphaned` is marked in edit mode and not marked in normal mode. The
+mutant to kill is a page that fetches `orphaned` and never renders it.
+
 The shape to aim for:
 
 ```tsx
