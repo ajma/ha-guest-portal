@@ -41,24 +41,21 @@ const optionArea: CSSProperties = { fontSize: '12px', color: 'var(--textMuted)',
 
 const optionId: CSSProperties = { fontSize: '11px', color: 'var(--textMuted)', marginTop: '2px' }
 
-const optionUnsupported: CSSProperties = {
-  fontSize: '11px',
-  color: 'var(--danger)',
-  marginTop: '4px',
-}
-
 export function EntityPicker({ entities, exclude, onSelect }: EntityPickerProps): ReactElement {
   const [query, setQuery] = useState('')
   const [activeIndex, setActiveIndex] = useState(-1)
   const [isOpen, setIsOpen] = useState(false)
-  const [showUnsupported, setShowUnsupported] = useState(false)
   const listboxRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
 
   const excludeSet = new Set(exclude)
 
-  // Apply exclusions and search filter first
-  const searchFiltered = entities.filter((entity) => {
+  // Unsupported entities are never offered. The portal cannot actuate them, so
+  // a row that can only be looked at is noise — and on a real installation it is
+  // most of the list: one house here had 2,495 unsupported entities against 353
+  // usable ones.
+  const filtered = entities.filter((entity) => {
+    if (!entity.supported) return false
     if (excludeSet.has(entity.entityId)) return false
 
     const lowerQuery = query.toLowerCase()
@@ -66,15 +63,6 @@ export function EntityPicker({ entities, exclude, onSelect }: EntityPickerProps)
     const matchesId = entity.entityId.toLowerCase().includes(lowerQuery)
 
     return matchesName || matchesId
-  })
-
-  // Count unsupported entities in the search-filtered set
-  const unsupportedCount = searchFiltered.filter((e) => !e.supported).length
-
-  // Apply supported visibility filter for final display list
-  const filtered = searchFiltered.filter((entity) => {
-    if (!entity.supported && !showUnsupported) return false
-    return true
   })
 
   // Scroll active option into view
@@ -133,7 +121,7 @@ export function EntityPicker({ entities, exclude, onSelect }: EntityPickerProps)
         event.preventDefault()
         if (activeIndex >= 0) {
           const selected = filtered[activeIndex]
-          if (selected?.supported) {
+          if (selected !== undefined) {
             onSelect(selected)
             setQuery('')
             setIsOpen(false)
@@ -163,36 +151,14 @@ export function EntityPicker({ entities, exclude, onSelect }: EntityPickerProps)
   }
 
   const handleOptionClick = (entity: CatalogEntry): void => {
-    if (entity.supported) {
-      onSelect(entity)
-      setQuery('')
-      setIsOpen(false)
-      setActiveIndex(-1)
-    }
+    onSelect(entity)
+    setQuery('')
+    setIsOpen(false)
+    setActiveIndex(-1)
   }
 
   return (
     <div ref={containerRef}>
-      {unsupportedCount > 0 && (
-        <label
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            marginBottom: '8px',
-            fontSize: '14px',
-            cursor: 'pointer',
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={showUnsupported}
-            onChange={(e) => setShowUnsupported(e.target.checked)}
-            style={{ cursor: 'pointer' }}
-          />
-          Show {unsupportedCount} unsupported device{unsupportedCount !== 1 ? 's' : ''}
-        </label>
-      )}
       <input
         type="text"
         role="combobox"
@@ -213,7 +179,6 @@ export function EntityPicker({ entities, exclude, onSelect }: EntityPickerProps)
               id={`entity-option-${index}`}
               role="option"
               aria-selected={index === activeIndex}
-              aria-disabled={!entity.supported}
               onClick={() => handleOptionClick(entity)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -224,18 +189,16 @@ export function EntityPicker({ entities, exclude, onSelect }: EntityPickerProps)
               tabIndex={-1}
               style={{
                 padding: '8px 12px',
-                cursor: entity.supported ? 'pointer' : 'not-allowed',
+                cursor: 'pointer',
                 // --surfaceActive rather than the accent: this marks which row
                 // the arrow keys are on, not a selection, and an accent fill
                 // would read as "already added".
                 backgroundColor: index === activeIndex ? 'var(--surfaceActive)' : 'var(--surface)',
-                opacity: entity.supported ? 1 : 0.6,
               }}
             >
               <div style={{ fontWeight: 500 }}>{entity.name}</div>
               <div style={optionArea}>{entity.area ?? 'No area'}</div>
               <div style={optionId}>{entity.entityId}</div>
-              {!entity.supported && <div style={optionUnsupported}>Device type not supported</div>}
             </div>
           ))}
         </div>
