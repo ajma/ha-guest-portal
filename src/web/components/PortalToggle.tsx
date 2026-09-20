@@ -1,6 +1,50 @@
-import type { ReactElement } from 'react'
+import type { CSSProperties, ReactElement } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import * as api from '../api.js'
+
+// Colours, radius and font come from the theme's CSS variables. The kill switch
+// now lives in the settings panel, over a themed page, so a palette of its own
+// would read as pasted on. It is still not a theme component: it adds no slot
+// to `Theme['components']`, and `test/unit/settings-panel.test.tsx` scans this
+// file for literals.
+const retryButton: CSSProperties = {
+  marginTop: '12px',
+  padding: '8px 16px',
+  fontSize: '14px',
+  fontFamily: 'inherit',
+  cursor: 'pointer',
+  backgroundColor: 'var(--accent)',
+  color: 'var(--accentText)',
+  border: 'none',
+  borderRadius: 'var(--tileRadius)',
+}
+
+// A native button would keep its user-agent chrome, which is the one surface a
+// dark theme cannot reach.
+const revealButton: CSSProperties = {
+  padding: '4px 8px',
+  fontSize: '12px',
+  fontFamily: 'inherit',
+  cursor: 'pointer',
+  color: 'var(--text)',
+  backgroundColor: 'transparent',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--tileRadius)',
+}
+
+// The "portal is off" notice is a warning, and the token set has no warning
+// role — --danger is the only alert colour a theme guarantees. Outlined rather
+// than filled, so it reads as a notice rather than as an error that just
+// happened, and so it needs no foreground token outside the set.
+const disabledBanner: CSSProperties = {
+  marginTop: '8px',
+  padding: '8px 12px',
+  fontSize: '13px',
+  color: 'var(--danger)',
+  backgroundColor: 'var(--surface)',
+  border: '1px solid var(--danger)',
+  borderRadius: 'var(--tileRadius)',
+}
 
 export function PortalToggle(): ReactElement {
   const [enabled, setEnabled] = useState<boolean | null>(null)
@@ -72,21 +116,8 @@ export function PortalToggle(): ReactElement {
       return (
         <section data-testid="portal-toggle-section" style={{ marginBottom: '24px' }}>
           <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>Guest Portal</h2>
-          <p style={{ color: '#d9534f', fontWeight: 500 }}>{error}</p>
-          <button
-            type="button"
-            onClick={load}
-            style={{
-              marginTop: '12px',
-              padding: '8px 16px',
-              fontSize: '14px',
-              cursor: 'pointer',
-              backgroundColor: '#5cb85c',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-            }}
-          >
+          <p style={{ color: 'var(--danger)', fontWeight: 500 }}>{error}</p>
+          <button type="button" onClick={load} style={retryButton}>
             Retry
           </button>
         </section>
@@ -115,18 +146,7 @@ export function PortalToggle(): ReactElement {
       </label>
 
       {!enabled && (
-        <div
-          data-testid="portal-disabled-banner"
-          style={{
-            marginTop: '8px',
-            padding: '8px 12px',
-            fontSize: '13px',
-            color: '#8a6d3b',
-            backgroundColor: '#fcf8e3',
-            border: '1px solid #faebcc',
-            borderRadius: '4px',
-          }}
-        >
+        <div data-testid="portal-disabled-banner" style={disabledBanner}>
           The guest portal is off. Guests cannot log in and anyone already signed in has been
           blocked. This admin page is unaffected.
         </div>
@@ -135,13 +155,13 @@ export function PortalToggle(): ReactElement {
       {error !== null && (
         <div
           data-testid="portal-toggle-error"
-          style={{ marginTop: '8px', color: '#d9534f', fontSize: '13px' }}
+          style={{ marginTop: '8px', color: 'var(--danger)', fontSize: '13px' }}
         >
           {error}
         </div>
       )}
 
-      <div style={{ marginTop: '12px', fontSize: '12px', color: '#666' }}>
+      <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--textMuted)' }}>
         <div style={{ marginBottom: '4px' }}>
           Integration token — only needed to set up the Home Assistant integration by hand. Add-on
           installations are discovered automatically.
@@ -158,7 +178,7 @@ export function PortalToggle(): ReactElement {
             type="button"
             data-testid="reveal-token"
             onClick={() => setTokenRevealed(true)}
-            style={{ padding: '4px 8px', fontSize: '12px', cursor: 'pointer' }}
+            style={revealButton}
           >
             Show token
           </button>

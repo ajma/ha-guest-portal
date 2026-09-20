@@ -1,0 +1,185 @@
+import { readFileSync } from 'node:fs'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { MAX_PORTAL_TITLE_LENGTH } from '@shared/portalTitle.js'
+import { SettingsPanel } from '../../src/web/components/SettingsPanel.tsx'
+import * as api from '../../src/web/api.ts'
+
+vi.mock('../../src/web/api.ts')
+
+// The kill switch is a native checkbox inside its own label; querying it by
+// role and accessible name proves the real control is mounted, not just some
+// element carrying its test id.
+function killSwitch(): HTMLInputElement {
+  return screen.getByRole('checkbox', { name: /guests can log in/i }) as HTMLInputElement
+}
+
+describe('SettingsPanel', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(api.getAdminPortal).mockResolvedValue({
+      ok: true,
+      data: {
+        enabled: true,
+        integrationToken: 'a'.repeat(64),
+        portalId: '11111111-1111-1111-1111-111111111111',
+        theme: 'classic',
+        title: 'Guest Portal',
+      },
+    })
+    vi.mocked(api.putAdminTitle).mockResolvedValue({ ok: true, data: undefined })
+    vi.mocked(api.putAdminTheme).mockResolvedValue({ ok: true, data: undefined })
+    vi.mocked(api.putAdminPortal).mockResolvedValue({ ok: true, data: undefined })
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.restoreAllMocks()
+  })
+
+  it('holds the theme picker, the kill switch and the title field', async () => {
+    render(<SettingsPanel onClose={() => {}} />)
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeTruthy())
+    expect(screen.getByLabelText(/portal name/i)).toBeTruthy()
+    expect(killSwitch()).toBeTruthy()
+  })
+
+  it('wires each control to its own endpoint', async () => {
+    // The inventory test above proves the controls are present; this proves the
+    // panel mounted the live components rather than lookalike markup.
+    render(<SettingsPanel onClose={() => {}} />)
+    await waitFor(() => expect(screen.getByRole('radiogroup')).toBeTruthy())
+
+    await userEvent.click(killSwitch())
+    expect(api.putAdminPortal).toHaveBeenCalledWith(false)
+
+    await userEvent.click(screen.getByRole('radio', { name: /tiles/i }))
+    expect(api.putAdminTheme).toHaveBeenCalledWith('tiles')
+  })
+
+  it('saves a new title', async () => {
+    render(<SettingsPanel onClose={() => {}} />)
+    const field = await screen.findByLabelText(/portal name/i)
+
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Beach House')
+    await userEvent.tab()
+
+    await waitFor(() => expect(api.putAdminTitle).toHaveBeenCalledWith('Beach House'))
+  })
+
+  it('saves the title on Enter, without leaving the field', async () => {
+    render(<SettingsPanel onClose={() => {}} />)
+    const field = await screen.findByLabelText(/portal name/i)
+
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Beach House{Enter}')
+
+    await waitFor(() => expect(api.putAdminTitle).toHaveBeenCalledWith('Beach House'))
+    expect(document.activeElement).toBe(field)
+  })
+
+  it('does not save the title on every keystroke', async () => {
+    render(<SettingsPanel onClose={() => {}} />)
+    const field = await screen.findByLabelText(/portal name/i)
+
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Beach')
+
+    // A PUT per character would hammer the server and race itself.
+    expect(api.putAdminTitle).not.toHaveBeenCalled()
+  })
+
+  it('does not save a title the owner left unchanged', async () => {
+    render(<SettingsPanel onClose={() => {}} />)
+    const field = await screen.findByLabelText(/portal name/i)
+
+    // Focus and leave, then type the stored value back and leave again. Neither
+    // is a change, and a write on every blur is indistinguishable from a write
+    // on a real edit in the test above.
+    await userEvent.click(field)
+    await userEvent.tab()
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Guest Portal')
+    await userEvent.tab()
+
+    expect(api.putAdminTitle).not.toHaveBeenCalled()
+  })
+
+  it('shows the stored title rather than the injected one once loaded', async () => {
+    vi.mocked(api.getAdminPortal).mockResolvedValue({
+      ok: true,
+      data: {
+        enabled: true,
+        integrationToken: 'a'.repeat(64),
+        portalId: '11111111-1111-1111-1111-111111111111',
+        theme: 'classic',
+        title: 'Beach House',
+      },
+    })
+    render(<SettingsPanel onClose={() => {}} />)
+
+    const field = (await screen.findByLabelText(/portal name/i)) as HTMLInputElement
+    await waitFor(() => expect(field.value).toBe('Beach House'))
+  })
+
+  it('reverts the field and reports when the save fails', async () => {
+    vi.mocked(api.putAdminTitle).mockResolvedValue({ ok: false, status: 500 })
+    render(<SettingsPanel onClose={() => {}} />)
+    const field = (await screen.findByLabelText(/portal name/i)) as HTMLInputElement
+
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Beach House')
+    await userEvent.tab()
+
+    await waitFor(() => expect(screen.getByTestId('portal-title-error')).toBeTruthy())
+    expect(field.value).toBe('Guest Portal')
+  })
+
+  it('reports a network failure instead of leaking it', async () => {
+    // No function in src/web/api.ts guards fetch, so a rejection here is a real
+    // possibility. Unhandled, it reverts the field with no explanation.
+    vi.mocked(api.putAdminTitle).mockRejectedValue(new Error('offline'))
+    render(<SettingsPanel onClose={() => {}} />)
+    const field = (await screen.findByLabelText(/portal name/i)) as HTMLInputElement
+
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Beach House')
+    await userEvent.tab()
+
+    await waitFor(() => expect(screen.getByTestId('portal-title-error')).toBeTruthy())
+    expect(field.value).toBe('Guest Portal')
+  })
+
+  it('caps the field at the length the server accepts', async () => {
+    // Over-long titles are a 400, which would surface as a mysterious failed
+    // save; the field refuses the extra characters instead.
+    render(<SettingsPanel onClose={() => {}} />)
+    const field = (await screen.findByLabelText(/portal name/i)) as HTMLInputElement
+
+    expect(field.maxLength).toBe(MAX_PORTAL_TITLE_LENGTH)
+  })
+
+  it('closes', async () => {
+    const onClose = vi.fn()
+    render(<SettingsPanel onClose={onClose} />)
+    await userEvent.click(await screen.findByRole('button', { name: /close/i }))
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('uses no hardcoded colours — every colour comes from a token', () => {
+    // ThemePicker and PortalToggle are scanned here too: this task converts
+    // them, and nothing else in the suite would notice a literal creeping back.
+    for (const f of ['SettingsPanel', 'PortalTitleField', 'ThemePicker', 'PortalToggle']) {
+      const src = readFileSync(`src/web/components/${f}.tsx`, 'utf-8')
+      expect(src, f).not.toMatch(
+        /\b(bg|text|border)-(gray|blue|red|green|yellow|indigo|purple|pink|slate|zinc)-\d{2,3}\b/,
+      )
+      expect(src, f).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+      expect(src, f).not.toMatch(/\b(rgb|rgba|hsl|hsla)\(/)
+      // The two converted components used named colours as well as hex.
+      expect(src, f).not.toMatch(/['"](?:white|black)['"]/)
+    }
+  })
+})

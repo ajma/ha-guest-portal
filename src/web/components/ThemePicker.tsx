@@ -29,7 +29,24 @@ const PREVIEWS: Partial<Record<ThemeId, string>> = Object.fromEntries(
     .filter(([id]) => isThemeId(id)),
 )
 
-const errorStyle = { marginTop: '8px', color: '#d9534f', fontSize: '13px' } as const
+// Colours, radius and font come from the theme's CSS variables. The picker now
+// opens inside the settings panel, over a themed page, so a palette of its own
+// would read as pasted on. It is still not a theme component: it adds no slot
+// to `Theme['components']`, and `test/unit/settings-panel.test.tsx` scans this
+// file for literals.
+const errorStyle = { marginTop: '8px', color: 'var(--danger)', fontSize: '13px' } as const
+
+const retryButton = {
+  marginTop: '12px',
+  padding: '8px 16px',
+  fontSize: '14px',
+  fontFamily: 'inherit',
+  cursor: 'pointer',
+  backgroundColor: 'var(--accent)',
+  color: 'var(--accentText)',
+  border: 'none',
+  borderRadius: 'var(--tileRadius)',
+} as const
 
 export function ThemePicker(): ReactElement {
   const [selected, setSelected] = useState<string | null>(null)
@@ -81,7 +98,7 @@ export function ThemePicker(): ReactElement {
       return (
         <section data-testid="theme-picker-section" style={{ marginBottom: '24px' }}>
           <h2 style={{ fontSize: '18px', fontWeight: 600, marginBottom: '8px' }}>Theme</h2>
-          <p data-testid="theme-picker-error" style={{ color: '#d9534f', fontWeight: 500 }}>
+          <p data-testid="theme-picker-error" style={{ color: 'var(--danger)', fontWeight: 500 }}>
             {error}
           </p>
           <button
@@ -89,16 +106,7 @@ export function ThemePicker(): ReactElement {
             onClick={() => {
               void load()
             }}
-            style={{
-              marginTop: '12px',
-              padding: '8px 16px',
-              fontSize: '14px',
-              cursor: 'pointer',
-              backgroundColor: '#5cb85c',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-            }}
+            style={retryButton}
           >
             Retry
           </button>
@@ -116,7 +124,7 @@ export function ThemePicker(): ReactElement {
       >
         Theme
       </h2>
-      <p style={{ fontSize: '13px', color: '#666', marginBottom: '12px' }}>
+      <p style={{ fontSize: '13px', color: 'var(--textMuted)', marginBottom: '12px' }}>
         How the guest portal looks. Takes effect on the guest's next page load.
       </p>
 
@@ -150,12 +158,12 @@ export function ThemePicker(): ReactElement {
                 width: '180px',
                 padding: '8px',
                 cursor: saving ? 'wait' : 'pointer',
-                backgroundColor: 'white',
+                backgroundColor: 'var(--surface)',
                 // Thickness as well as colour: the selected state must not be
                 // colour-alone, and the '✓ Selected' text below carries it for
                 // anyone who sees neither.
-                border: isSelected ? '3px solid #2f6fdb' : '1px solid #ccc',
-                borderRadius: '6px',
+                border: isSelected ? '3px solid var(--accent)' : '1px solid var(--border)',
+                borderRadius: 'var(--tileRadius)',
               }}
             >
               {preview ? (
@@ -165,8 +173,8 @@ export function ThemePicker(): ReactElement {
                   alt=""
                   style={{
                     width: '100%',
-                    borderRadius: '4px',
-                    border: '1px solid #e5e5e5',
+                    borderRadius: 'var(--tileRadius)',
+                    border: '1px solid var(--border)',
                     display: 'block',
                   }}
                 />
@@ -178,9 +186,12 @@ export function ThemePicker(): ReactElement {
                     padding: '24px 0',
                     textAlign: 'center',
                     fontSize: '12px',
-                    color: '#666',
-                    backgroundColor: '#f5f5f5',
-                    borderRadius: '4px',
+                    color: 'var(--textMuted)',
+                    // Dashed rather than a filled neutral: --controlNeutral is a
+                    // disabled-control grey and muted text does not read against
+                    // it in dark mode.
+                    border: '1px dashed var(--border)',
+                    borderRadius: 'var(--tileRadius)',
                   }}
                 >
                   No preview captured
@@ -202,7 +213,12 @@ export function ThemePicker(): ReactElement {
                 />
                 <span style={{ fontSize: '14px', fontWeight: 600 }}>{theme.name}</span>
               </span>
-              <span style={{ fontSize: '12px', color: isSelected ? '#2f6fdb' : '#666' }}>
+              <span
+                style={{
+                  fontSize: '12px',
+                  color: isSelected ? 'var(--accent)' : 'var(--textMuted)',
+                }}
+              >
                 {isSelected ? '✓ Selected' : ' '}
               </span>
             </label>
