@@ -26,7 +26,7 @@ Use your Home Assistant server's LAN IP address (e.g., `http://192.168.1.100:812
 
 **For HA OS or HA Supervised installations only** (HA Container does not support add-ons).
 
-1. Copy this repository into `/addons/ha-guest-portal/` on your Home Assistant host
+1. Copy this repository into `/addons/ha-guest-portal/` on your Home Assistant host — either manually over the Samba share add-on, or with `scripts/deploy-to-ha.sh` (copy `scripts/.env.deploy.example` to `scripts/.env.deploy` first)
 2. Refresh the Add-on Store (Settings → Add-ons → ⋮ → Check for updates) or restart the Supervisor
 3. Install "Home Assistant Guest Portal" from the Local add-ons section
 4. Configure the add-on with `guest_password` and `admin_password` (both ≥8 characters, must differ)

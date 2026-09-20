@@ -13,3 +13,6 @@ __pycache__/
 
 # Interactive dev stack (pnpm dev:demo)
 .dev-data/
+
+# Samba deploy credentials (see scripts/.env.deploy.example)
+scripts/.env.deploy
