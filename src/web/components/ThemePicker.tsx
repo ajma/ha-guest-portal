@@ -3,7 +3,6 @@ import type { ReactElement } from 'react'
 import { useCallback, useEffect, useState } from 'react'
 import { isThemeId, type ThemeId } from '@shared/themes.js'
 import * as api from '../api.js'
-import classicPreview from '../theme-previews/classic.png'
 import { listThemes } from '../themes/registry.js'
 
 // The previews are the Playwright baselines captured by
@@ -12,9 +11,23 @@ import { listThemes } from '../themes/registry.js'
 // drift from what a guest gets. A theme with no captured preview shows a
 // placeholder rather than a broken image; `test/unit/theme-previews.test.ts`
 // is what makes that a temporary state.
-const PREVIEWS: Partial<Record<ThemeId, string>> = {
-  classic: classicPreview,
-}
+//
+// Discovered by glob rather than listed. A hand-written map here was a second
+// registry: adding a theme meant editing its folder, the theme registry AND
+// this file, and forgetting the third silently showed "No preview captured"
+// next to a theme that had one — with nothing failing. Globbing means the
+// captured file IS the registration.
+const PREVIEWS: Partial<Record<ThemeId, string>> = Object.fromEntries(
+  Object.entries(
+    import.meta.glob<string>('../theme-previews/*.png', {
+      eager: true,
+      query: '?url',
+      import: 'default',
+    }),
+  )
+    .map(([path, url]) => [path.slice(path.lastIndexOf('/') + 1, -'.png'.length), url] as const)
+    .filter(([id]) => isThemeId(id)),
+)
 
 const errorStyle = { marginTop: '8px', color: '#d9534f', fontSize: '13px' } as const
 

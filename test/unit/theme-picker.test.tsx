@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -64,14 +65,27 @@ describe('ThemePicker', () => {
     }
   })
 
-  it('shows each theme its preview image', async () => {
+  it('shows a preview image for every theme that has one captured', async () => {
+    // Asserting only `classic` here is what let the previews silently drift:
+    // the picker used to keep its own hand-written id -> image map, so a theme
+    // could ship a captured baseline and still render "No preview captured"
+    // with nothing failing. Drive this off the files on disk instead, so any
+    // registered theme whose PNG exists must actually be shown one.
+    const captured = realRegistry
+      .listThemes()
+      .filter((theme) => existsSync(`src/web/theme-previews/${theme.id}.png`))
+    expect(captured.length).toBeGreaterThan(0)
+
     vi.mocked(listThemes).mockReturnValue(realRegistry.listThemes())
 
     render(<ThemePicker />)
 
     await waitFor(() => expect(screen.getByRole('radiogroup')).toBeTruthy())
-    const preview = screen.getByTestId('theme-preview-classic') as HTMLImageElement
-    expect(preview.getAttribute('src')).toMatch(/classic.*\.png$/)
+    for (const theme of captured) {
+      const preview = screen.getByTestId(`theme-preview-${theme.id}`)
+      expect(preview.tagName, `${theme.id} should render an image`).toBe('IMG')
+      expect(preview.getAttribute('src')).toMatch(new RegExp(`${theme.id}.*\\.png$`))
+    }
   })
 
   it('marks the stored theme as selected and the others as not', async () => {

@@ -1,4 +1,5 @@
 import classic from './classic/index.js'
+import tiles from './tiles/index.js'
 import type { Theme } from './types.js'
 
 // Static registry: every theme ships in the bundle. This map's value type is
@@ -7,6 +8,7 @@ import type { Theme } from './types.js'
 // rather than three.
 const THEMES: Record<string, Theme> = {
   classic,
+  tiles,
 }
 
 export function resolveTheme(id: string): Theme {

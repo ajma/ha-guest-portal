@@ -57,3 +57,60 @@
   --stateTransitioning: #ff9800;
   }
 }
+
+[data-theme='tiles'] {
+  --appBg: #f2f2f7;
+  --surface: #ffffff;
+  --surfaceRaised: #ffffff;
+  --surfaceActive: #e5e5ea;
+  --text: #000000;
+  --textMuted: #8e8e93;
+  --accent: #ffb340;
+  --accentText: #000000;
+  --danger: #ff3b30;
+  --border: #d1d1d6;
+  --controlNeutral: #d1d1d6;
+  --tileRadius: 20px;
+  --tileGap: 12px;
+  --tilePadding: 16px;
+  --fontFamily: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  --shadow: 0 1px 3px rgba(0,0,0,0.08);
+  --stateInactive: #8e8e93;
+  --stateLightActive: #ffb340;
+  --stateSwitchActive: #ffb340;
+  --stateFanActive: #32ade6;
+  --stateCoverActive: #af52de;
+  --stateLockLocked: #34c759;
+  --stateLockUnlocked: #ff3b30;
+  --stateLockJammed: #ff3b30;
+  --stateTransitioning: #ff9500;
+}
+@media (prefers-color-scheme: dark) {
+  [data-theme='tiles'] {
+  --appBg: #000000;
+  --surface: #1c1c1e;
+  --surfaceRaised: #2c2c2e;
+  --surfaceActive: #3a3a3c;
+  --text: #ffffff;
+  --textMuted: #8e8e93;
+  --accent: #ffb340;
+  --accentText: #000000;
+  --danger: #ff453a;
+  --border: #38383a;
+  --controlNeutral: #48484a;
+  --tileRadius: 20px;
+  --tileGap: 12px;
+  --tilePadding: 16px;
+  --fontFamily: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  --shadow: none;
+  --stateInactive: #8e8e93;
+  --stateLightActive: #ffb340;
+  --stateSwitchActive: #ffb340;
+  --stateFanActive: #64d2ff;
+  --stateCoverActive: #bf5af2;
+  --stateLockLocked: #30d158;
+  --stateLockUnlocked: #ff453a;
+  --stateLockJammed: #ff453a;
+  --stateTransitioning: #ff9f0a;
+  }
+}
