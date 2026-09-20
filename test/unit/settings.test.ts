@@ -80,4 +80,25 @@ describe('SettingsStore', () => {
     db.prepare("INSERT INTO settings (key, value) VALUES ('portal_theme', 'bogus')").run()
     expect(settings.getTheme()).toBe('classic')
   })
+
+  it('defaults the title to Guest Portal', () => {
+    expect(settings.getTitle()).toBe('Guest Portal')
+  })
+
+  it('persists a title across store instances', () => {
+    settings.setTitle('Beach House')
+    expect(new SettingsStore(db).getTitle()).toBe('Beach House')
+  })
+
+  it('normalises on write, so a blank title cannot be persisted', () => {
+    settings.setTitle('   ')
+    expect(settings.getTitle()).toBe('Guest Portal')
+  })
+
+  it('normalises a hand-edited row on read', () => {
+    // A row written by an older build or edited directly in SQLite must still
+    // yield something renderable rather than a blank header.
+    db.prepare("INSERT INTO settings (key, value) VALUES ('portal_title', '  Beach House  ')").run()
+    expect(settings.getTitle()).toBe('Beach House')
+  })
 })

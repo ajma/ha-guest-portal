@@ -2,6 +2,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
+import { DEFAULT_PORTAL_TITLE, normalizePortalTitle } from '../../shared/portalTitle.js'
 import { DEFAULT_THEME_ID, isThemeId, type ThemeId } from '../../shared/themes.js'
 
 export type PortalEnabledListener = (enabled: boolean) => void
@@ -10,6 +11,7 @@ const KEY_PORTAL_ENABLED = 'portal_enabled'
 const KEY_INTEGRATION_TOKEN = 'integration_token'
 const KEY_PORTAL_ID = 'portal_id'
 const KEY_PORTAL_THEME = 'portal_theme'
+const KEY_PORTAL_TITLE = 'portal_title'
 
 const SettingRowSchema = z.object({
   value: z.string(),
@@ -79,6 +81,18 @@ export class SettingsStore {
 
   setTheme(id: ThemeId): void {
     this.write(KEY_PORTAL_THEME, id)
+  }
+
+  getTitle(): string {
+    // Normalising on read as well as write is deliberate: a row written by an
+    // older build, or edited in the database by hand, still yields something
+    // renderable.
+    const stored = this.read(KEY_PORTAL_TITLE)
+    return stored === null ? DEFAULT_PORTAL_TITLE : normalizePortalTitle(stored)
+  }
+
+  setTitle(title: string): void {
+    this.write(KEY_PORTAL_TITLE, normalizePortalTitle(title))
   }
 
   /**
