@@ -694,5 +694,85 @@ describe('Guest API routes', () => {
       expect(html).toContain('<base href="/">')
       expect(html).toContain('data-theme="classic"')
     })
+
+    it('injects the portal title into the attribute and the tab title', async () => {
+      await writeStubIndex()
+      settings.setTitle('Beach House')
+
+      const res = await fetch(`${baseUrl}/`)
+      const html = await res.text()
+
+      expect(html).toContain('data-portal-title="Beach House"')
+      expect(html).toContain('<title>Beach House</title>')
+    })
+
+    it('escapes a hostile title rather than emitting it raw', async () => {
+      await writeStubIndex()
+      // The title is owner-supplied text written into HTML. This is the only
+      // new injection surface in the single-page change.
+      settings.setTitle('"><script>alert(1)</script>')
+
+      const res = await fetch(`${baseUrl}/`)
+      const html = await res.text()
+
+      expect(html).not.toContain('<script>alert(1)</script>')
+      expect(html).toContain('&lt;script&gt;')
+      expect(html).not.toContain('data-portal-title=""><')
+      // The two above are necessary but not sufficient: dropping the quote
+      // replacement still escapes the tag while closing the attribute early,
+      // which lets the rest of the title be parsed as further attributes. Only
+      // the whole expected value proves the attribute survives intact.
+      expect(html).toContain('data-portal-title="&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"')
+      expect(html).toContain('<title>&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;</title>')
+    })
+
+    it('escapes ampersands once, before the escapes it introduces itself', async () => {
+      await writeStubIndex()
+      // Ordering matters and is invisible in a title made only of tags: escape
+      // `&` last and every `&` this function emits gets re-escaped, so the
+      // header renders `&quot;` as literal text instead of a quote.
+      settings.setTitle('Tom & Jerry\'s "Place"')
+
+      const res = await fetch(`${baseUrl}/`)
+      const html = await res.text()
+
+      expect(html).toContain('data-portal-title="Tom &amp; Jerry&#39;s &quot;Place&quot;"')
+      expect(html).toContain('<title>Tom &amp; Jerry&#39;s &quot;Place&quot;</title>')
+      // Not escaped at all, and double-escaped, are different bugs with the
+      // same symptom in a toContain-only test.
+      expect(html).not.toContain('Tom & Jerry')
+      expect(html).not.toContain('&amp;quot;')
+      expect(html).not.toContain('&amp;#39;')
+    })
+
+    it('treats $-sequences in the title as text, not replacement patterns', async () => {
+      await writeStubIndex()
+      // `String.prototype.replace` expands `$&` and `` $` `` inside a *string*
+      // replacement. Escaping does not defuse them: `$&` escapes to `$&amp;`,
+      // which still begins `$&`. A function replacer is what disables the
+      // expansion; without one the matched `<html` tag lands inside its own
+      // attribute value.
+      settings.setTitle('$& $` Bay')
+
+      const res = await fetch(`${baseUrl}/`)
+      const html = await res.text()
+
+      expect(html).toContain('data-portal-title="$&amp; $` Bay"')
+      expect(html).toContain('<title>$&amp; $` Bay</title>')
+      expect(html).not.toMatch(/data-portal-title="[^"]*<(html|!DOCTYPE)/i)
+    })
+
+    it('falls back to the default title when none is stored', async () => {
+      await writeStubIndex()
+
+      const res = await fetch(`${baseUrl}/`)
+      const html = await res.text()
+
+      // A portal with no title configured must still name itself, not render
+      // an empty header or the stub's placeholder.
+      expect(html).toContain('data-portal-title="Guest Portal"')
+      expect(html).toContain('<title>Guest Portal</title>')
+      expect(html).not.toContain('<title>t</title>')
+    })
   })
 })

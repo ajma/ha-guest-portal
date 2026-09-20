@@ -16,12 +16,14 @@ export type Env = {
 }
 
 /**
- * Read index.html and inject the two things the client cannot know for itself:
- * the ingress base path, and the active theme.
+ * Read index.html and inject the three things the client cannot know for
+ * itself: the ingress base path, the active theme, and the portal title.
  *
  * The theme lands on <html> rather than in a <meta> so the CSS variable block
  * keyed off [data-theme] applies during HTML parse, before React loads. That is
- * what makes the portal render themed on first paint with no API call.
+ * what makes the portal render themed on first paint with no API call. The
+ * title rides along for the same reason, and because guests need it while
+ * having no admin endpoint to read it from.
  *
  * Returns null when index.html is missing (an unbuilt checkout).
  */
@@ -29,6 +31,21 @@ const DEFAULT_WEB_ROOT = './dist/web'
 
 function webRootFor(deps: Deps): string {
   return deps.cfg.webRoot ?? DEFAULT_WEB_ROOT
+}
+
+/**
+ * The portal title is owner-supplied text going into two HTML contexts — a
+ * double-quoted attribute and element text. Escaping these five characters
+ * covers both. `&` must be replaced first, or the escapes introduced by the
+ * later replacements would themselves be re-escaped.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 function renderIndexHtml(deps: Deps, baseHref: string): string | null {
@@ -40,10 +57,19 @@ function renderIndexHtml(deps: Deps, baseHref: string): string | null {
   }
 
   const normalizedBase = baseHref.endsWith('/') ? baseHref : `${baseHref}/`
+  const title = escapeHtml(deps.settings.getTitle())
 
+  // The two title-bearing replacements take a *function*, not a string. A
+  // string replacement expands `$&`, `` $` `` and `$'`, and escaping does not
+  // defuse them — `$&` escapes to `$&amp;`, which still starts `$&` — so a
+  // title containing one would splice the matched tag into its own attribute.
   return html
-    .replace(/(<head[^>]*>)/i, `$1\n    <base href="${normalizedBase}">`)
-    .replace(/<html/i, `<html data-theme="${deps.settings.getTheme()}"`)
+    .replace(/(<head[^>]*>)/i, (head) => `${head}\n    <base href="${escapeHtml(normalizedBase)}">`)
+    .replace(
+      /<html/i,
+      () => `<html data-theme="${deps.settings.getTheme()}" data-portal-title="${title}"`,
+    )
+    .replace(/<title>[^<]*<\/title>/i, () => `<title>${title}</title>`)
 }
 
 function baseHrefFor(c: Context<Env>, deps: Deps): string {
