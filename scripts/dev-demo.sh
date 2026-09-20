@@ -13,17 +13,45 @@
 # binds localhost only. The passwords below are throwaway dev values; do not
 # reuse them anywhere real.
 
+#
+# HA_MODE=fake (default) spins up the seeded stand-in above.
+# HA_MODE=real reads HA_BASE_URL / HA_TOKEN / the passwords from .env and talks
+# to your actual Home Assistant. DB_PATH from .env is ignored in real mode —
+# it points at the container path /data, which does not exist here.
+
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+HA_MODE="${HA_MODE:-fake}"
 FAKE_HA_PORT="${FAKE_HA_PORT:-8124}"
 FAKE_HA_TOKEN="${FAKE_HA_TOKEN:-dev-fake-ha-token}"
-PORT="${PORT:-9123}"
-
-export FAKE_HA_PORT FAKE_HA_TOKEN PORT
 
 mkdir -p .dev-data
+DEV_DB="./.dev-data/portal.db"
+
+if [ "$HA_MODE" = "real" ]; then
+  if [ ! -f .env ]; then
+    echo "[dev] HA_MODE=real needs a .env with HA_BASE_URL, HA_TOKEN, GUEST_PASSWORD, ADMIN_PASSWORD" >&2
+    exit 1
+  fi
+  set -a; . ./.env; set +a
+  : "${HA_BASE_URL:?missing in .env}"
+  : "${HA_TOKEN:?missing in .env}"
+  : "${GUEST_PASSWORD:?missing in .env}"
+  : "${ADMIN_PASSWORD:?missing in .env}"
+  # .env's DB_PATH is the in-container path; use a local one instead.
+  DB_PATH="$DEV_DB"
+else
+  HA_BASE_URL="http://127.0.0.1:${FAKE_HA_PORT}"
+  HA_TOKEN="$FAKE_HA_TOKEN"
+  GUEST_PASSWORD="dev-guest-password"
+  ADMIN_PASSWORD="dev-admin-password"
+  DB_PATH="$DEV_DB"
+fi
+
+PORT="${PORT:-9123}"
+export FAKE_HA_PORT FAKE_HA_TOKEN PORT
 
 pids=()
 cleanup() {
@@ -37,14 +65,20 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "[dev] starting fake Home Assistant on :${FAKE_HA_PORT}"
-node --experimental-strip-types scripts/dev-fake-ha.ts &
-pids+=($!)
+if [ "$HA_MODE" = "real" ]; then
+  echo "[dev] HA_MODE=real — using Home Assistant at ${HA_BASE_URL}"
+  echo "[dev] REAL DEVICES: anything you add to the allowlist becomes actuable"
+  echo "[dev]               by anyone who can reach :${PORT} with the guest password."
+else
+  echo "[dev] starting fake Home Assistant on :${FAKE_HA_PORT}"
+  node --experimental-strip-types scripts/dev-fake-ha.ts &
+  pids+=($!)
 
-# Give the fake HA a moment to bind before the portal tries to connect. The
-# portal tolerates an absent HA (it starts stale and reconnects), so this is
-# about keeping the startup log readable rather than correctness.
-sleep 1
+  # Give the fake HA a moment to bind before the portal tries to connect. The
+  # portal tolerates an absent HA (it starts stale and reconnects), so this is
+  # about keeping the startup log readable rather than correctness.
+  sleep 1
+fi
 
 # The server cannot be run straight from TypeScript: files under src/ import
 # each other with .js specifiers (correct for the compiled output), and Node's
@@ -67,12 +101,12 @@ if [ ! -f dist/server/index.js ]; then
 fi
 
 echo "[dev] starting portal server on :${PORT} (node --watch)"
-HA_BASE_URL="http://127.0.0.1:${FAKE_HA_PORT}" \
-HA_TOKEN="${FAKE_HA_TOKEN}" \
-GUEST_PASSWORD="dev-guest-password" \
-ADMIN_PASSWORD="dev-admin-password" \
+HA_BASE_URL="$HA_BASE_URL" \
+HA_TOKEN="$HA_TOKEN" \
+GUEST_PASSWORD="$GUEST_PASSWORD" \
+ADMIN_PASSWORD="$ADMIN_PASSWORD" \
 PORT="${PORT}" \
-DB_PATH="./.dev-data/portal.db" \
+DB_PATH="$DB_PATH" \
   node --watch dist/server/index.js &
 pids+=($!)
 
@@ -80,7 +114,21 @@ echo "[dev] starting Vite on :5173 (HMR, /api -> :${PORT})"
 ./node_modules/.bin/vite --port 5173 &
 pids+=($!)
 
-cat <<EOF
+if [ "$HA_MODE" = "real" ]; then
+  cat <<EOF
+
+  ───────────────────────────────────────────────
+   Guest / admin UI   http://localhost:5173
+   Admin screen       http://localhost:5173/admin
+   Passwords          from .env (GUEST_PASSWORD / ADMIN_PASSWORD)
+   Home Assistant     ${HA_BASE_URL}  (REAL)
+   Portal DB          ${DB_PATH}
+  ───────────────────────────────────────────────
+   Ctrl-C to stop everything.
+
+EOF
+else
+  cat <<EOF
 
   ───────────────────────────────────────────────
    Guest / admin UI   http://localhost:5173
@@ -92,5 +140,6 @@ cat <<EOF
    Ctrl-C to stop everything.
 
 EOF
+fi
 
 wait

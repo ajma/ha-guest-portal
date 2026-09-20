@@ -9,6 +9,7 @@
     "dev": "vite --port 5173 & node --watch --experimental-strip-types src/server/index.ts",
     "dev:fake-ha": "node --experimental-strip-types scripts/dev-fake-ha.ts",
     "dev:demo": "./scripts/dev-demo.sh",
+    "dev:real": "HA_MODE=real ./scripts/dev-demo.sh",
     "build": "vite build && tsc -p tsconfig.server.json",
     "start": "node dist/server/index.js",
     "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.test.json --noEmit",
