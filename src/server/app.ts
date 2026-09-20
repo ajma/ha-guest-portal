@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import { Hono, type MiddlewareHandler } from 'hono'
+import { Hono, type MiddlewareHandler, type Context } from 'hono'
 import { serveStatic } from '@hono/node-server/serve-static'
 import type { HttpBindings } from '@hono/node-server'
 import type { Role } from '../shared/api.js'
@@ -13,6 +13,37 @@ export type Env = {
   Variables: {
     role: Role
   }
+}
+
+/**
+ * Read index.html and inject the two things the client cannot know for itself:
+ * the ingress base path, and the active theme.
+ *
+ * The theme lands on <html> rather than in a <meta> so the CSS variable block
+ * keyed off [data-theme] applies during HTML parse, before React loads. That is
+ * what makes the portal render themed on first paint with no API call.
+ *
+ * Returns null when index.html is missing (an unbuilt checkout).
+ */
+function renderIndexHtml(deps: Deps, baseHref: string): string | null {
+  let html: string
+  try {
+    html = readFileSync('./dist/web/index.html', 'utf-8')
+  } catch {
+    return null
+  }
+
+  const normalizedBase = baseHref.endsWith('/') ? baseHref : `${baseHref}/`
+
+  return html
+    .replace(/(<head[^>]*>)/i, `$1\n    <base href="${normalizedBase}">`)
+    .replace(/<html/i, `<html data-theme="${deps.settings.getTheme()}"`)
+}
+
+function baseHrefFor(c: Context<Env>, deps: Deps): string {
+  const remoteAddress = c.env.incoming.socket.remoteAddress
+  const isIngress = deps.cfg.ingressPort && isFromSupervisor(remoteAddress)
+  return isIngress ? (c.req.header('x-ingress-path') ?? '/') : '/'
 }
 
 export function createApp(deps: Deps) {
@@ -77,6 +108,13 @@ export function createApp(deps: Deps) {
   app.use('/api/admin/*', requireSession)
   mountAdminRoutes(app, deps)
 
+  // serveStatic resolves / to index.html and would answer before the SPA
+  // fallback, so the root URL would never be injected. Handle it explicitly.
+  app.get('/', (c) => {
+    const html = renderIndexHtml(deps, baseHrefFor(c, deps))
+    return html === null ? c.notFound() : c.html(html)
+  })
+
   // Static file serving with SPA fallback
   // Serve built SPA from dist/web
   app.use('/*', serveStatic({ root: './dist/web' }))
@@ -84,30 +122,11 @@ export function createApp(deps: Deps) {
   // SPA fallback - serve index.html for non-API 404s
   app.use('/*', async (c) => {
     if (c.req.path.startsWith('/api/')) {
-      // Let API routes 404 naturally
       return c.notFound()
     }
 
-    // Serve index.html for SPA routing
-    try {
-      let html = readFileSync('./dist/web/index.html', 'utf-8')
-
-      // Inject <base href> based on whether this is an ingress request
-      const remoteAddress = c.env.incoming.socket.remoteAddress
-      const isIngress = deps.cfg.ingressPort && isFromSupervisor(remoteAddress)
-      const baseHref = isIngress ? (c.req.header('x-ingress-path') ?? '/') : '/'
-
-      // Ensure base href ends with /
-      const normalizedBase = baseHref.endsWith('/') ? baseHref : `${baseHref}/`
-
-      // Inject <base href> after <head> (handle whitespace-formatted HTML)
-      html = html.replace(/(<head[^>]*>)/i, `$1\n    <base href="${normalizedBase}">`)
-
-      return c.html(html)
-    } catch {
-      // index.html doesn't exist
-      return c.notFound()
-    }
+    const html = renderIndexHtml(deps, baseHrefFor(c, deps))
+    return html === null ? c.notFound() : c.html(html)
   })
 
   return app

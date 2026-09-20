@@ -638,4 +638,42 @@ describe('Guest API routes', () => {
       expect(body.haStale).toBe(true)
     })
   })
+
+  describe('HTML injection', () => {
+    async function writeStubIndex(): Promise<void> {
+      const { mkdirSync, writeFileSync } = await import('node:fs')
+      mkdirSync('/home/andm/workspace/ha-guest-portal/dist/web', { recursive: true })
+      writeFileSync(
+        '/home/andm/workspace/ha-guest-portal/dist/web/index.html',
+        '<!DOCTYPE html>\n<html lang="en">\n  <head>\n    <title>t</title>\n  </head>\n  <body></body>\n</html>',
+      )
+    }
+
+    it('injects data-theme and base href on /admin', async () => {
+      await writeStubIndex()
+      const res = await fetch(`${baseUrl}/admin`)
+      const html = await res.text()
+
+      expect(html).toContain('<base href="/">')
+      expect(html).toContain('data-theme="classic"')
+    })
+
+    it('injects data-theme and base href on the root path too', async () => {
+      await writeStubIndex()
+      const res = await fetch(`${baseUrl}/`)
+      const html = await res.text()
+
+      // Regression guard: serveStatic used to answer / before the fallback,
+      // so the root URL — the one every guest opens — received neither.
+      expect(html).toContain('<base href="/">')
+      expect(html).toContain('data-theme="classic"')
+    })
+
+    it('reflects the stored theme', async () => {
+      await writeStubIndex()
+      settings.setTheme('tiles')
+      const res = await fetch(`${baseUrl}/`)
+      expect(await res.text()).toContain('data-theme="tiles"')
+    })
+  })
 })

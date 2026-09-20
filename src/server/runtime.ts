@@ -21,6 +21,23 @@ import { assembleDevices } from './device-assembly.js'
  */
 const SUPERVISOR_ADDRESS = '172.30.32.2' as const
 
+/**
+ * The pathname of a raw request, without constructing a URL.
+ *
+ * `new URL(req.url, base)` throws ERR_INVALID_URL on inputs like `//`, which
+ * is a protocol-relative URL with an empty host. These handlers run outside
+ * Hono and outside any try/catch, so that throw took the process down — an
+ * unauthenticated remote kill on the guest-facing port. Only the pathname is
+ * ever needed, and it requires no parsing.
+ */
+export function requestPathname(rawUrl: string | undefined): string {
+  const raw = rawUrl ?? '/'
+  const queryAt = raw.indexOf('?')
+  const hashAt = raw.indexOf('#')
+  const cuts = [queryAt, hashAt].filter((i) => i >= 0)
+  return cuts.length > 0 ? raw.slice(0, Math.min(...cuts)) : raw
+}
+
 export type Deps = {
   cfg: Config
   ha: HaClient
@@ -149,10 +166,8 @@ export function createRuntime(deps: Deps): Runtime {
     req: import('node:http').IncomingMessage,
     res: import('node:http').ServerResponse,
   ) {
-    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
-
     // Normalize single trailing slash
-    let pathname = url.pathname
+    let pathname = requestPathname(req.url)
     if (pathname.endsWith('/') && pathname.length > 1) {
       pathname = pathname.slice(0, -1)
     }
@@ -214,10 +229,8 @@ export function createRuntime(deps: Deps): Runtime {
     }
 
     // Valid Supervisor request - continue to handler logic
-    const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`)
-
     // Normalize single trailing slash
-    let pathname = url.pathname
+    let pathname = requestPathname(req.url)
     if (pathname.endsWith('/') && pathname.length > 1) {
       pathname = pathname.slice(0, -1)
     }
