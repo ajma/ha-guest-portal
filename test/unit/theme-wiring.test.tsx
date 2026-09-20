@@ -14,7 +14,15 @@ import type { Theme } from '../../src/web/themes/types.ts'
 // control — verified by the absence of any `.click(` in this file.
 vi.mock('../../src/web/api.ts')
 
-const SLOTS = ['Shell', 'ToggleTile', 'CoverTile', 'LockTile', 'Login', 'Disabled'] as const
+const SLOTS = [
+  'Shell',
+  'ToggleTile',
+  'CoverTile',
+  'LockTile',
+  'Login',
+  'Disabled',
+  'Unreachable',
+] as const
 
 // A constant rather than `role="guest"`: Biome's useValidAriaRole reads a
 // literal `role` attribute on any JSX element as an ARIA role, component or not.
@@ -82,19 +90,32 @@ describe('componentsFor', () => {
 
     expect(merged.LockTile).toBe(Custom)
     // The half of the property that a `return theme.components` bug would pass:
-    // the five untouched slots must still be the default objects, not undefined.
+    // every untouched slot must still be the default object, not undefined.
     for (const slot of SLOTS) {
       if (slot === 'LockTile') continue
       expect(merged[slot], slot).toBe(DEFAULT_COMPONENTS[slot])
     }
   })
 
-  it('takes every slot from a theme that overrides them all', () => {
+  it('takes every slot a theme overrides from that theme', () => {
     const merged = componentsFor(classic)
+    const overridden = Object.keys(classic.components ?? {}) as (typeof SLOTS)[number][]
 
-    for (const slot of SLOTS) {
+    // Iterating the theme's own keys rather than SLOTS is what lets a slot be
+    // optional: `Unreachable` is not in `classic`, and requiring it there would
+    // mean every future slot costs every theme a file.
+    expect(overridden.length).toBeGreaterThan(0)
+    for (const slot of overridden) {
       expect(merged[slot], slot).toBe(classic.components?.[slot])
       expect(merged[slot], slot).not.toBe(DEFAULT_COMPONENTS[slot])
+    }
+
+    // The other half: a slot the theme leaves out still resolves, to the
+    // default. Without this, `componentsFor` could drop it entirely and the
+    // loop above would not notice.
+    for (const slot of SLOTS) {
+      if (overridden.includes(slot)) continue
+      expect(merged[slot], slot).toBe(DEFAULT_COMPONENTS[slot])
     }
   })
 })

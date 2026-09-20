@@ -5,6 +5,7 @@ import { LockTile } from './LockTile.js'
 import { Login } from './Login.js'
 import { Shell } from './Shell.js'
 import { ToggleTile } from './ToggleTile.js'
+import { Unreachable } from './Unreachable.js'
 
 export const DEFAULT_COMPONENTS: Required<NonNullable<Theme['components']>> = {
   Shell,
@@ -13,4 +14,5 @@ export const DEFAULT_COMPONENTS: Required<NonNullable<Theme['components']>> = {
   LockTile,
   Login,
   Disabled,
+  Unreachable,
 }

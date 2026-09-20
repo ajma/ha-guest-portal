@@ -40,6 +40,7 @@ describe('default component set', () => {
       'LockTile',
       'Login',
       'Disabled',
+      'Unreachable',
     ] as const) {
       expect(DEFAULT_COMPONENTS[slot], slot).toBeDefined()
     }

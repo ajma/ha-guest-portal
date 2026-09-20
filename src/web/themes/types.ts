@@ -21,6 +21,11 @@ export type ShellProps = {
 }
 export type LoginProps = { onSuccess: (role: Role) => void }
 export type DisabledProps = { onRetry: () => void }
+/**
+ * `Disabled` means the owner switched the portal off; `Unreachable` means we
+ * could not ask. Different cause, different copy, so it is its own slot.
+ */
+export type UnreachableProps = { onRetry: () => void }
 
 export type Theme = {
   id: ThemeId
@@ -39,5 +44,6 @@ export type Theme = {
     LockTile?: ComponentType<TileProps>
     Login?: ComponentType<LoginProps>
     Disabled?: ComponentType<DisabledProps>
+    Unreachable?: ComponentType<UnreachableProps>
   }
 }

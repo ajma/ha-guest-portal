@@ -9,8 +9,8 @@ export function App(): ReactElement {
   // Every screen App owns comes from the active theme, so nobody crosses an
   // unthemed seam. There is one portal: an owner gets Edit and Settings inside
   // it, rather than a separate page that looks nothing like what they ship.
-  const { Login, Disabled } = componentsFor(activeTheme())
-  const [role, setRole] = useState<Role | null | 'loading'>('loading')
+  const { Login, Disabled, Unreachable } = componentsFor(activeTheme())
+  const [role, setRole] = useState<Role | null | 'loading' | 'unreachable'>('loading')
   const { connected, portalEnabled } = useDeviceStore()
   const prevConnectedRef = useRef<boolean>(false)
 
@@ -26,17 +26,26 @@ export function App(): ReactElement {
   }, [])
 
   // Check session on mount
-  useEffect(() => {
-    async function checkSession(): Promise<void> {
+  const checkSession = useCallback(async (): Promise<void> => {
+    try {
       const session = await getSession()
       setRole(session?.role ?? null)
       if (session !== null) {
         setPortalEnabled(session.portalEnabled)
       }
+    } catch {
+      // A rejection is a network failure — no connection, DNS, refused. An
+      // answered request that happens to be a 401 returns null above and means
+      // something completely different: the portal is there and wants a
+      // password. Conflating them shows a guest a login form that cannot work,
+      // or worse, the spinner this used to hang on.
+      setRole('unreachable')
     }
-
-    void checkSession()
   }, [])
+
+  useEffect(() => {
+    void checkSession()
+  }, [checkSession])
 
   // Re-check session when stream disconnects (only on transition from true to false)
   useEffect(() => {
@@ -45,12 +54,20 @@ export function App(): ReactElement {
 
     if (wasConnected && !connected && role !== 'loading' && role !== null) {
       async function recheckSession(): Promise<void> {
-        const session = await getSession()
-        if (session === null) {
-          setRole(null)
-          return
+        try {
+          const session = await getSession()
+          if (session === null) {
+            setRole(null)
+            return
+          }
+          setPortalEnabled(session.portalEnabled)
+        } catch {
+          // Deliberately not `unreachable`. The guest is already looking at a
+          // screen that tells the truth — the stream dropped, so the tiles are
+          // disabled — and the stream reconnects on its own. Throwing them onto
+          // a screen with a Retry button would make a five-second blip need a
+          // tap. Caught all the same: an unhandled rejection is not a plan.
         }
-        setPortalEnabled(session.portalEnabled)
       }
 
       void recheckSession()
@@ -58,12 +75,19 @@ export function App(): ReactElement {
   }, [connected, role])
 
   const recheckPortal = useCallback(async (): Promise<void> => {
-    const session = await getSession()
-    if (session === null) {
-      setRole(null)
-      return
+    try {
+      const session = await getSession()
+      if (session === null) {
+        setRole(null)
+        return
+      }
+      setPortalEnabled(session.portalEnabled)
+    } catch {
+      // Same reasoning as the reconnect check: this one runs on a 15-second
+      // timer behind the disabled screen, so a failed poll should leave that
+      // screen alone and let the next tick try again. Swallowing it keeps the
+      // console clean rather than filling it with a rejection every 15s.
     }
-    setPortalEnabled(session.portalEnabled)
   }, [])
 
   // While a guest is looking at the disabled screen their stream is closed, so
@@ -91,6 +115,17 @@ export function App(): ReactElement {
 
   if (role === 'loading') {
     return <div>Loading...</div>
+  }
+
+  if (role === 'unreachable') {
+    return (
+      <Unreachable
+        onRetry={() => {
+          setRole('loading')
+          void checkSession()
+        }}
+      />
+    )
   }
 
   if (role === null) {
