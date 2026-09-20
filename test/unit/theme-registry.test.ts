@@ -5,15 +5,11 @@ import { listThemes, resolveTheme } from '../../src/web/themes/registry.ts'
 import { TOKEN_NAMES } from '../../src/web/themes/tokens.ts'
 
 describe('theme registry', () => {
-  // Phase 1 registers only `classic`; `tiles` and `cards` arrive in phases 2
-  // and 3. Until then resolveTheme('tiles') falls back to classic, whose id is
-  // 'classic', so this assertion cannot hold yet.
-  //
-  // `it.fails` rather than `it.skip`: when Task 10 registers the third theme
-  // this starts passing, and an unexpected pass is itself a failure — which
-  // forces whoever finishes Phase 3 to remove the marker. A skip would stay
-  // green forever and silently retire the assertion.
-  it.fails('resolves every declared id', () => {
+  // Every declared id now resolves to the theme that claims it. This was
+  // marked expected-fail through phases 1 and 2, when the missing ids fell back to
+  // classic; it is the assertion that a registry ignoring its argument — the
+  // one mutant that survived Task 7 by construction — can no longer pass.
+  it('resolves every declared id', () => {
     for (const id of THEME_IDS) {
       expect(resolveTheme(id).id).toBe(id)
     }
@@ -23,8 +19,11 @@ describe('theme registry', () => {
     expect(resolveTheme('bogus').id).toBe('classic')
   })
 
-  // Also `it.fails` for the duration of Phase 1 — see the note above.
-  it.fails('registry keys match THEME_IDS exactly', () => {
+  // Also expected-fail until the third theme arrived — see the note above. Now it
+  // is the guard that a theme declared in the shared contract is actually
+  // registered, and that nothing is registered under an id the server would
+  // refuse to store.
+  it('registry keys match THEME_IDS exactly', () => {
     expect(
       listThemes()
         .map((t) => t.id)

@@ -11,6 +11,9 @@ importers:
       '@hono/node-server':
         specifier: ^1.14.3
         version: 1.19.17(hono@4.13.8)
+      '@material-symbols/svg-400':
+        specifier: 0.47.4
+        version: 0.47.4
       '@mdi/js':
         specifier: ^7.4.47
         version: 7.4.47
@@ -327,6 +330,9 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@material-symbols/svg-400@0.47.4':
+    resolution: {integrity: sha512-o6vhGUH7Lk6epJkDJevmjRF2vQz2ognSlJujHW5O10S/2CTwVD+CRxCePfgj3tF0GVwhJMkd8qCMYUCfAEhXkg==}
 
   '@mdi/js@7.4.47':
     resolution: {integrity: sha512-KPnNOtm5i2pMabqZxpUz7iQf+mfrYZyKCZ8QNz85czgEt7cuHcGorWfdzUMWYA0SD+a6Hn4FmJ+YhzzzjkTZrQ==}
@@ -1346,6 +1352,8 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.6.0
+
+  '@material-symbols/svg-400@0.47.4': {}
 
   '@mdi/js@7.4.47': {}
 

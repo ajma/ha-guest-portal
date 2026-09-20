@@ -1,3 +1,4 @@
+import cards from './cards/index.js'
 import classic from './classic/index.js'
 import tiles from './tiles/index.js'
 import type { Theme } from './types.js'
@@ -9,6 +10,7 @@ import type { Theme } from './types.js'
 const THEMES: Record<string, Theme> = {
   classic,
   tiles,
+  cards,
 }
 
 export function resolveTheme(id: string): Theme {
