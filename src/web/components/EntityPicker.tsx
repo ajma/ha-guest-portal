@@ -17,22 +17,24 @@ export function EntityPicker({ entities, exclude, onSelect }: EntityPickerProps)
 
   const excludeSet = new Set(exclude)
 
-  // Count unsupported entities for the toggle label
-  const unsupportedCount = entities.filter((e) => !e.supported && !excludeSet.has(e.entityId))
-    .length
-
-  // Filter entities by query, exclusions, and supported status
-  const filtered = entities.filter((entity) => {
+  // Apply exclusions and search filter first
+  const searchFiltered = entities.filter((entity) => {
     if (excludeSet.has(entity.entityId)) return false
-
-    // Hide unsupported entities unless the toggle is on
-    if (!entity.supported && !showUnsupported) return false
 
     const lowerQuery = query.toLowerCase()
     const matchesName = entity.name.toLowerCase().includes(lowerQuery)
     const matchesId = entity.entityId.toLowerCase().includes(lowerQuery)
 
     return matchesName || matchesId
+  })
+
+  // Count unsupported entities in the search-filtered set
+  const unsupportedCount = searchFiltered.filter((e) => !e.supported).length
+
+  // Apply supported visibility filter for final display list
+  const filtered = searchFiltered.filter((entity) => {
+    if (!entity.supported && !showUnsupported) return false
+    return true
   })
 
   // Scroll active option into view

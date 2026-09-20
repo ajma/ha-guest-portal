@@ -225,6 +225,59 @@ describe('EntityPicker', () => {
     expect(screen.queryByRole('checkbox')).toBeNull()
   })
 
+  it('toggle count reflects search filter, not catalog total', async () => {
+    const user = userEvent.setup()
+    const manyEntities: CatalogEntry[] = [
+      ...entities,
+      {
+        entityId: 'climate.bedroom',
+        name: 'Bedroom Thermostat',
+        area: 'Bedroom',
+        domain: 'climate',
+        supported: false,
+      },
+      {
+        entityId: 'climate.kitchen',
+        name: 'Kitchen Thermostat',
+        area: 'Kitchen',
+        domain: 'climate',
+        supported: false,
+      },
+    ]
+
+    const onSelect = vi.fn()
+    render(<EntityPicker entities={manyEntities} exclude={[]} onSelect={onSelect} />)
+
+    // Before search, should show total unsupported count (3)
+    const checkbox = screen.getByRole('checkbox')
+    const label = checkbox.parentElement
+    expect(label?.textContent).toMatch(/Show 3 unsupported devices/)
+
+    // Search for "kitchen" - only 1 unsupported entity matches
+    const input = screen.getByRole('combobox')
+    await user.type(input, 'kitchen')
+
+    // Count should reflect the search-filtered set
+    expect(label?.textContent).toMatch(/Show 1 unsupported device/)
+  })
+
+  it('toggle disappears when search matches no unsupported entities', async () => {
+    const user = userEvent.setup()
+
+    const onSelect = vi.fn()
+    render(<EntityPicker entities={entities} exclude={[]} onSelect={onSelect} />)
+
+    // Initially toggle is visible
+    expect(screen.getByRole('checkbox')).toBeTruthy()
+
+    // Search for something that only matches supported entities
+    const input = screen.getByRole('combobox')
+    await user.type(input, 'porch')
+
+    // Toggle should disappear since search matches no unsupported entities
+    expect(screen.queryByRole('checkbox')).toBeNull()
+  })
+
   it('ArrowDown then Enter selects the first match', async () => {
     const user = userEvent.setup()
 

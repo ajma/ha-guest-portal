@@ -394,6 +394,31 @@ describe('fetchCatalog', () => {
       expect(catalog[0]?.name).toBe('Custom Override Name')
     })
 
+    it('empty registry override falls through to device name', async () => {
+      fake = await FakeHomeAssistant.start()
+      fake.seed(
+        [
+          {
+            entityId: 'light.empty_override',
+            name: '',
+            originalName: '',
+            hasEntityName: true,
+            deviceId: 'device2',
+            state: 'off',
+          },
+        ],
+        [],
+        [{ id: 'device2', name: 'Device With Name', areaId: null }],
+      )
+      const connection = await setupConnection()
+
+      const catalog = await fetchCatalog(connection)
+
+      expect(catalog).toHaveLength(1)
+      expect(catalog[0]?.name).toBe('Device With Name')
+      // Fails against implementation that trusts entity.name verbatim without nonEmpty()
+    })
+
     it('has_entity_name + device with empty suffix uses device name (real case: lock.front_door_lock)', async () => {
       fake = await FakeHomeAssistant.start()
       // Real shape from probe: {"entity_id":"lock.front_door_lock","name":null,"original_name":"","has_entity_name":true,"device_name":"Front Door Lock","device_name_by_user":null}
