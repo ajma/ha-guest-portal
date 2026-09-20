@@ -12,7 +12,7 @@ importers:
         specifier: ^1.14.3
         version: 1.19.17(hono@4.13.8)
       '@mdi/js':
-        specifier: 7.4.47
+        specifier: ^7.4.47
         version: 7.4.47
       hono:
         specifier: ^4.7.11

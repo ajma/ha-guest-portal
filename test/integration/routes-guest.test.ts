@@ -1,5 +1,5 @@
 import type { Server } from 'node:http'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { HaClient } from '../../src/server/ha/client.ts'
 import { type LoginRateLimiter, SESSION_COOKIE, SessionStore } from '../../src/server/http/auth.ts'
 import { SseHub } from '../../src/server/http/sse.ts'
@@ -56,7 +56,34 @@ async function waitForFrame(frames: SseFrame[], type: string, ms = 5000): Promis
   return false
 }
 
+// Several tests below need a known index.html, but the server's static root is
+// the real build output (app.ts: serveStatic({ root: './dist/web' })). Writing
+// a stub straight into it leaves the built SPA clobbered for every later
+// consumer — notably Playwright, which would then screenshot a blank page and
+// still produce a perfectly valid-looking image. Snapshot it and put it back.
+const INDEX = './dist/web/index.html'
+
 describe('Guest API routes', () => {
+  let savedIndex: string | null = null
+
+  beforeAll(async () => {
+    const { readFileSync } = await import('node:fs')
+    try {
+      savedIndex = readFileSync(INDEX, 'utf-8')
+    } catch {
+      savedIndex = null
+    }
+  })
+
+  afterAll(async () => {
+    const { rmSync, writeFileSync } = await import('node:fs')
+    if (savedIndex === null) {
+      rmSync(INDEX, { force: true })
+    } else {
+      writeFileSync(INDEX, savedIndex)
+    }
+  })
+
   let fake: FakeHomeAssistant
   let runtime: Runtime
   let server: Server
@@ -588,13 +615,9 @@ describe('Guest API routes', () => {
 
   describe('Static file serving', () => {
     it('serves SPA index.html for non-API paths', async () => {
-      // Write a test index.html to dist/web
       const { mkdirSync, writeFileSync } = await import('node:fs')
-      mkdirSync('/home/andm/workspace/ha-guest-portal/dist/web', { recursive: true })
-      writeFileSync(
-        '/home/andm/workspace/ha-guest-portal/dist/web/index.html',
-        '<html><body>SPA</body></html>',
-      )
+      mkdirSync('./dist/web', { recursive: true })
+      writeFileSync(INDEX, '<html><body>SPA</body></html>')
 
       const res = await fetch(`${baseUrl}/admin`)
       expect(res.status).toBe(200)
@@ -642,9 +665,9 @@ describe('Guest API routes', () => {
   describe('HTML injection', () => {
     async function writeStubIndex(): Promise<void> {
       const { mkdirSync, writeFileSync } = await import('node:fs')
-      mkdirSync('/home/andm/workspace/ha-guest-portal/dist/web', { recursive: true })
+      mkdirSync('./dist/web', { recursive: true })
       writeFileSync(
-        '/home/andm/workspace/ha-guest-portal/dist/web/index.html',
+        INDEX,
         '<!DOCTYPE html>\n<html lang="en">\n  <head>\n    <title>t</title>\n  </head>\n  <body></body>\n</html>',
       )
     }
