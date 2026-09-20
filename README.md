@@ -191,7 +191,8 @@ Replace `192.168.1.10` with your server's LAN IP address.
    - Set friendly labels
    - Select which actions are permitted (e.g., unlock but not lock)
 5. Click "Save"
-6. Share the guest portal URL and guest password with your guests
+6. Optionally pick one of the three guest portal themes from the admin page's theme picker (see `DOCS.md`)
+7. Share the guest portal URL and guest password with your guests
 
 Guests can now control only the devices you've explicitly allowed.
 

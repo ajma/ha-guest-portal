@@ -67,6 +67,38 @@ anyone who kept their tab open returns automatically without signing in again.
 
 The setting survives add-on restarts and updates.
 
+## Choosing a theme
+
+The admin page has a **Theme** picker showing three small pictures of the portal.
+Click one to change how the guest portal looks. The three are:
+
+- **Classic** — the look of Home Assistant itself. Each device is a wide row: a
+  round icon on the left, the device's name and what it is doing next to it, and
+  its buttons along the bottom. The icon takes on Home Assistant's own colour for
+  that kind of device — amber for a lit lamp, green for a locked door — and the
+  buttons stay a neutral grey, exactly as they do in Home Assistant.
+- **Tiles** — a grid of large rounded squares, two across on a phone. The whole
+  square is the button, and it floods with colour when the device is active: the
+  lamp tile turns amber, the lock tile green, the garage door purple. Readable
+  from across a room.
+- **Cards** — a light, airy layout with plenty of space between things. Each
+  device sits on its own quiet pale card with a large circular badge at the top,
+  and that badge is the button. When the device is active the badge picks up a
+  soft tint of its colour. The name and state sit below the badge, outside the
+  button, so nothing happens if a guest rests a thumb on the text.
+
+The theme applies to everything a guest sees: the login screen, the device list,
+and the "temporarily unavailable" message shown while the portal is switched off.
+It does not change this admin page, which only you see.
+
+Whichever you choose, it switches between a light and a dark appearance on its
+own, following whatever the guest's phone or laptop is already set to. There is
+no separate dark-mode setting to manage.
+
+A guest who already has the portal open keeps the old look until their next page
+load — reloading the page is enough. The setting survives add-on restarts and
+updates.
+
 ## Access Methods
 
 The portal supports two ways to access it:

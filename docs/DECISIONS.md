@@ -45,6 +45,90 @@ be redundant. It is persisted rather than in-memory so the sensor does not blank
 artifact whose value is its strictness, and login rows have no entity or action, so
 reusing it would mean relaxing its `NOT NULL` columns.
 
+## Themes
+
+**The theme is injected into the HTML, not fetched.** The server writes
+`<html data-theme="…">` into the `index.html` it already rewrites for the ingress base
+path, so the CSS variable block keyed off `[data-theme]` applies during parse, before
+React loads. There is no unthemed flash and no endpoint to authenticate. Reversing means
+accepting a flash of the wrong theme, or reintroducing a route that a guest can reach
+before logging in.
+
+**Component overrides are optional.** A theme supplying only tokens and an icon resolver
+renders through the default component set; that is what keeps a new theme to one folder
+rather than a component library. It is enforced by a test built on a synthetic
+tokens-only theme, because all three shipped themes override every slot and so would not
+exercise the guarantee at all. Reversal cost: the default set becomes dead code and every
+future theme owes six components.
+
+**The token set is closed — 25 tokens, every theme supplies all of them.** A theme needing
+a value outside the list extends the list for everyone; private tokens would silently
+break the default set's ability to render an arbitrary theme, which is the property the
+entry above depends on. The set began at 15 and grew mid-implementation, when making
+`classic` faithful to Home Assistant's tile card required nine per-state colour roles plus
+a neutral control fill. Widening the set is the intended way to add a value, and it costs
+an edit to every theme — which is the point: the cost is what stops the contract drifting
+into a per-theme grab bag.
+
+**Preview images are Playwright snapshot baselines, at deliberately tight tolerances.**
+A theme's appearance changing fails the test until the snapshot is regenerated, which
+regenerates the preview; with no CI here, "auto-captured" would otherwise mean "captured
+when remembered". At Playwright's defaults that guarantee did not actually hold:
+`threshold` is a per-pixel perceptual distance defaulting to 0.2 and `maxDiffPixelRatio`
+was 0.02, while the icon circle carrying a tile's state colour is only about 0.6% of the
+420x380 frame — repainting it from green to purple still passed. The tolerances are now
+0.1 and 0.001 precisely because the baseline doubles as the admin picker's thumbnail: a
+preview that cannot fail is one that silently stops matching the theme it advertises.
+Reversal cost: loosening them again re-hides colour-only regressions.
+
+**Themes are named neutrally.** `tiles`, `cards` and `classic`, rather than the products
+they evoke. The add-on is distributed publicly, and naming a theme after a protected mark
+while imitating its trade dress is exposure with no engineering benefit. Documentation may
+say "inspired by"; identifiers may not.
+
+**Home Assistant colours a tile by domain and state, not from one accent.** `classic`
+reproduces that — amber lights, cyan fans, purple covers, green for a locked door and red
+for an unlocked one — which is why the token set carries nine per-state colour roles
+instead of a single `accent`. The values are taken from `home-assistant/frontend`'s own
+`src/resources/theme/color/color.globals.ts`, and the mapping lives in
+`src/web/themes/stateColor.ts` beside the contract rather than inside `classic`, because
+`tiles` and `cards` colour by state too. Reversal cost: collapsing to one accent makes a
+lit lamp and a locked door indistinguishable in every theme at once.
+
+**Feature buttons stay neutral.** Home Assistant's `card-feature-styles.ts` hands
+`ha-control-button` a radius and `--control-button-focus-color` and nothing else, so the
+button's background keeps its `--disabled-color` default and the state colour reaches it
+only as a focus ring. `classic` matches that, via a `controlNeutral` token. The honest
+cost: this loses red-for-Unlock, and a red Unlock is a real affordance in a guest portal,
+where the person pressing the button is not the homeowner and has no prior model of the
+house. It was chosen to match Home Assistant on an explicit instruction to do so, and it
+is a reasonable thing to revisit — reversing it is one fill in one component.
+
+**`cards` fills its badge tonally rather than solidly.** Measured against the theme's own
+palette: `--accentText` on a solid light-mode amber badge is 1.93:1, and no token in the
+closed set is legible across all nine state fills in both directions — `--accentText`
+fails on the amber and the cyan, `--text` fails on the purple and the red. Mixing the
+state colour 40% into `--surface` keeps the badge's luminance near the card's, so `--text`
+stays legible at 8.1:1 worst case in light mode and 4.3:1 in dark, while the hue still
+says which device is doing what. The colour still comes from `stateColorToken()`, so the
+theme has not opted out of the state palette — only out of painting it at full strength.
+
+**Nothing keeps a second list of themes.** Adding a theme is one folder plus one registry
+line, and the two places that could have become a second registry do not maintain a list
+at all: the admin picker discovers previews by globbing the captured images, and the CSS
+generator discovers themes by directory listing, cross-checked against `THEME_IDS`. This
+is a correction, not a precaution — a hand-written preview map existed and did drift.
+`tiles` shipped a committed preview while the picker still rendered "No preview captured"
+beside it, with nothing failing, because the test asserted `classic` by name. Making the
+file the registration removes the class of bug rather than the instance.
+
+**The CSS generator reads each theme's tokens, not the registry.** Importing the registry
+pulled in every theme's components, so a theme using any Vite-only import (`?raw`, `?url`,
+an asset) broke `pnpm themes:css` under plain Node — with the error pointing at the
+generator rather than at the import. That was an invisible constraint on what a theme may
+contain, which the contract never meant to impose; it cost `cards` its icon imports.
+A theme's `tokens.ts` is pure data behind a type-only import, so it loads anywhere.
+
 ## Security
 
 **This application is the security boundary.** Home Assistant cannot issue a token scoped
@@ -185,3 +269,21 @@ because a native module needs musl prebuilds or a full toolchain in Alpine.
   Supervisor flags it as an unknown option and the user must delete that line from their
   configuration. The error is visible and recoverable — unlike the silent failure the
   option caused when it existed.
+- **`tiles` is a lookalike, not a port.** SF Symbols cannot ship in a web application —
+  the licence covers Apple platforms only — so the theme's glyphs are drawn by hand in
+  that idiom (a 24px box, an even 1.8px stroke, round caps, no fill) and no dependency is
+  added for them. They will never be pixel-identical to the real thing, and a reader who
+  knows the originals will see the difference. Relatedly, `cards` vendors its ten Material
+  Symbols glyph paths as source rather than importing them, for the Node-loadability
+  reason above; a test reads the `@material-symbols/svg-400` package's own `.svg` files
+  back and fails if any vendored path has drifted, so the copies cannot rot silently.
+- **Known gap — happy-dom drops a `color-mix()` value from an inline style.** Its
+  inline-style parser validates standard properties and silently discards a declaration it
+  cannot parse, so `backgroundColor: color-mix(…)` disappears from the element entirely.
+  (A custom property such as `--badgeTint` survives, because those are passed through
+  unparsed.) No unit test can therefore assert the painted result of a mix: `tiles`'
+  translucent overlay layers and `cards`' 40% badge tint — which lives in a Tailwind class
+  and so never reaches the DOM as a value at all — are verified only by their Playwright
+  previews. What the unit tests do assert is the resolved token name reaching the DOM: a
+  lit lamp takes `--stateLightActive`, a locked door `--stateLockLocked`, and the three are
+  distinct. That covers the colour *logic*; the rendering is the snapshot's job.
