@@ -87,6 +87,7 @@ export const RegistryEntity = z
     entity_id: z.string(),
     name: z.string().nullable(),
     original_name: z.string().nullable(),
+    has_entity_name: z.boolean().nullable().optional(),
     area_id: z.string().nullable(),
     device_id: z.string().nullable(),
     disabled_by: z.string().nullable(),

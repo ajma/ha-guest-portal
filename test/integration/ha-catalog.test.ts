@@ -368,6 +368,206 @@ describe('fetchCatalog', () => {
 
     expect(catalog).toEqual([])
   })
+
+  describe('display name resolution (mirrors HA Entity._friendly_name_internal)', () => {
+    it('registry override (entity.name) always wins', async () => {
+      fake = await FakeHomeAssistant.start()
+      fake.seed(
+        [
+          {
+            entityId: 'lock.override',
+            name: 'Custom Override Name',
+            originalName: '',
+            hasEntityName: true,
+            deviceId: 'device1',
+            state: 'locked',
+          },
+        ],
+        [],
+        [{ id: 'device1', name: 'Device Name', areaId: null }],
+      )
+      const connection = await setupConnection()
+
+      const catalog = await fetchCatalog(connection)
+
+      expect(catalog).toHaveLength(1)
+      expect(catalog[0]?.name).toBe('Custom Override Name')
+    })
+
+    it('has_entity_name + device with empty suffix uses device name (real case: lock.front_door_lock)', async () => {
+      fake = await FakeHomeAssistant.start()
+      // Real shape from probe: {"entity_id":"lock.front_door_lock","name":null,"original_name":"","has_entity_name":true,"device_name":"Front Door Lock","device_name_by_user":null}
+      fake.seed(
+        [
+          {
+            entityId: 'lock.front_door_lock',
+            originalName: '',
+            hasEntityName: true,
+            deviceId: 'dev_front_door',
+            state: 'locked',
+          },
+        ],
+        [],
+        [{ id: 'dev_front_door', name: 'Front Door Lock', areaId: null }],
+      )
+      const connection = await setupConnection()
+
+      const catalog = await fetchCatalog(connection)
+
+      expect(catalog).toHaveLength(1)
+      expect(catalog[0]?.name).toBe('Front Door Lock')
+      // Fails against the old `??` implementation which would return ""
+    })
+
+    it('has_entity_name + device_name_by_user wins over device_name (real case: light.kitchen_sink_light)', async () => {
+      fake = await FakeHomeAssistant.start()
+      // Real shape: {"entity_id":"light.kitchen_sink_light","name":null,"original_name":"","has_entity_name":true,"device_name":"Kitchen Sink","device_name_by_user":"Kitchen Sink Light"}
+      fake.seed(
+        [
+          {
+            entityId: 'light.kitchen_sink_light',
+            originalName: '',
+            hasEntityName: true,
+            deviceId: 'dev_kitchen_sink',
+            state: 'off',
+          },
+        ],
+        [],
+        [
+          {
+            id: 'dev_kitchen_sink',
+            name: 'Kitchen Sink',
+            nameByUser: 'Kitchen Sink Light',
+            areaId: null,
+          },
+        ],
+      )
+      const connection = await setupConnection()
+
+      const catalog = await fetchCatalog(connection)
+
+      expect(catalog).toHaveLength(1)
+      expect(catalog[0]?.name).toBe('Kitchen Sink Light')
+      // Fails against implementation that doesn't check name_by_user
+    })
+
+    it('has_entity_name + device + non-empty suffix appends suffix to device name', async () => {
+      fake = await FakeHomeAssistant.start()
+      fake.seed(
+        [
+          {
+            entityId: 'sensor.garage_door_battery',
+            originalName: 'Battery',
+            hasEntityName: true,
+            deviceId: 'dev_garage_door',
+            state: '85',
+          },
+        ],
+        [],
+        [{ id: 'dev_garage_door', name: 'Garage Door', areaId: null }],
+      )
+      const connection = await setupConnection()
+
+      const catalog = await fetchCatalog(connection)
+
+      expect(catalog).toHaveLength(1)
+      expect(catalog[0]?.name).toBe('Garage Door Battery')
+      // Fails against implementation that doesn't append suffix
+    })
+
+    it('original_name empty string with no device falls through to entity_id', async () => {
+      fake = await FakeHomeAssistant.start()
+      fake.seed(
+        [
+          {
+            entityId: 'light.orphan_empty',
+            originalName: '',
+            hasEntityName: false,
+            state: 'off',
+          },
+        ],
+        [],
+        [],
+      )
+      const connection = await setupConnection()
+
+      const catalog = await fetchCatalog(connection)
+
+      expect(catalog).toHaveLength(1)
+      expect(catalog[0]?.name).toBe('light.orphan_empty')
+      // Fails against the old `??` implementation which would return ""
+    })
+
+    it('whitespace-only original_name is treated as absent', async () => {
+      fake = await FakeHomeAssistant.start()
+      fake.seed(
+        [
+          {
+            entityId: 'switch.whitespace',
+            originalName: '   ',
+            hasEntityName: false,
+            state: 'on',
+          },
+        ],
+        [],
+        [],
+      )
+      const connection = await setupConnection()
+
+      const catalog = await fetchCatalog(connection)
+
+      expect(catalog).toHaveLength(1)
+      expect(catalog[0]?.name).toBe('switch.whitespace')
+      // Fails against implementation that doesn't trim whitespace
+    })
+
+    it('has_entity_name absent (older HA) behaves as before', async () => {
+      fake = await FakeHomeAssistant.start()
+      fake.seed(
+        [
+          {
+            entityId: 'light.legacy',
+            originalName: 'Legacy Light',
+            deviceId: 'dev_legacy',
+            state: 'off',
+          },
+        ],
+        [],
+        [{ id: 'dev_legacy', name: 'Legacy Device', areaId: null }],
+      )
+      const connection = await setupConnection()
+
+      const catalog = await fetchCatalog(connection)
+
+      expect(catalog).toHaveLength(1)
+      expect(catalog[0]?.name).toBe('Legacy Light')
+      // When has_entity_name is absent, use original_name if present
+    })
+
+    it('has_entity_name false uses original_name', async () => {
+      fake = await FakeHomeAssistant.start()
+      fake.seed(
+        [
+          {
+            entityId: 'fan.standalone',
+            originalName: 'Standalone Fan',
+            hasEntityName: false,
+            deviceId: 'dev_fan',
+            state: 'off',
+          },
+        ],
+        [],
+        [{ id: 'dev_fan', name: 'Fan Device', areaId: null }],
+      )
+      const connection = await setupConnection()
+
+      const catalog = await fetchCatalog(connection)
+
+      expect(catalog).toHaveLength(1)
+      expect(catalog[0]?.name).toBe('Standalone Fan')
+      // has_entity_name=false means don't use device name
+    })
+  })
 })
 
 // Helper functions

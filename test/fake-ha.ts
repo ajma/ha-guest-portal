@@ -33,6 +33,8 @@ const ClientCommand = z.union([
 export type FakeEntity = {
   entityId: string
   name?: string
+  originalName?: string
+  hasEntityName?: boolean
   areaId?: string | null
   deviceId?: string | null
   state: string
@@ -67,11 +69,18 @@ export class FakeHomeAssistant {
   private contextCounter = 0
   private lastTimestamp = 0
   private areas: Array<{ areaId: string; name: string }> = []
-  private devices: Array<{ id: string; name: string; areaId: string | null }> = []
+  private devices: Array<{
+    id: string
+    name: string
+    nameByUser?: string | null
+    areaId: string | null
+  }> = []
   private entityMeta = new Map<
     string,
     {
       name?: string
+      originalName?: string
+      hasEntityName?: boolean
       areaId?: string | null
       deviceId?: string | null
       disabledBy?: string | null
@@ -350,7 +359,7 @@ export class FakeHomeAssistant {
             result: this.devices.map((d) => ({
               id: d.id,
               name: d.name,
-              name_by_user: null,
+              name_by_user: d.nameByUser ?? null,
               area_id: d.areaId,
             })),
           },
@@ -370,7 +379,8 @@ export class FakeHomeAssistant {
               return {
                 entity_id: entityId,
                 name: meta?.name ?? null,
-                original_name: meta?.name ?? null,
+                original_name: meta?.originalName ?? meta?.name ?? null,
+                has_entity_name: meta?.hasEntityName ?? null,
                 area_id: meta?.areaId ?? null,
                 device_id: meta?.deviceId ?? null,
                 disabled_by: meta?.disabledBy ?? null,
@@ -518,7 +528,12 @@ export class FakeHomeAssistant {
   seed(
     entities: FakeEntity[],
     areas: Array<{ areaId: string; name: string }>,
-    devices?: Array<{ id: string; name: string; areaId: string | null }>,
+    devices?: Array<{
+      id: string
+      name: string
+      nameByUser?: string | null
+      areaId: string | null
+    }>,
   ): void {
     this.entities.clear()
     this.entityMeta.clear()
@@ -536,12 +551,16 @@ export class FakeHomeAssistant {
 
       const meta: {
         name?: string
+        originalName?: string
+        hasEntityName?: boolean
         areaId?: string | null
         deviceId?: string | null
         disabledBy?: string | null
         hiddenBy?: string | null
       } = {}
       if (entity.name !== undefined) meta.name = entity.name
+      if (entity.originalName !== undefined) meta.originalName = entity.originalName
+      if (entity.hasEntityName !== undefined) meta.hasEntityName = entity.hasEntityName
       if (entity.areaId !== undefined) meta.areaId = entity.areaId
       if (entity.deviceId !== undefined) meta.deviceId = entity.deviceId
       if (entity.disabledBy !== undefined) meta.disabledBy = entity.disabledBy
