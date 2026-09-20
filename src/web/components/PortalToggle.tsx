@@ -68,9 +68,9 @@ export function PortalToggle(): ReactElement {
     void load()
   }, [load])
 
-  // Refresh toggle state when the admin page regains focus. This handles the
-  // case where an owner disables the portal from Home Assistant (the switch,
-  // a dashboard, or an automation) while the admin page is open.
+  // Refresh toggle state when the portal regains focus. This handles the case
+  // where an owner disables the portal from Home Assistant (the switch, a
+  // dashboard, or an automation) while they have this panel open.
   useEffect(() => {
     const handleVisibilityChange = (): void => {
       if (!document.hidden) {
@@ -161,7 +161,7 @@ export function PortalToggle(): ReactElement {
       {!enabled && (
         <div data-testid="portal-disabled-banner" style={disabledBanner}>
           The guest portal is off. Guests cannot log in and anyone already signed in has been
-          blocked. This admin page is unaffected.
+          blocked. Your own access is unaffected.
         </div>
       )}
 

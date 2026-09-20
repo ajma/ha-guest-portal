@@ -393,6 +393,10 @@ describe('tiles theme', () => {
       )
       expect(src, `${f} uses a hex colour literal`).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
       expect(src, `${f} uses a raw CSS colour function`).not.toMatch(/\b(rgb|rgba|hsl|hsla)\(/)
+      // Named colours were the one hole every scan but Task 7's left open.
+      // `'white'` is as untokenised as `#fff`, and is what EntityPicker
+      // actually shipped.
+      expect(src, `${f} uses a named colour`).not.toMatch(/['"](?:white|black)['"]/)
     }
   })
 })
