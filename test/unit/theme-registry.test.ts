@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { describe, expect, it } from 'vitest'
 import { THEME_IDS } from '../../src/shared/themes.ts'
 import { listThemes, resolveTheme } from '../../src/web/themes/registry.ts'
@@ -42,6 +43,25 @@ describe('theme registry', () => {
       expect(theme.name.length).toBeGreaterThan(0)
     }
   })
+
+  it('the generated CSS is up to date with the TypeScript tokens', () => {
+    // src/web/themes/generated.css is what the browser actually reads, and it
+    // applies before any JavaScript runs. Editing a token in TypeScript and
+    // forgetting to regenerate would leave the two silently disagreeing, with
+    // the stylesheet winning — so the check is a test, not a discipline.
+    //
+    // `tsx`, not `node --experimental-strip-types`: type stripping does not
+    // remap the `.js` import specifiers used inside src/ back to .ts/.tsx, so
+    // the generator's import of themes/classic/index.js cannot resolve, and the
+    // JSX it pulls in transitively would not compile either. Invoked by path
+    // rather than by bare name so this does not depend on node_modules/.bin
+    // being on PATH.
+    expect(() =>
+      execFileSync('node_modules/.bin/tsx', ['scripts/generate-theme-css.ts', '--check'], {
+        stdio: 'pipe',
+      }),
+    ).not.toThrow()
+  }, 30_000)
 
   it('every theme supplies every token in both modes', () => {
     expect(listThemes().length).toBeGreaterThan(0)

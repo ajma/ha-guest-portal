@@ -6,9 +6,15 @@ import { icon } from './icons.js'
 
 /**
  * Home Assistant's tile layout: circular icon on the left, name and state
- * stacked in the middle, the control on the right. Only the control carries the
- * accent colour — the card itself does not change on state, which is what
- * distinguishes `classic` from the flood-fill themes.
+ * stacked in the middle, the switch on the right. Only the icon circle and the
+ * switch carry the accent colour — the card itself does not change on state,
+ * which is what distinguishes `classic` from the flood-fill themes.
+ *
+ * The whole row is the button, as it is in Home Assistant's own tile card. The
+ * switch on the right is the affordance, not a separate hit target: an empty
+ * 44x24 control is the only thing a guest could press, and it leaves the name
+ * and state — the text that says what pressing would do — outside the
+ * accessible control entirely.
  */
 export function ToggleTile({ device, disabled }: TileProps): ReactElement {
   const d = useToggleDevice(device, disabled)
@@ -30,7 +36,15 @@ export function ToggleTile({ device, disabled }: TileProps): ReactElement {
 
   return (
     <div className="p-[var(--tilePadding)] rounded-[var(--tileRadius)] bg-[var(--surface)] shadow-[var(--shadow)]">
-      <div className="flex items-center gap-3">
+      <button
+        type="button"
+        onClick={d.activate}
+        disabled={d.pending || disabled}
+        aria-label={d.label}
+        aria-pressed={d.isOn}
+        aria-describedby={d.error !== null ? `${device.entityId}-error` : undefined}
+        className="flex items-center gap-3 w-full text-left disabled:cursor-not-allowed"
+      >
         <span
           className={`flex items-center justify-center shrink-0 w-10 h-10 rounded-full transition-colors ${
             d.isOn
@@ -41,19 +55,14 @@ export function ToggleTile({ device, disabled }: TileProps): ReactElement {
           {domain !== null && icon(domain, d.isOn ? 'on' : 'off')}
         </span>
 
-        <div className="min-w-0 flex-1">
-          <div className="font-medium text-[var(--text)] truncate">{d.label}</div>
-          <div className="text-sm text-[var(--textMuted)]">{d.stateText}</div>
-        </div>
+        <span className="min-w-0 flex-1">
+          <span className="block font-medium text-[var(--text)] truncate">{d.label}</span>
+          <span className="block text-sm text-[var(--textMuted)]">{d.stateText}</span>
+        </span>
 
-        <button
-          type="button"
-          onClick={d.activate}
-          disabled={d.pending || disabled}
-          aria-label={d.label}
-          aria-pressed={d.isOn}
-          aria-describedby={d.error !== null ? `${device.entityId}-error` : undefined}
-          className={`relative shrink-0 w-11 h-6 rounded-full transition-colors disabled:cursor-not-allowed ${
+        <span
+          aria-hidden="true"
+          className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${
             d.isOn ? 'bg-[var(--accent)]' : 'bg-[var(--surfaceActive)]'
           }`}
         >
@@ -62,8 +71,8 @@ export function ToggleTile({ device, disabled }: TileProps): ReactElement {
               d.isOn ? 'left-[23px] bg-[var(--accentText)]' : 'left-[3px] bg-[var(--textMuted)]'
             }`}
           />
-        </button>
-      </div>
+        </span>
+      </button>
 
       {d.isStale && (
         <div className="text-sm text-[var(--textMuted)] mt-2">Not connected to Home Assistant</div>

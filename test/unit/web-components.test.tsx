@@ -88,7 +88,7 @@ describe('Login component', () => {
   })
 
   it('shows distinct message for wrong password', async () => {
-    const { Login } = await import('../../src/web/routes/Login.js')
+    const { Login } = await import('../../src/web/themes/default/Login.js')
 
     global.fetch = createFetchMock({
       loginResponse: new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -114,7 +114,7 @@ describe('Login component', () => {
   })
 
   it('shows distinct message for rate limiting', async () => {
-    const { Login } = await import('../../src/web/routes/Login.js')
+    const { Login } = await import('../../src/web/themes/default/Login.js')
 
     global.fetch = createFetchMock({
       loginResponse: new Response(JSON.stringify({ error: 'Too Many Requests' }), {
@@ -144,7 +144,7 @@ describe('Login component', () => {
   })
 
   it('calls onSuccess with role on successful login', async () => {
-    const { Login } = await import('../../src/web/routes/Login.js')
+    const { Login } = await import('../../src/web/themes/default/Login.js')
 
     global.fetch = createFetchMock({
       sessionRole: 'admin',

@@ -1,1 +1,11 @@
 @import "tailwindcss";
+/* Generated from each theme's tokens.ts — regenerate with `pnpm themes:css`.
+   The variables must be in a stylesheet so they apply during HTML parse, before
+   React loads; `data-theme` on <html> is what selects the block. */
+@import "./themes/generated.css";
+
+html,
+body {
+  background: var(--appBg);
+  font-family: var(--fontFamily);
+}

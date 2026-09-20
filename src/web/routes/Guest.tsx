@@ -1,15 +1,30 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import type { Device } from '@shared/api.js'
 import { connectDeviceStore, useDeviceStore } from '../store.js'
-import { ToggleTile } from '../components/ToggleTile.js'
-import { CoverTile } from '../components/CoverTile.js'
-import { LockTile } from '../components/LockTile.js'
+import { activeTheme, componentsFor } from '../themes/active.js'
+import type { DEFAULT_COMPONENTS } from '../themes/default/index.js'
 
 type GuestProps = {
   onLogout: () => Promise<void>
 }
 
-function DeviceTile({ device, disabled }: { device: Device; disabled: boolean }): ReactElement {
+type Components = typeof DEFAULT_COMPONENTS
+
+/**
+ * Declared at module scope, not inside `Guest`. A component defined during
+ * render is a new type on every render, which remounts the whole grid and
+ * throws away each tile's optimistic state.
+ */
+function DeviceTile({
+  device,
+  disabled,
+  components,
+}: {
+  device: Device
+  disabled: boolean
+  components: Components
+}): ReactElement {
+  const { ToggleTile, CoverTile, LockTile } = components
   const domain = device.domain
 
   if (domain === 'light' || domain === 'switch' || domain === 'fan' || domain === 'input_boolean') {
@@ -39,6 +54,12 @@ export function Guest({ onLogout }: GuestProps): ReactElement {
 
   const { devices, connected } = useDeviceStore()
 
+  // The theme supplies the frame and every tile; this route only decides which
+  // slot a device belongs in. Reading it per render is free — the slots are
+  // stable module-level functions, so React sees the same element types.
+  const components = componentsFor(activeTheme())
+  const { Shell } = components
+
   // Sort devices by sortOrder
   const sortedDevices = [...devices].sort((a, b) => a.sortOrder - b.sortOrder)
 
@@ -52,30 +73,24 @@ export function Guest({ onLogout }: GuestProps): ReactElement {
   }
 
   return (
-    <div data-testid="guest-screen" className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Guest Portal</h1>
-        <button
-          type="button"
-          onClick={() => {
-            void handleLogout()
-          }}
-          disabled={loggingOut}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {loggingOut ? 'Logging out...' : 'Log out'}
-        </button>
-      </div>
-
+    <Shell
+      loggingOut={loggingOut}
+      onLogout={() => {
+        void handleLogout()
+      }}
+    >
       {sortedDevices.length === 0 ? (
-        <p className="text-gray-600 dark:text-gray-400">No devices available</p>
+        <p className="text-[var(--textMuted)]">No devices available</p>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-w-7xl">
-          {sortedDevices.map((device) => (
-            <DeviceTile key={device.entityId} device={device} disabled={tilesDisabled} />
-          ))}
-        </div>
+        sortedDevices.map((device) => (
+          <DeviceTile
+            key={device.entityId}
+            device={device}
+            disabled={tilesDisabled}
+            components={components}
+          />
+        ))
       )}
-    </div>
+    </Shell>
   )
 }

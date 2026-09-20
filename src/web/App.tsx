@@ -3,12 +3,15 @@ import type { Role } from '@shared/api.js'
 import { getSession, logout, setUnauthorizedCallback } from './api.js'
 import { Admin } from './routes/Admin.js'
 import { Guest } from './routes/Guest.js'
-import { Login } from './routes/Login.js'
-import { PortalDisabled } from './routes/PortalDisabled.js'
 import { setPortalEnabled, useDeviceStore } from './store.js'
+import { activeTheme, componentsFor } from './themes/active.js'
 import { appPath } from './path.js'
 
 export function App(): ReactElement {
+  // The two guest-facing screens App owns come from the active theme, so a
+  // guest never crosses an unthemed seam. The admin surface is deliberately
+  // not themed.
+  const { Login, Disabled } = componentsFor(activeTheme())
   const [role, setRole] = useState<Role | null | 'loading'>('loading')
   const { connected, portalEnabled } = useDeviceStore()
   const prevConnectedRef = useRef<boolean>(false)
@@ -98,7 +101,7 @@ export function App(): ReactElement {
 
   if (role === 'guest' && !portalEnabled) {
     return (
-      <PortalDisabled
+      <Disabled
         onRetry={() => {
           void recheckPortal()
         }}

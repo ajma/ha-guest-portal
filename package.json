@@ -9,6 +9,7 @@
     "dev": "vite --port 5173 & node --watch --experimental-strip-types src/server/index.ts",
     "dev:fake-ha": "node --experimental-strip-types scripts/dev-fake-ha.ts",
     "dev:demo": "./scripts/dev-demo.sh",
+    "themes:css": "tsx scripts/generate-theme-css.ts",
     "dev:real": "HA_MODE=real ./scripts/dev-demo.sh",
     "build": "vite build && tsc -p tsconfig.server.json",
     "start": "node dist/server/index.js",
@@ -40,6 +41,7 @@
     "@vitejs/plugin-react": "^6.1.1",
     "happy-dom": "^20.14.5",
     "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.14",
     "typescript": "^7.0.2",
     "vite": "^8.3.0",
     "vitest": "^5.0.1"
