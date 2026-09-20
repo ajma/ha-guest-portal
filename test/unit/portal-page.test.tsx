@@ -290,6 +290,32 @@ describe('Portal page', () => {
       expect((backdrop as HTMLElement | null)?.style.position).toBe('fixed')
     })
 
+    // Kills: settings sharing the tile editor's 520px box. The theme picker
+    // lays three previews side by side, so at that width each thumbnail is
+    // about 155px across — too small to tell the themes apart, which is the
+    // only thing that control is for. Asserts the relationship rather than the
+    // number, so re-tuning the width later does not break this.
+    it('gives settings a wider dialog than the tile editor', async () => {
+      const user = userEvent.setup()
+      seed()
+      renderPortal('admin')
+
+      async function overlayMaxWidth(testId: string): Promise<number> {
+        const inner = (await screen.findByTestId(testId)).firstElementChild as HTMLElement
+        return Number.parseInt(inner.style.maxWidth, 10)
+      }
+
+      await user.click(screen.getByRole('button', { name: 'Settings' }))
+      const settingsWidth = await overlayMaxWidth('settings-overlay')
+      await user.click(screen.getByRole('button', { name: 'Settings' }))
+
+      await enterEditMode(user)
+      await user.click(screen.getByRole('button', { name: 'Porch' }))
+      const editorWidth = await overlayMaxWidth('editor-overlay')
+
+      expect(settingsWidth).toBeGreaterThan(editorWidth)
+    })
+
     // Kills: leaving edit mode keeping `editingId`, which reopens the last
     // editor the next time the owner enters edit mode.
     it('forgets the open editor when edit mode is left', async () => {

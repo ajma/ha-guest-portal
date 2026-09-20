@@ -140,9 +140,20 @@ const overlayInner: CSSProperties = {
   overflowY: 'auto',
 }
 
-// The picker gets more room than the other two overlays. Settings and the tile
-// editor are short forms; this is a search over every entity in the house, and
-// the ghost tile exists only to open it.
+// Settings is wider than the tile editor because it lays the three theme
+// previews out side by side: at 520px each thumbnail is about 155px across,
+// which is too small to tell the themes apart — and telling them apart is the
+// entire job of that control. No media query needed: `width: 100%` and the
+// backdrop's padding already bind on a phone, so raising the cap only has an
+// effect once there is a desktop-sized viewport to spend.
+const settingsInner: CSSProperties = {
+  ...overlayInner,
+  maxWidth: '880px',
+}
+
+// The picker gets more room again. Settings and the tile editor are forms;
+// this is a search over every entity in the house, and the ghost tile exists
+// only to open it.
 const pickerInner: CSSProperties = {
   ...overlayInner,
   maxWidth: '720px',
@@ -502,8 +513,8 @@ export function Portal({ role, onLogout }: PortalProps): ReactElement {
     )
   } else if (mode === 'settings') {
     children.push(
-      <div key="__overlay" style={overlayBackdrop}>
-        <div style={overlayInner}>
+      <div key="__overlay" data-testid="settings-overlay" style={overlayBackdrop}>
+        <div style={settingsInner}>
           <SettingsPanel
             onClose={() => {
               show('normal')
@@ -515,7 +526,7 @@ export function Portal({ role, onLogout }: PortalProps): ReactElement {
     )
   } else if (editingRow !== undefined) {
     children.push(
-      <div key="__overlay" style={overlayBackdrop}>
+      <div key="__overlay" data-testid="editor-overlay" style={overlayBackdrop}>
         <div style={overlayInner}>
           {/* Keyed by entity id so the name field's draft is seeded from the
               row the owner actually opened. */}
