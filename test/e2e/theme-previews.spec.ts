@@ -86,6 +86,19 @@ for (const theme of listThemes()) {
       await expect(page.getByText(device.name, { exact: true })).toBeVisible()
     }
 
-    await expect(page).toHaveScreenshot(`${id}.png`, { maxDiffPixelRatio: 0.02 })
+    // These tolerances are the whole point of this spec, so they are tight.
+    // The baseline IS the admin picker's preview image, and the claim above is
+    // that a stale preview is a failing test. At Playwright's defaults it was
+    // not: `threshold` is a per-pixel YIQ distance (default 0.2) and
+    // maxDiffPixelRatio was 0.02, while a 36px icon circle is only ~0.6% of a
+    // 420x380 frame. Repainting that circle from green to purple — about as
+    // large a colour change as this UI can make — still passed, so every
+    // colour-only change slipped through and the previews would silently rot.
+    //
+    // 0.001 still absorbs a few hundred pixels of text antialiasing.
+    await expect(page).toHaveScreenshot(`${id}.png`, {
+      threshold: 0.1,
+      maxDiffPixelRatio: 0.001,
+    })
   })
 }
