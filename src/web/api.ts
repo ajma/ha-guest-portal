@@ -165,7 +165,13 @@ export async function putAllowlist(devices: AllowlistRow[]): Promise<ApiResult<v
 }
 
 export async function getAdminPortal(): Promise<
-  ApiResult<{ enabled: boolean; integrationToken: string; portalId: string; theme: ThemeId }>
+  ApiResult<{
+    enabled: boolean
+    integrationToken: string
+    portalId: string
+    theme: ThemeId
+    title: string
+  }>
 > {
   const response = await fetch('/api/admin/portal', {
     credentials: 'same-origin',
@@ -201,6 +207,28 @@ export async function putAdminTheme(theme: ThemeId): Promise<ApiResult<void>> {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ theme }),
+    credentials: 'same-origin',
+  })
+
+  if (!response.ok) {
+    if (response.status === 401 && unauthorizedCallback !== null) {
+      unauthorizedCallback()
+    }
+
+    return {
+      ok: false,
+      status: response.status,
+    }
+  }
+
+  return { ok: true, data: undefined }
+}
+
+export async function putAdminTitle(title: string): Promise<ApiResult<void>> {
+  const response = await fetch('/api/admin/title', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
     credentials: 'same-origin',
   })
 

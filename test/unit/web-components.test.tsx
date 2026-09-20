@@ -52,6 +52,7 @@ function createFetchMock(
             integrationToken: 'test',
             portalId: 'test',
             theme: 'classic',
+            title: 'Guest Portal',
           }),
           {
             status: 200,

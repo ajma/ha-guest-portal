@@ -5,6 +5,7 @@ import {
   AdminPortalPutRequest,
   AdminPortalResponse,
   AdminThemePutRequest,
+  AdminTitlePutRequest,
   AllowlistPutRequest,
   AllowlistResponse,
   CatalogResponse,
@@ -83,6 +84,7 @@ export function mountAdminRoutes(app: Hono<Env>, deps: Deps): void {
         integrationToken: settings.getIntegrationToken(),
         portalId: settings.getPortalId(),
         theme: settings.getTheme(),
+        title: settings.getTitle(),
       }),
     )
   })
@@ -126,5 +128,28 @@ export function mountAdminRoutes(app: Hono<Env>, deps: Deps): void {
     settings.setTheme(parseResult.data.theme)
 
     return c.json({ theme: parseResult.data.theme })
+  })
+
+  // PUT /api/admin/title - rename the portal as guests see it
+  app.put('/api/admin/title', async (c) => {
+    let body: unknown
+    try {
+      body = await c.req.json()
+    } catch {
+      return c.json({ error: 'Invalid JSON' }, 400)
+    }
+
+    const parseResult = AdminTitlePutRequest.safeParse(body)
+    if (!parseResult.success) {
+      const firstIssue = parseResult.error.issues[0]
+      return c.json({ error: firstIssue ? firstIssue.message : 'Invalid request' }, 400)
+    }
+
+    settings.setTitle(parseResult.data.title)
+
+    // Answer with the stored value, not the submission: the store normalises,
+    // so clearing the field visibly snaps back to the default instead of
+    // appearing to have saved a blank name.
+    return c.json({ title: settings.getTitle() })
   })
 }

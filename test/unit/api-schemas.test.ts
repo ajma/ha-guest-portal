@@ -355,6 +355,7 @@ describe('portal toggle schemas', () => {
         integrationToken: 'a'.repeat(64),
         portalId: '11111111-1111-1111-1111-111111111111',
         theme: 'classic',
+        title: 'Guest Portal',
       }).enabled,
     ).toBe(true)
   })
@@ -402,6 +403,8 @@ describe('theme schemas', () => {
         enabled: true,
         integrationToken: 'a'.repeat(64),
         portalId: '11111111-1111-1111-1111-111111111111',
+        // Everything but `theme`, so this still fails for the reason it names.
+        title: 'Guest Portal',
       }).success,
     ).toBe(false)
   })

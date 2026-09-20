@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { DOMAIN_ACTIONS, parseDomain } from './devices.js'
+import { MAX_PORTAL_TITLE_LENGTH } from './portalTitle.js'
 import { THEME_IDS } from './themes.js'
 
 // Role types
@@ -165,6 +166,7 @@ export const AdminPortalResponse = z.object({
   integrationToken: z.string(),
   portalId: z.string(),
   theme: z.enum(THEME_IDS),
+  title: z.string(),
 })
 
 export const AdminPortalPutRequest = z.object({
@@ -173,6 +175,15 @@ export const AdminPortalPutRequest = z.object({
 
 export const AdminThemePutRequest = z.object({
   theme: z.enum(THEME_IDS),
+})
+
+// The length cap is enforced here rather than left to `normalizePortalTitle`'s
+// silent truncation: an owner who pastes something too long should be told, not
+// have the tail quietly removed behind their back.
+export const AdminTitlePutRequest = z.object({
+  title: z
+    .string()
+    .max(MAX_PORTAL_TITLE_LENGTH, `Title must be ${MAX_PORTAL_TITLE_LENGTH} characters or fewer`),
 })
 
 const InteractionSchema = z.object({

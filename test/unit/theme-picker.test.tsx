@@ -33,6 +33,7 @@ function mockStoredTheme(theme: string): void {
       integrationToken: 'a'.repeat(64),
       portalId: '11111111-1111-1111-1111-111111111111',
       theme: theme as 'classic',
+      title: 'Guest Portal',
     },
   })
 }

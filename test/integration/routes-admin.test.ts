@@ -618,4 +618,117 @@ describe('Admin API routes', () => {
       expect(res.status).toBe(401)
     })
   })
+
+  describe('title routes', () => {
+    it('GET /api/admin/portal includes the current title', async () => {
+      const res = await fetch(`${baseUrl}/api/admin/portal`, {
+        headers: { Cookie: adminCookie },
+      })
+
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { title: string }
+      expect(body.title).toBe('Guest Portal')
+    })
+
+    it('GET /api/admin/portal reports a title that was set, not a constant', async () => {
+      settings.setTitle('Beach House')
+
+      const res = await fetch(`${baseUrl}/api/admin/portal`, {
+        headers: { Cookie: adminCookie },
+      })
+
+      expect(res.status).toBe(200)
+      const body = (await res.json()) as { title: string }
+      expect(body.title).toBe('Beach House')
+    })
+
+    it('PUT /api/admin/title stores a new title', async () => {
+      const res = await fetch(`${baseUrl}/api/admin/title`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+        body: JSON.stringify({ title: 'Beach House' }),
+      })
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ title: 'Beach House' })
+      expect(settings.getTitle()).toBe('Beach House')
+    })
+
+    it('PUT /api/admin/title answers with the normalised stored title, not the submission', async () => {
+      // Clearing the field must visibly snap back to the default rather than
+      // look like a blank name was saved, so the response echoes the store.
+      const res = await fetch(`${baseUrl}/api/admin/title`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+        body: JSON.stringify({ title: '   ' }),
+      })
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual({ title: 'Guest Portal' })
+      expect(settings.getTitle()).toBe('Guest Portal')
+    })
+
+    it('PUT /api/admin/title rejects an over-long title and leaves the stored one alone', async () => {
+      settings.setTitle('Beach House')
+
+      const res = await fetch(`${baseUrl}/api/admin/title`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+        body: JSON.stringify({ title: 'x'.repeat(200) }),
+      })
+
+      expect(res.status).toBe(400)
+      // The point of the test: a rejected write must not have taken effect.
+      expect(settings.getTitle()).toBe('Beach House')
+    })
+
+    it('PUT /api/admin/title rejects a non-string title and leaves the stored one alone', async () => {
+      settings.setTitle('Beach House')
+
+      const res = await fetch(`${baseUrl}/api/admin/title`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+        body: JSON.stringify({ title: 42 }),
+      })
+
+      expect(res.status).toBe(400)
+      const body = (await res.json()) as { error: string }
+      expect(body.error).toBe('Invalid input: expected string, received number')
+      expect(settings.getTitle()).toBe('Beach House')
+    })
+
+    it('PUT /api/admin/title rejects malformed JSON', async () => {
+      settings.setTitle('Beach House')
+
+      const res = await fetch(`${baseUrl}/api/admin/title`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
+        body: '{ not json',
+      })
+
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ error: 'Invalid JSON' })
+      expect(settings.getTitle()).toBe('Beach House')
+    })
+
+    it('PUT /api/admin/title requires an admin session', async () => {
+      const anon = await fetch(`${baseUrl}/api/admin/title`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Beach House' }),
+      })
+      expect(anon.status).toBe(401)
+
+      const asGuest = await fetch(`${baseUrl}/api/admin/title`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Cookie: guestCookie },
+        body: JSON.stringify({ title: 'Beach House' }),
+      })
+      expect(asGuest.status).toBe(403)
+
+      // A guard that answered 401/403 but ran the handler anyway would still
+      // have renamed the portal.
+      expect(settings.getTitle()).toBe('Guest Portal')
+    })
+  })
 })
