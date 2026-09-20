@@ -115,6 +115,12 @@ export function createApp(deps: Deps) {
     return html === null ? c.notFound() : c.html(html)
   })
 
+  // Similarly, /index.html must be injected. serveStatic would serve it raw.
+  app.get('/index.html', (c) => {
+    const html = renderIndexHtml(deps, baseHrefFor(c, deps))
+    return html === null ? c.notFound() : c.html(html)
+  })
+
   // Static file serving with SPA fallback
   // Serve built SPA from dist/web
   app.use('/*', serveStatic({ root: './dist/web' }))

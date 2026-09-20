@@ -4,19 +4,18 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
 // Helper to create a URL-routed fetch mock that returns appropriate responses
 // based on the endpoint, avoiding order-dependent mockResolvedValueOnce chains
-function createFetchMock(options: {
-  sessionRole?: 'admin' | 'guest'
-  sessionPortalEnabled?: boolean
-  loginResponse?: Response
-} = {}) {
-  const {
-    sessionRole = 'guest',
-    sessionPortalEnabled = true,
-    loginResponse,
-  } = options
+function createFetchMock(
+  options: {
+    sessionRole?: 'admin' | 'guest'
+    sessionPortalEnabled?: boolean
+    loginResponse?: Response
+  } = {},
+) {
+  const { sessionRole = 'guest', sessionPortalEnabled = true, loginResponse } = options
 
   return vi.fn((input: string | URL | Request) => {
-    const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+    const urlStr =
+      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
 
     if (urlStr.includes('/api/session')) {
       return Promise.resolve(
@@ -594,7 +593,8 @@ describe('App component', () => {
       // Start with portalEnabled=false, then switch to true after the first poll
       let callCount = 0
       global.fetch = vi.fn((input: string | URL | Request) => {
-        const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+        const urlStr =
+          typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
 
         if (urlStr.includes('/api/session')) {
           callCount++

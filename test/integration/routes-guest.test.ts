@@ -675,5 +675,16 @@ describe('Guest API routes', () => {
       const res = await fetch(`${baseUrl}/`)
       expect(await res.text()).toContain('data-theme="tiles"')
     })
+
+    it('injects data-theme and base href on /index.html', async () => {
+      await writeStubIndex()
+      const res = await fetch(`${baseUrl}/index.html`)
+      const html = await res.text()
+
+      // Regression guard: serveStatic used to answer /index.html before the
+      // injection logic, so that URL got neither. A bookmark or hand-typed URL hits it.
+      expect(html).toContain('<base href="/">')
+      expect(html).toContain('data-theme="classic"')
+    })
   })
 })
