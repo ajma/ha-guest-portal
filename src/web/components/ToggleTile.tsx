@@ -9,7 +9,10 @@ type ToggleTileProps = {
 }
 
 export function ToggleTile({ device, disabled }: ToggleTileProps): ReactElement {
-  const { isOn, isStale, pending, error, activate, canActivate } = useToggleDevice(device, disabled)
+  const { isOn, isStale, pending, error, stateText, activate, canActivate } = useToggleDevice(
+    device,
+    disabled,
+  )
 
   // Don't render if no valid actions
   if (!canActivate) {
@@ -48,7 +51,7 @@ export function ToggleTile({ device, disabled }: ToggleTileProps): ReactElement 
       >
         <div>{device.label}</div>
         <div className="text-base font-normal mt-1">
-          {isStale ? 'Unknown' : pending ? 'Updating...' : isOn ? 'On' : 'Off'}
+          {stateText}
         </div>
       </button>
       {isStale && <StaleBadge />}

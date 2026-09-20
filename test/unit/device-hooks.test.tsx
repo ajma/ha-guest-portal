@@ -104,6 +104,34 @@ describe('useToggleDevice', () => {
     expect(result.current.error).toBe('Action failed')
   })
 
+  it('clears the optimistic state when the connection drops', async () => {
+    // The optimistic state is a bet that a patch will confirm it. Once the stream
+    // is gone no patch can arrive, so continuing to show "On" would be a lie that
+    // outlives the evidence for it. Only covered here — the tile tests exercise
+    // the button's disabled attribute, not this branch.
+    const deferred = defer<Awaited<ReturnType<typeof api.performAction>>>()
+    vi.spyOn(api, 'performAction').mockReturnValue(deferred.promise)
+    const dev = toggleDevice()
+    const { result, rerender } = renderHook(({ off }) => useToggleDevice(dev, off), {
+      initialProps: { off: false },
+    })
+
+    act(() => {
+      void result.current.activate()
+    })
+    expect(result.current.isOn).toBe(true)
+
+    await act(async () => {
+      rerender({ off: true })
+    })
+    expect(result.current.isOn).toBe(false)
+
+    await act(async () => {
+      deferred.resolve({ ok: true, data: undefined })
+      await deferred.promise
+    })
+  })
+
   it('reports canActivate false when no action applies', async () => {
     const d = toggleDevice({ allowedActions: [] })
     const { result } = renderHook(() => useToggleDevice(d, false))

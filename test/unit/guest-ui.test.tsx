@@ -34,6 +34,34 @@ describe('Guest UI', () => {
   })
 
   describe('ToggleTile', () => {
+    it('renders the exact state text for off and on', () => {
+      // The other toggle assertions use /on/i, which also matches "ON!", "Only"
+      // and the label. This one pins the exact strings, so a tile that stops
+      // rendering the hook's stateText is caught here.
+      const device: Device = {
+        entityId: 'light.hall',
+        label: 'Hall Light',
+        domain: 'light',
+        allowedActions: ['turn_on', 'turn_off'],
+        sortOrder: 0,
+        state: { state: 'off', attributes: {}, stale: false },
+      }
+
+      store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
+      store.setConnected(true)
+
+      const { rerender } = render(<Guest onLogout={async () => {}} />)
+      expect(screen.getByText('Off')).toBeDefined()
+
+      store.applyFrame({
+        type: 'snapshot',
+        devices: [{ ...device, state: { state: 'on', attributes: {}, stale: false } }],
+        stale: false,
+      })
+      rerender(<Guest onLogout={async () => {}} />)
+      expect(screen.getByText('On')).toBeDefined()
+    })
+
     it('shows on state and pressing calls performAction with turn_off', async () => {
       const user = userEvent.setup()
       const performActionSpy = vi
