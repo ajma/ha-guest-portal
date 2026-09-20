@@ -24,7 +24,8 @@ import type { AllowlistEditor } from '../../src/web/hooks/useAllowlistEditor.ts'
  *        → 'surfaces a failed save' (the message is now produced by the hook
  *          and shown in the editor that caused it, per the spec's error handling)
  *   9. 'editing label updates the device'
- *        → 'renames on input' + 'shows the row label…' + 'keeps what was typed…'
+ *        → 'renames on blur' / 'renames on Enter' + 'shows the row label…' +
+ *          'keeps what was typed…'
  *
  * Out of this component's scope (recorded so Task 9 can confirm each found a home):
  *   4. 'orphaned row is visibly flagged'                    → the grid, not one tile's editor
@@ -73,15 +74,58 @@ describe('TileEditor', () => {
     expect(field instanceof HTMLInputElement && field.value).toBe('Porch')
   })
 
-  it('renames on input', async () => {
+  // This replaces 'renames on input', which asserted `editor.rename` fired from
+  // typing. That assertion encoded a defect: every keystroke was a full
+  // allowlist PUT, so the server re-subscribed to Home Assistant and
+  // broadcast a snapshot per character and guests watched the name spell
+  // itself out. The name field commits on blur and on Enter, like
+  // PortalTitleField; the three tests below pin that, including the negative.
+  it('renames on blur', async () => {
     const editor = editorStub()
     render(<TileEditor row={lightRow} editor={editor} onClose={() => {}} />)
 
     const field = screen.getByLabelText(/name/i)
     await userEvent.clear(field)
     await userEvent.type(field, 'Porch Light')
+    await userEvent.tab()
 
-    expect(editor.rename).toHaveBeenLastCalledWith('light.porch', 'Porch Light')
+    expect(editor.rename).toHaveBeenCalledTimes(1)
+    expect(editor.rename).toHaveBeenCalledWith('light.porch', 'Porch Light')
+  })
+
+  it('renames on Enter', async () => {
+    const editor = editorStub()
+    render(<TileEditor row={lightRow} editor={editor} onClose={() => {}} />)
+
+    const field = screen.getByLabelText(/name/i)
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Porch Light{Enter}')
+
+    expect(editor.rename).toHaveBeenCalledTimes(1)
+    expect(editor.rename).toHaveBeenCalledWith('light.porch', 'Porch Light')
+  })
+
+  it('does not rename while the owner is still typing', async () => {
+    const editor = editorStub()
+    render(<TileEditor row={lightRow} editor={editor} onClose={() => {}} />)
+
+    const field = screen.getByLabelText(/name/i)
+    await userEvent.clear(field)
+    await userEvent.type(field, 'Porch Li')
+
+    // Eight characters used to be eight PUTs and sixteen SSE frames.
+    expect(editor.rename).not.toHaveBeenCalled()
+  })
+
+  it('does not write when focus leaves an unchanged name', async () => {
+    const editor = editorStub()
+    render(<TileEditor row={lightRow} editor={editor} onClose={() => {}} />)
+
+    const field = screen.getByLabelText(/name/i)
+    await userEvent.click(field)
+    await userEvent.tab()
+
+    expect(editor.rename).not.toHaveBeenCalled()
   })
 
   // Migrated from admin-screen 'editing label updates the device': the field has

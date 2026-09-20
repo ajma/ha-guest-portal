@@ -89,9 +89,10 @@ async function addDevice(page: Page, query: string, entityId: string): Promise<v
  * admin page granted the domain's whole set on add, so the seeding flow gained
  * this step rather than losing one.
  *
- * Each checkbox saves on the spot, so each one is awaited: the next toggle is
- * computed from the rows the stream has delivered, and firing them back to
- * back would let a later write be built on a list that predates the earlier.
+ * Each checkbox saves on the spot, so each one is awaited — not because a
+ * later write would otherwise be built on a list that predates the earlier
+ * (the editor now carries its own edits forward until the stream confirms
+ * them), but so that a failure is attributed to the checkbox that caused it.
  */
 async function allowActions(page: Page, label: string, actions: string[]): Promise<void> {
   await page.getByRole('button', { name: `Edit ${label}` }).click()

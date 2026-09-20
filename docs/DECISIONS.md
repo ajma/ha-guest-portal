@@ -160,9 +160,27 @@ themed grid.
 **Edits save immediately; there is no Save button.** The page holds a live SSE stream, so
 batching edits locally would mean reconciling every incoming snapshot against uncommitted
 local changes. Writing on every mutation keeps the stream authoritative: `useAllowlistEditor`
-holds an optimistic overlay only while a request is in flight and drops it in a `finally`,
-so the grid converges on what the server actually stored. The cost is that there is no undo,
+holds an optimistic overlay and drops it when the stream delivers a different allowlist, so
+the grid converges on what the server actually stored. The cost is that there is no undo,
 which is why removal — the one destructive edit — asks for confirmation inline.
+
+**The overlay is retired by the stream, not by the response.** It first dropped the overlay
+as soon as the PUT resolved, which reads as the obvious thing and is wrong: the server
+broadcasts only after a WebSocket round trip to Home Assistant, and broadcasts nothing at
+all if that fails, so in the gap the device list still holds the *pre-edit* state. Every
+write being a whole-allowlist PUT, the next edit was computed from that stale list and
+silently undid the previous one on the server — revoking an action and then renaming the
+device handed the action back. With the stream down, and edit mode is deliberately still
+usable then, it was not a race at all but every single edit. A failed save still reverts at
+once, and reverts only itself: the PUT is atomic, so the server still holds the list the
+mutation was computed from.
+
+**The tile name field commits on blur and Enter, like the portal name field.** Renaming on
+every keystroke meant a whole-allowlist PUT per character, and the server answers one by
+re-establishing its Home Assistant subscriptions and broadcasting to everyone — typing
+eight characters pushed sixteen frames and guests watched the name spell itself out. Both
+fields keep a local draft rather than rendering server state, because the value round-trips
+through the server and a prop-driven input fights the cursor.
 
 **A device added from the picker starts with no allowed actions.** It appears to guests
 immediately, as an inert tile that can do nothing until the owner ticks the actions to

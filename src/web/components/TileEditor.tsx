@@ -93,13 +93,25 @@ const checkboxLabel: CSSProperties = {
  *
  * Every control writes through `editor`, which saves immediately — there is no
  * Save button and nothing to commit on close. The one exception is the name
- * field, which keeps a local draft: the owner's keystrokes must survive a round
- * trip through the server and the SSE stream, and rendering the prop directly
- * would fight the cursor. Mount one editor per device (key it by entity id) so
- * the draft is seeded from the right row.
+ * field, which behaves exactly like `PortalTitleField`:
+ *
+ * It commits on blur and on Enter, never on a keystroke. Each rename is a full
+ * allowlist PUT, and the server answers one by tearing down and re-establishing
+ * its Home Assistant subscriptions and broadcasting to every connected client —
+ * so a PUT per character made guests watch the name spell itself out letter by
+ * letter.
+ *
+ * It keeps a local draft rather than rendering `row.label` directly. The value
+ * round-trips through the server and the SSE stream, so a purely prop-driven
+ * input fights the cursor; `draft === null` means "no pending edit", which is
+ * also how a failed save reverts — dropping the draft exposes the row again,
+ * and the hook has by then put back the last known-good label.
+ *
+ * Mount one editor per device (key it by entity id) so the draft belongs to the
+ * row the owner actually opened.
  */
 export function TileEditor({ row, editor, onClose }: TileEditorProps): ReactElement {
-  const [name, setName] = useState(row.label)
+  const [draft, setDraft] = useState<string | null>(null)
   const [confirmingRemove, setConfirmingRemove] = useState(false)
 
   const domain = parseDomain(row.entityId)
@@ -107,6 +119,15 @@ export function TileEditor({ row, editor, onClose }: TileEditorProps): ReactElem
   // order — the tile renders inert. Naming and removing it still work.
   const actions: readonly string[] = domain === null ? [] : DOMAIN_ACTIONS[domain]
   const nameId = `tile-editor-label-${row.entityId}`
+
+  function commitDraft(): void {
+    if (draft === null) return
+    setDraft(null)
+    // Focus moving away is not an edit. Writing anyway would spend a whole
+    // allowlist PUT — and a snapshot to every guest — on nothing.
+    if (draft === row.label) return
+    editor.rename(row.entityId, draft)
+  }
 
   return (
     <section data-testid="tile-editor" style={panel}>
@@ -124,11 +145,17 @@ export function TileEditor({ row, editor, onClose }: TileEditorProps): ReactElem
         <input
           id={nameId}
           type="text"
-          value={name}
+          value={draft ?? row.label}
           style={textInput}
           onChange={(event) => {
-            setName(event.target.value)
-            editor.rename(row.entityId, event.target.value)
+            setDraft(event.target.value)
+          }}
+          onBlur={commitDraft}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              commitDraft()
+            }
           }}
         />
         <div style={{ ...muted, marginTop: '4px' }}>{row.entityId}</div>
