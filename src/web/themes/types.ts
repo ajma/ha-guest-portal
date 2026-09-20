@@ -5,7 +5,11 @@ import type { SupportedDomain } from '@shared/devices.js'
 import type { ThemeTokens } from './tokens.js'
 
 export type TileProps = { device: Device; disabled: boolean }
-export type ShellProps = { children: ReactElement | ReactElement[]; onLogout: () => void; loggingOut: boolean }
+export type ShellProps = {
+  children: ReactElement | ReactElement[]
+  onLogout: () => void
+  loggingOut: boolean
+}
 export type LoginProps = { onSuccess: (role: Role) => void }
 export type DisabledProps = { onRetry: () => void }
 

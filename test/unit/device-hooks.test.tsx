@@ -46,7 +46,9 @@ describe('useToggleDevice', () => {
   })
 
   it('calls turn_on when off', async () => {
-    const performActionSpy = vi.spyOn(api, 'performAction').mockResolvedValue({ ok: true, data: undefined })
+    const performActionSpy = vi
+      .spyOn(api, 'performAction')
+      .mockResolvedValue({ ok: true, data: undefined })
     const dev = toggleDevice()
     const { result, unmount } = renderHook(() => useToggleDevice(dev, false))
     await act(async () => {
@@ -58,7 +60,9 @@ describe('useToggleDevice', () => {
   })
 
   it('falls back to toggle when only toggle is allowed', async () => {
-    const performActionSpy = vi.spyOn(api, 'performAction').mockResolvedValue({ ok: true, data: undefined })
+    const performActionSpy = vi
+      .spyOn(api, 'performAction')
+      .mockResolvedValue({ ok: true, data: undefined })
     const d = toggleDevice({ allowedActions: ['toggle'] })
     const { result, unmount } = renderHook(() => useToggleDevice(d, false))
     await act(async () => {
@@ -168,7 +172,9 @@ describe('useLockDevice', () => {
   }
 
   it('arms on the first unlock request rather than unlocking', async () => {
-    const performActionSpy = vi.spyOn(api, 'performAction').mockResolvedValue({ ok: true, data: undefined })
+    const performActionSpy = vi
+      .spyOn(api, 'performAction')
+      .mockResolvedValue({ ok: true, data: undefined })
     const dev = lockDevice()
     const { result } = renderHook(() => useLockDevice(dev, false))
     await act(async () => {
@@ -179,7 +185,9 @@ describe('useLockDevice', () => {
   })
 
   it('unlocks on the second request', async () => {
-    const performActionSpy = vi.spyOn(api, 'performAction').mockResolvedValue({ ok: true, data: undefined })
+    const performActionSpy = vi
+      .spyOn(api, 'performAction')
+      .mockResolvedValue({ ok: true, data: undefined })
     const dev = lockDevice()
     const { result } = renderHook(() => useLockDevice(dev, false))
     await act(async () => {
@@ -222,7 +230,9 @@ describe('useCoverDevice', () => {
   })
 
   it('calls open_cover when open is triggered', async () => {
-    const performActionSpy = vi.spyOn(api, 'performAction').mockResolvedValue({ ok: true, data: undefined })
+    const performActionSpy = vi
+      .spyOn(api, 'performAction')
+      .mockResolvedValue({ ok: true, data: undefined })
     const dev = coverDevice()
     const { result } = renderHook(() => useCoverDevice(dev, false))
     await act(async () => {
@@ -232,17 +242,23 @@ describe('useCoverDevice', () => {
   })
 
   it('calls close_cover when close is triggered', async () => {
-    const performActionSpy = vi.spyOn(api, 'performAction').mockResolvedValue({ ok: true, data: undefined })
+    const performActionSpy = vi
+      .spyOn(api, 'performAction')
+      .mockResolvedValue({ ok: true, data: undefined })
     const dev = coverDevice()
     const { result } = renderHook(() => useCoverDevice(dev, false))
     await act(async () => {
       await result.current.close()
     })
-    await waitFor(() => expect(performActionSpy).toHaveBeenCalledWith('cover.garage', 'close_cover'))
+    await waitFor(() =>
+      expect(performActionSpy).toHaveBeenCalledWith('cover.garage', 'close_cover'),
+    )
   })
 
   it('calls stop_cover when stop is triggered', async () => {
-    const performActionSpy = vi.spyOn(api, 'performAction').mockResolvedValue({ ok: true, data: undefined })
+    const performActionSpy = vi
+      .spyOn(api, 'performAction')
+      .mockResolvedValue({ ok: true, data: undefined })
     const dev = coverDevice()
     const { result } = renderHook(() => useCoverDevice(dev, false))
     await act(async () => {

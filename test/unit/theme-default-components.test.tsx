@@ -33,7 +33,14 @@ function device(domain: string, overrides: Partial<Device> = {}): Device {
 
 describe('default component set', () => {
   it('has a component for every slot', () => {
-    for (const slot of ['Shell', 'ToggleTile', 'CoverTile', 'LockTile', 'Login', 'Disabled'] as const) {
+    for (const slot of [
+      'Shell',
+      'ToggleTile',
+      'CoverTile',
+      'LockTile',
+      'Login',
+      'Disabled',
+    ] as const) {
       expect(DEFAULT_COMPONENTS[slot], slot).toBeDefined()
     }
   })

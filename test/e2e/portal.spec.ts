@@ -29,9 +29,7 @@ async function iconCircleBg(tile: Locator): Promise<string> {
 }
 
 async function iconCircleOpacity(tile: Locator): Promise<string> {
-  return tile
-    .locator('[data-testid="tile-icon-bg"]')
-    .evaluate((el) => getComputedStyle(el).opacity)
+  return tile.locator('[data-testid="tile-icon-bg"]').evaluate((el) => getComputedStyle(el).opacity)
 }
 
 let harness: TestHarness
@@ -176,9 +174,9 @@ test.describe('Portal E2E', () => {
     await expect(lightTile).toHaveAttribute('aria-pressed', 'true')
     // The circle has a 180ms colour transition, so the paint lags the text
     // update; poll for it.
-    await expect.poll(() => iconCircleBg(lightTile)).toBe(
-      await tokenRgb(lightTile, '--stateLightActive'),
-    )
+    await expect
+      .poll(() => iconCircleBg(lightTile))
+      .toBe(await tokenRgb(lightTile, '--stateLightActive'))
     // The circle is the state colour at 20%, not a solid fill. Park the pointer
     // off the tile first: it is still resting where the click landed, and
     // hovering a tile deliberately lifts the fill to 35%, as Home Assistant's

@@ -15,7 +15,8 @@
       "!custom_components",
       "!brand",
       "!.venv",
-      "!tests"
+      "!tests",
+      "!src/web/themes/generated.css"
     ]
   },
   "formatter": {

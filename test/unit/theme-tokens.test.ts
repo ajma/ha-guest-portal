@@ -85,7 +85,10 @@ describe('tokensToCss', () => {
     // must match the closed set exactly.
     expect(lines).toHaveLength(TOKEN_NAMES.length)
     for (const name of TOKEN_NAMES) {
-      expect(lines.some((line) => line.includes(`--${name}:`)), `missing declaration for ${name}`).toBe(true)
+      expect(
+        lines.some((line) => line.includes(`--${name}:`)),
+        `missing declaration for ${name}`,
+      ).toBe(true)
     }
   })
 
