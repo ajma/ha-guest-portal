@@ -1,10 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Guest } from '../../src/web/routes/Guest.tsx'
+import { Portal } from '../../src/web/routes/Portal.tsx'
 import type { Device } from '@shared/api.ts'
 import * as store from '../../src/web/store.ts'
 import * as api from '../../src/web/api.ts'
+
+// The page is now the owner's page too, so it needs to be told who is looking.
+// Passed as a constant rather than as `role="guest"`, because Biome's
+// useValidAriaRole reads a literal `role` attribute on any JSX element as an
+// ARIA role and rejects it — even on a component that has nothing to do with
+// ARIA. Everything below this line is the pre-merge guest suite, unchanged.
+const GUEST = 'guest'
 
 describe('Guest UI', () => {
   beforeEach(() => {
@@ -23,7 +30,7 @@ describe('Guest UI', () => {
       const teardownSpy = vi.fn()
       const connectSpy = vi.spyOn(store, 'connectDeviceStore').mockReturnValue(teardownSpy)
 
-      const { unmount } = render(<Guest onLogout={async () => {}} />)
+      const { unmount } = render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       expect(connectSpy).toHaveBeenCalledOnce()
 
@@ -50,7 +57,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      const { rerender } = render(<Guest onLogout={async () => {}} />)
+      const { rerender } = render(<Portal role={GUEST} onLogout={async () => {}} />)
       expect(screen.getByText('Off')).toBeDefined()
 
       store.applyFrame({
@@ -58,7 +65,7 @@ describe('Guest UI', () => {
         devices: [{ ...device, state: { state: 'on', attributes: {}, stale: false } }],
         stale: false,
       })
-      rerender(<Guest onLogout={async () => {}} />)
+      rerender(<Portal role={GUEST} onLogout={async () => {}} />)
       expect(screen.getByText('On')).toBeDefined()
     })
 
@@ -84,7 +91,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /living room light/i })
 
@@ -118,7 +125,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /ceiling fan/i })
       expect(tile.textContent).toMatch(/off/i)
@@ -148,7 +155,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /bedroom light/i })
       expect(tile.textContent).toMatch(/off/i)
@@ -200,7 +207,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /kitchen light/i })
       expect(tile.textContent).toMatch(/off/i)
@@ -241,7 +248,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /hallway light/i })
 
@@ -281,7 +288,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /garage light/i })
 
@@ -309,7 +316,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(false)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /patio light/i })
 
@@ -336,7 +343,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /stale test light/i })
 
@@ -367,7 +374,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /unplugged light/i })
       expect(tile.textContent).toMatch(/off/i)
@@ -422,7 +429,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /timeout test light/i })
 
@@ -468,7 +475,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       const tile = screen.getByRole('button', { name: /toggle only light/i })
       await user.click(tile)
@@ -494,7 +501,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       // Should show no actions message, not a clickable button with the device label
       expect(screen.queryByRole('button', { name: /no actions light/i })).toBeNull()
@@ -521,7 +528,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
     })
 
     it('renders opening state distinctly from open', () => {
@@ -541,7 +548,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [openingDevice], stale: false })
       store.setConnected(true)
 
-      const { rerender } = render(<Guest onLogout={async () => {}} />)
+      const { rerender } = render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       // Should show "opening" state
       expect(screen.getByText('Opening')).toBeDefined()
@@ -558,7 +565,7 @@ describe('Guest UI', () => {
 
       store.applyFrame({ type: 'patch', devices: [openDevice] })
 
-      rerender(<Guest onLogout={async () => {}} />)
+      rerender(<Portal role={GUEST} onLogout={async () => {}} />)
 
       // Should no longer show "opening" state
       expect(screen.queryByText('Opening')).toBeNull()
@@ -583,7 +590,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
     })
 
     it('calls performAction with correct action when buttons are clicked', async () => {
@@ -608,7 +615,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       await user.click(screen.getByRole('button', { name: /open/i }))
       expect(performActionSpy).toHaveBeenCalledWith('cover.shades', 'open_cover')
@@ -639,7 +646,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       expect(screen.queryByRole('button', { name: /^open$/i })).toBeNull()
       expect(screen.queryByRole('button', { name: /stop/i })).toBeNull()
@@ -662,7 +669,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       // Should show Unknown in state display
       const stateTexts = screen.getAllByText('Unknown')
@@ -697,7 +704,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       const lockButton = screen.getByRole('button', { name: /^lock$/i })
       fireEvent.click(lockButton)
@@ -729,7 +736,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       const unlockButton = screen.getByRole('button', { name: /unlock/i })
 
@@ -766,7 +773,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       const unlockButton = screen.getByRole('button', { name: /unlock/i })
 
@@ -804,7 +811,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       const unlockButton = screen.getByRole('button', { name: /unlock/i })
 
@@ -843,7 +850,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       expect(screen.queryByRole('button', { name: /^lock$/i })).toBeNull()
     })
@@ -865,7 +872,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       expect(screen.getByText('Jammed')).toBeDefined()
     })
@@ -887,7 +894,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       expect(screen.getByText('unavailable')).toBeDefined()
     })
@@ -909,7 +916,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       // Should NOT show the actual state
       expect(screen.queryByText('Locked')).toBeNull()
@@ -952,7 +959,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices, stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
 
       // Filter out the logout button by checking for aria-label
       const allButtons = screen.getAllByRole('button')
@@ -968,7 +975,7 @@ describe('Guest UI', () => {
       store.applyFrame({ type: 'snapshot', devices: [], stale: false })
       store.setConnected(true)
 
-      render(<Guest onLogout={async () => {}} />)
+      render(<Portal role={GUEST} onLogout={async () => {}} />)
     })
   })
 })

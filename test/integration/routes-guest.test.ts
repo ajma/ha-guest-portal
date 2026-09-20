@@ -603,6 +603,9 @@ describe('Guest API routes', () => {
   })
 
   describe('Static file serving', () => {
+    // `/admin` is not a page — there is no admin screen and no such route. It
+    // is used here precisely BECAUSE nothing serves it: any non-API path must
+    // fall through to index.html so the SPA boots and renders the portal.
     it('serves SPA index.html for non-API paths', async () => {
       writeFileSync(INDEX, '<html><body>SPA</body></html>')
 
@@ -657,7 +660,10 @@ describe('Guest API routes', () => {
       )
     }
 
-    it('injects data-theme and base href on /admin', async () => {
+    // Again an arbitrary non-root path, not a page: the injection must happen
+    // on the fallback as well as on the root, or a deep link would boot
+    // unthemed and with the wrong base href.
+    it('injects data-theme and base href on a non-root path', async () => {
       await writeStubIndex()
       const res = await fetch(`${baseUrl}/admin`)
       const html = await res.text()

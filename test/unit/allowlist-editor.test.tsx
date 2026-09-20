@@ -160,6 +160,34 @@ describe('useAllowlistEditor', () => {
     expect(result.current.pending).toBe(false)
   })
 
+  // Migrated from admin-screen 're-fetches allowlist after successful save and
+  // adopts server-normalized values'. There is no re-fetch now — the stream is
+  // the source of truth — so the equivalent guarantee is that the optimistic
+  // overlay is dropped when the save SUCCEEDS, not only when it fails. A hook
+  // that keeps the overlay on success passes every other test here and would
+  // show the owner their own untrimmed text forever, while the server holds
+  // something else.
+  it('adopts the value the stream delivers once the save lands', async () => {
+    const { result, rerender } = renderHook(
+      ({ devices }: { devices: Device[] }) => useAllowlistEditor(devices),
+      { initialProps: { devices: [device()] } },
+    )
+
+    act(() => {
+      result.current.rename('light.porch', '  Porch Light  ')
+    })
+    await waitFor(() => expect(api.putAllowlist).toHaveBeenCalled())
+
+    // What the server actually stored, arriving over SSE.
+    rerender({ devices: [device({ label: 'Porch Light' })] })
+
+    await waitFor(() =>
+      expect(result.current.rows.find((r) => r.entityId === 'light.porch')?.label).toBe(
+        'Porch Light',
+      ),
+    )
+  })
+
   it('reports a network failure instead of leaking an unhandled rejection', async () => {
     // putAllowlist reports HTTP failures as { ok: false }, but nothing in the
     // api client guards fetch itself — offline and aborted requests reject.

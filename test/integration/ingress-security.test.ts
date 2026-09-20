@@ -144,7 +144,9 @@ describe('Ingress security - source address enforcement', () => {
       expect(data).toEqual({ error: 'Forbidden' })
     })
 
-    it('rejects GET /admin with 403', async () => {
+    // An arbitrary non-root, non-asset path — not a page. The gate must reject
+    // before the SPA fallback gets a chance to answer.
+    it('rejects an arbitrary non-API path with 403', async () => {
       const res = await fetch(`${ingressUrl}/admin`)
       expect(res.status).toBe(403)
       const data = await res.json()

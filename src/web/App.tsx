@@ -1,16 +1,14 @@
 import { useCallback, useEffect, useState, useRef, type ReactElement } from 'react'
 import type { Role } from '@shared/api.js'
 import { getSession, logout, setUnauthorizedCallback } from './api.js'
-import { Admin } from './routes/Admin.js'
-import { Guest } from './routes/Guest.js'
+import { Portal } from './routes/Portal.js'
 import { setPortalEnabled, useDeviceStore } from './store.js'
 import { activeTheme, componentsFor } from './themes/active.js'
-import { appPath } from './path.js'
 
 export function App(): ReactElement {
-  // The two guest-facing screens App owns come from the active theme, so a
-  // guest never crosses an unthemed seam. The admin surface is deliberately
-  // not themed.
+  // Every screen App owns comes from the active theme, so nobody crosses an
+  // unthemed seam. There is one portal: an owner gets Edit and Settings inside
+  // it, rather than a separate page that looks nothing like what they ship.
   const { Login, Disabled } = componentsFor(activeTheme())
   const [role, setRole] = useState<Role | null | 'loading'>('loading')
   const { connected, portalEnabled } = useDeviceStore()
@@ -109,27 +107,5 @@ export function App(): ReactElement {
     )
   }
 
-  // Routing logic
-  // In production, use appPath to handle base href properly
-  // In test environment, fall back to pathname
-  let currentPath = '/'
-  if (window.location.href && document.baseURI) {
-    try {
-      currentPath = appPath(document.baseURI, window.location.href)
-    } catch {
-      // Invalid URLs - use pathname directly
-      currentPath = window.location.pathname || '/'
-    }
-  } else {
-    // Test environment without full location object
-    currentPath = window.location.pathname || '/'
-  }
-
-  const isAdminPath = currentPath === '/admin'
-
-  if (isAdminPath && role === 'admin') {
-    return <Admin onLogout={handleLogout} />
-  }
-
-  return <Guest onLogout={handleLogout} />
+  return <Portal role={role} onLogout={handleLogout} />
 }

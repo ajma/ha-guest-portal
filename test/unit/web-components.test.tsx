@@ -217,7 +217,11 @@ describe('App component', () => {
     })
   })
 
-  it('renders admin screen only for admin role at /admin', async () => {
+  it('renders the portal with an admin session', async () => {
+    // There is one page for both roles: App routes on the session role alone,
+    // never on the URL. The owner's extra controls are inside the portal and
+    // belong to `portal-page.test.tsx`; what is pinned here is that an admin
+    // reaches the same screen a guest does.
     const { App } = await import('../../src/web/App.js')
 
     global.fetch = createFetchMock({
@@ -225,39 +229,9 @@ describe('App component', () => {
       sessionPortalEnabled: true,
     })
 
-    // Simulate /admin path
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/admin' },
-      writable: true,
-      configurable: true,
-    })
-
     render(<App />)
 
     await waitFor(() => {
-      expect(screen.queryByTestId('admin-screen')).not.toBeNull()
-    })
-  })
-
-  it('does not render admin screen for guest at /admin', async () => {
-    const { App } = await import('../../src/web/App.js')
-
-    global.fetch = createFetchMock({
-      sessionRole: 'guest',
-      sessionPortalEnabled: true,
-    })
-
-    // Simulate /admin path
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/admin' },
-      writable: true,
-      configurable: true,
-    })
-
-    render(<App />)
-
-    await waitFor(() => {
-      expect(screen.queryByTestId('admin-screen')).toBeNull()
       expect(screen.queryByTestId('guest-screen')).not.toBeNull()
     })
   })
@@ -403,7 +377,7 @@ describe('App component', () => {
   })
 
   describe('portal disabled routing', () => {
-    it('admin with portalEnabled=false sees admin screen, not disabled screen', async () => {
+    it('admin with portalEnabled=false sees the portal, not the disabled screen', async () => {
       // This test proves the guard `role === 'guest' && !portalEnabled` protects admins
       // from ever seeing the disabled screen. If the guard were loosened to just
       // `!portalEnabled`, this test would fail.
@@ -414,17 +388,10 @@ describe('App component', () => {
         sessionPortalEnabled: false,
       })
 
-      // Simulate /admin path
-      Object.defineProperty(window, 'location', {
-        value: { pathname: '/admin' },
-        writable: true,
-        configurable: true,
-      })
-
       render(<App />)
 
       await waitFor(() => {
-        expect(screen.queryByTestId('admin-screen')).not.toBeNull()
+        expect(screen.queryByTestId('guest-screen')).not.toBeNull()
       })
 
       // The disabled screen must not appear
@@ -446,17 +413,10 @@ describe('App component', () => {
         sessionPortalEnabled: false,
       })
 
-      // Simulate /admin path so admin screen renders
-      Object.defineProperty(window, 'location', {
-        value: { pathname: '/admin' },
-        writable: true,
-        configurable: true,
-      })
-
       render(<App />)
 
       await waitFor(() => {
-        expect(screen.queryByTestId('admin-screen')).not.toBeNull()
+        expect(screen.queryByTestId('guest-screen')).not.toBeNull()
       })
 
       // Check that no 15-second polling interval was created

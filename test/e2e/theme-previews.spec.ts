@@ -19,31 +19,52 @@ test.afterAll(async () => {
 // only by theme, which is the whole point of the picker showing them
 // side by side.
 const PREVIEW_DEVICES = [
-  { search: 'porch', name: 'Porch Light' },
-  { search: 'garage', name: 'Garage Door' },
-  { search: 'front door', name: 'Front Door Lock' },
+  { entityId: 'light.porch', name: 'Porch Light', actions: ['turn_on', 'turn_off', 'toggle'] },
+  {
+    entityId: 'cover.garage_door',
+    name: 'Garage Door',
+    actions: ['open_cover', 'close_cover', 'stop_cover'],
+  },
+  { entityId: 'lock.front_door', name: 'Front Door Lock', actions: ['lock', 'unlock'] },
 ] as const
 
+/**
+ * Seeded through the API, not through edit mode's picker.
+ *
+ * What this spec captures is how a theme paints a fixed set of tiles; how an
+ * owner puts them there is `portal.spec.ts`'s subject and is exercised in full
+ * there. Driving the editor here would couple every preview to the editor's
+ * affordances and re-run the same flow once per theme, for a picture that must
+ * not vary with it. The theme itself is already stored the same way, and for
+ * the same reason.
+ */
 async function seedPreviewDevices(page: Page, baseUrl: string): Promise<void> {
-  await page.goto(`${baseUrl}/admin`)
-  await expect(page.getByPlaceholder(/search/i)).toBeVisible()
-
-  for (const device of PREVIEW_DEVICES) {
-    await page.getByPlaceholder(/search/i).fill(device.search)
-    // The picker hides entities already on the allowlist, so a device seeded
-    // by an earlier capture simply will not appear. Every theme after the
-    // first therefore finds the set already in place.
-    const option = page.getByText(device.name, { exact: true })
-    if (await option.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await option.click()
-    }
-  }
-
-  await page.getByRole('button', { name: /save/i }).click()
-  await expect(page.getByText(/saved/i)).toBeVisible()
+  const seeded = await page.request.put(`${baseUrl}/api/admin/allowlist`, {
+    data: {
+      devices: PREVIEW_DEVICES.map((device, index) => ({
+        entityId: device.entityId,
+        label: device.name,
+        allowedActions: [...device.actions],
+        sortOrder: index,
+      })),
+    },
+  })
+  expect(seeded.status(), 'PUT /api/admin/allowlist rejected the preview devices').toBe(200)
 }
 
-// The captured image is both the admin picker's preview and the visual
+/**
+ * The previews advertise what a GUEST sees. An owner's portal carries Edit and
+ * Settings in the header, which belong to no theme and would put the owner's
+ * chrome into a picture shown to choose a look.
+ */
+async function becomeGuest(page: Page): Promise<void> {
+  await page.getByRole('button', { name: /log out/i }).click()
+  await page.getByLabel('Password').fill('test-guest-password')
+  await page.getByRole('button', { name: 'Log in' }).click()
+  await expect(page.getByTestId('guest-screen')).toBeVisible()
+}
+
+// The captured image is both the settings panel's preview and the visual
 // regression baseline. Changing a theme's appearance fails this test until the
 // snapshot is updated, which regenerates the preview — so a stale preview is a
 // failing test rather than a matter of discipline.
@@ -82,12 +103,14 @@ for (const theme of listThemes()) {
     // the wrong theme, and the screenshot would still pass.
     await expect(page.locator('html')).toHaveAttribute('data-theme', id)
 
+    await becomeGuest(page)
+
     for (const device of PREVIEW_DEVICES) {
       await expect(page.getByText(device.name, { exact: true })).toBeVisible()
     }
 
     // These tolerances are the whole point of this spec, so they are tight.
-    // The baseline IS the admin picker's preview image, and the claim above is
+    // The baseline IS the theme picker's preview image, and the claim above is
     // that a stale preview is a failing test. At Playwright's defaults it was
     // not: `threshold` is a per-pixel YIQ distance (default 0.2) and
     // maxDiffPixelRatio was 0.02, while a 36px icon circle is only ~0.6% of a

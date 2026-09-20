@@ -2,7 +2,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Device } from '@shared/api.ts'
 import { DEFAULT_THEME_ID } from '@shared/themes.ts'
-import { Guest } from '../../src/web/routes/Guest.tsx'
+import { Portal } from '../../src/web/routes/Portal.tsx'
 import * as store from '../../src/web/store.ts'
 import { activeTheme, componentsFor, readThemeId } from '../../src/web/themes/active.ts'
 import classic from '../../src/web/themes/classic/index.ts'
@@ -15,6 +15,10 @@ import type { Theme } from '../../src/web/themes/types.ts'
 vi.mock('../../src/web/api.ts')
 
 const SLOTS = ['Shell', 'ToggleTile', 'CoverTile', 'LockTile', 'Login', 'Disabled'] as const
+
+// A constant rather than `role="guest"`: Biome's useValidAriaRole reads a
+// literal `role` attribute on any JSX element as an ARIA role, component or not.
+const GUEST = 'guest'
 
 /** `classic` with its overrides stripped — the shape of a tokens-only theme. */
 function bareTheme(): Theme {
@@ -119,10 +123,10 @@ describe('the guest route', () => {
     store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
     store.setConnected(true)
 
-    render(<Guest onLogout={async () => {}} />)
+    render(<Portal role={GUEST} onLogout={async () => {}} />)
 
     // `classic` is what resolves with no data-theme attribute, and its tiles
-    // render an MDI glyph where the default set renders no icon at all. A Guest
+    // render an MDI glyph where the default set renders no icon at all. A page
     // that still imported its tiles directly would fail this.
     expect(componentsFor(activeTheme()).ToggleTile).toBe(classic.components?.ToggleTile)
     expect(screen.getByRole('button', { name: 'Hall Light' }).querySelector('svg')).not.toBeNull()

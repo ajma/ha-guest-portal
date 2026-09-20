@@ -53,8 +53,63 @@ async function loginAsAdmin(page: Page, baseUrl: string): Promise<void> {
   await expect(page).toHaveURL(`${baseUrl}/`)
 }
 
-async function navigateToAdmin(page: Page, baseUrl: string): Promise<void> {
-  await page.goto(`${baseUrl}/admin`)
+/**
+ * There is no admin page to deep-link to any more: the owner edits the portal
+ * they are already looking at. These helpers go through the header buttons on
+ * purpose — a test that jumped straight to an editing surface would not notice
+ * the only way in disappearing.
+ *
+ * `exact` matters: in edit mode every tile also carries an "Edit <label>"
+ * button, and the header's is just "Edit".
+ */
+async function enterEditMode(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Done', exact: true })).toBeVisible()
+}
+
+async function leaveEditMode(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Done', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Edit', exact: true })).toBeVisible()
+}
+
+async function openSettings(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Settings' }).click()
+}
+
+/** Adds a device through edit mode's ghost tile. Requires edit mode to be on. */
+async function addDevice(page: Page, query: string, entityId: string): Promise<void> {
+  await page.getByRole('button', { name: /add device/i }).click()
+  await page.getByPlaceholder(/search/i).fill(query)
+  await page.getByRole('option', { name: new RegExp(entityId.replaceAll('.', '\\.')) }).click()
+}
+
+/**
+ * A device added from the picker starts with NO allowed actions — visible to a
+ * guest but inert until the owner says what may be done with it. The deleted
+ * admin page granted the domain's whole set on add, so the seeding flow gained
+ * this step rather than losing one.
+ *
+ * Each checkbox saves on the spot, so each one is awaited: the next toggle is
+ * computed from the rows the stream has delivered, and firing them back to
+ * back would let a later write be built on a list that predates the earlier.
+ */
+async function allowActions(page: Page, label: string, actions: string[]): Promise<void> {
+  await page.getByRole('button', { name: `Edit ${label}` }).click()
+
+  for (const action of actions) {
+    // `exact`: a role name match is a substring by default, so 'lock' would
+    // also find 'unlock'.
+    const box = page.getByRole('checkbox', { name: action, exact: true })
+    const saved = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/admin/allowlist') && response.request().method() === 'PUT',
+    )
+    await box.check()
+    expect((await saved).status()).toBe(200)
+    await expect(box).toBeChecked()
+  }
+
+  await page.getByTestId('tile-editor').getByRole('button', { name: 'Close' }).click()
 }
 
 test.describe('Portal E2E', () => {
@@ -75,42 +130,32 @@ test.describe('Portal E2E', () => {
     // Step 1: Login as admin
     await loginAsAdmin(page, baseUrl)
 
-    // Step 2: Navigate to admin page
-    await navigateToAdmin(page, baseUrl)
+    // Step 2: Turn on edit mode — the owner's way in, on the page they are
+    // already looking at
+    await enterEditMode(page)
 
-    // Wait for catalog to load
-    await expect(page.getByPlaceholder(/search/i)).toBeVisible()
+    // Step 3: Add multiple devices to show variety of tile types, through the
+    // ghost tile, then say what a guest may do with each
+    await addDevice(page, 'porch', 'light.porch')
+    await allowActions(page, 'Porch Light', ['turn_on', 'turn_off', 'toggle'])
 
-    // Step 3: Add multiple devices to show variety of tile types
-    // Add light first
-    await page.getByPlaceholder(/search/i).fill('porch')
-    await expect(page.getByText('Porch Light')).toBeVisible()
-    await page.getByText('Porch Light').click()
+    await addDevice(page, 'garage', 'cover.garage_door')
+    await allowActions(page, 'Garage Door', ['open_cover', 'close_cover', 'stop_cover'])
 
-    // Add cover
-    await page.getByPlaceholder(/search/i).fill('garage')
-    await expect(page.getByText('Garage Door')).toBeVisible()
-    await page.getByText('Garage Door').click()
+    await addDevice(page, 'front door', 'lock.front_door')
+    await allowActions(page, 'Front Door Lock', ['lock', 'unlock'])
 
-    // Add lock
-    await page.getByPlaceholder(/search/i).fill('front door')
-    await expect(page.getByText('Front Door Lock')).toBeVisible()
-    await page.getByText('Front Door Lock').click()
-
-    // Save the allowlist
-    await page.getByRole('button', { name: /save/i }).click()
-    await expect(page.getByText(/saved/i)).toBeVisible()
-
-    // Screenshot: Admin screen with devices on allowlist and picker open
+    // Screenshot: the owner's edit mode with the picker open over the themed grid
+    await page.getByRole('button', { name: /add device/i }).click()
     await page.getByPlaceholder(/search/i).fill('lamp')
-    await expect(page.getByText('Living Room Lamp')).toBeVisible()
+    await expect(page.getByRole('option', { name: /switch\.living_room_lamp/ })).toBeVisible()
     await page.screenshot({
-      path: 'test/e2e/screenshots/02-admin-picker.png',
+      path: 'test/e2e/screenshots/02-owner-edit-picker.png',
       fullPage: true,
       animations: 'disabled',
     })
 
-    // Step 4: Navigate to guest page
+    // Step 4: Back to the ordinary portal, which is what a guest sees
     await page.goto(baseUrl)
 
     // Step 5: Verify all tiles appear with correct states
@@ -190,22 +235,24 @@ test.describe('Portal E2E', () => {
 
     // Login and set up a device first
     await loginAsAdmin(page, baseUrl)
-    await navigateToAdmin(page, baseUrl)
-    await expect(page.getByPlaceholder(/search/i)).toBeVisible()
 
-    // Add a device if not already present (idempotent)
-    const searchBox = page.getByPlaceholder(/search/i)
-    await searchBox.fill('porch')
-    const porchLight = page.getByText('Porch Light')
+    // Add the light if an earlier test has not already (idempotent).
+    // `waitFor`, not `isVisible`: the latter does not retry, so it would answer
+    // "no" before the stream had delivered anything at all.
+    const porchTile = page.getByRole('button', { name: 'Porch Light' })
+    const alreadyThere = await porchTile
+      .waitFor({ state: 'visible', timeout: 5000 })
+      .then(() => true)
+      .catch(() => false)
 
-    // Only add if the allowlist is empty or doesn't have this device
-    if (await porchLight.isVisible({ timeout: 1000 }).catch(() => false)) {
-      await porchLight.click()
-      await page.getByRole('button', { name: /save/i }).click()
-      await expect(page.getByText(/saved/i)).toBeVisible()
+    if (!alreadyThere) {
+      await enterEditMode(page)
+      await addDevice(page, 'porch', 'light.porch')
+      await allowActions(page, 'Porch Light', ['turn_on', 'turn_off', 'toggle'])
+      await leaveEditMode(page)
     }
 
-    // Navigate to guest view
+    // Reload to be sure nothing of edit mode is left on screen
     await page.goto(baseUrl)
     await page.setViewportSize({ width: 390, height: 844 })
 
@@ -270,12 +317,16 @@ test.describe('Portal E2E', () => {
       await page.getByRole('button', { name: 'Log in' }).click()
       await expect(page).toHaveURL(`${baseUrl}/`)
 
-      // Navigate to admin
-      await page.goto(`${baseUrl}/admin`)
+      // Turn on edit mode and reach for the device list
+      await enterEditMode(page)
+      await page.getByRole('button', { name: /add device/i }).click()
 
       // At this point, HA is unreachable, so the catalog won't load
       // We expect to see an error message
-      await expect(page.getByText(/failed to load catalog/i)).toBeVisible({
+      // Scoped to the add panel: with HA down the orphan check fails too, and
+      // it offers a Retry of its own.
+      const addPanel = page.locator('section').filter({ hasText: 'Add a device' })
+      await expect(addPanel.getByText(/could not load the device list/i)).toBeVisible({
         timeout: 10000,
       })
 
@@ -286,19 +337,17 @@ test.describe('Portal E2E', () => {
       await new Promise((resolve) => setTimeout(resolve, 1000))
 
       // Step 3: Click retry to load the catalog now that HA is available
-      await page.getByRole('button', { name: /retry/i }).click()
+      await addPanel.getByRole('button', { name: /retry/i }).click()
 
       // Wait for catalog to load
       await expect(page.getByPlaceholder(/search/i)).toBeVisible({ timeout: 10000 })
 
       // Add a device
       await page.getByPlaceholder(/search/i).fill('porch')
-      await expect(page.getByText('Porch Light')).toBeVisible()
-      await page.getByText('Porch Light').click()
-      await page.getByRole('button', { name: /save/i }).click()
-      await expect(page.getByText(/saved/i)).toBeVisible()
+      await page.getByRole('option', { name: /light\.porch/ }).click()
+      await allowActions(page, 'Porch Light', ['turn_on', 'turn_off', 'toggle'])
 
-      // Step 4: Navigate to guest page
+      // Step 4: Back to the ordinary portal
       await page.goto(baseUrl)
 
       // Step 5: Tiles should populate with real state from HA
@@ -331,10 +380,9 @@ test.describe('Portal E2E', () => {
       await guestPage.getByRole('button', { name: 'Log in' }).click()
       await expect(guestPage.getByTestId('guest-screen')).toBeVisible()
 
-      // Step 2: Admin signs in and turns the portal off
-      await adminPage.goto(`${baseUrl}/admin`)
-      await adminPage.getByLabel('Password').fill('test-admin-password')
-      await adminPage.getByRole('button', { name: 'Log in' }).click()
+      // Step 2: Admin signs in and turns the portal off from the settings panel
+      await loginAsAdmin(adminPage, baseUrl)
+      await openSettings(adminPage)
       await expect(adminPage.getByTestId('portal-toggle')).toBeChecked()
 
       await adminPage.getByTestId('portal-toggle').uncheck()
@@ -348,8 +396,9 @@ test.describe('Portal E2E', () => {
         timeout: 5000,
       })
 
-      // Step 4: The admin page keeps working while the portal is off
-      await expect(adminPage.getByTestId('admin-screen')).toBeVisible()
+      // Step 4: The owner's own page keeps working while the portal is off —
+      // the kill switch locks guests out, not the person holding it
+      await expect(adminPage.getByTestId('guest-screen')).toBeVisible()
 
       // Step 5: Turning it back on restores the guest without a fresh login
       await adminPage.getByTestId('portal-toggle').check()
@@ -376,9 +425,7 @@ test.describe('Portal E2E', () => {
     const guestPage = await guestContext.newPage()
 
     try {
-      await adminPage.goto(`${baseUrl}/admin`)
-      await adminPage.getByLabel('Password').fill('test-admin-password')
-      await adminPage.getByRole('button', { name: 'Log in' }).click()
+      await loginAsAdmin(adminPage, baseUrl)
 
       // Park the stored theme somewhere else first. `classic` is the default,
       // so without this the test would pass against a picker that saves
@@ -387,8 +434,9 @@ test.describe('Portal E2E', () => {
         data: { theme: 'tiles' },
       })
       expect(parked.status()).toBe(200)
-      await adminPage.goto(`${baseUrl}/admin`)
+      await adminPage.goto(baseUrl)
 
+      await openSettings(adminPage)
       await expect(adminPage.getByRole('radiogroup')).toBeVisible()
 
       // Wait for the save itself, not just the optimistic repaint: the guest

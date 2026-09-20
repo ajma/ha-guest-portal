@@ -7,7 +7,7 @@ import { TileEditor } from '../../src/web/components/TileEditor.tsx'
 import type { AllowlistEditor } from '../../src/web/hooks/useAllowlistEditor.ts'
 
 /**
- * MIGRATION MAP — `test/unit/admin-screen.test.tsx` (15 tests), which Task 9 deletes.
+ * MIGRATION MAP — `test/unit/admin-screen.test.tsx` (15 tests), deleted in Task 9.
  *
  * Landing here (per-device behaviour):
  *   1. 'action checkboxes offer only the actions legal for that entity domain'
@@ -33,7 +33,9 @@ import type { AllowlistEditor } from '../../src/web/hooks/useAllowlistEditor.ts'
  *   8. 'adding entity via picker adds it to the list'       → ghost tile + picker (Tasks 7/8)
  *  10. 'clicking Retry after 500 error re-calls getAllowlist' → page load (Task 8)
  *  11. 'Save sends the actual displayed order and labels'   → allowlist-editor.test.tsx
- *  12. 're-fetches allowlist after successful save…'        → superseded by the SSE stream (Task 5)
+ *  12. 're-fetches allowlist after successful save…'        → allowlist-editor.test.tsx
+ *        'adopts the value the stream delivers once the save lands' — the Task 9
+ *        audit found the mechanism real but UNPINNED, and ported it
  *  13-15. the three `beforeunload` tests                    → obsolete: instant save has no dirty state
  */
 
