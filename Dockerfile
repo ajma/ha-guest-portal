@@ -4,6 +4,15 @@ FROM node:24-alpine AS builder
 # Enable corepack and pin pnpm version
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
+# Corepack otherwise reads `packageManager` out of the copied package.json and
+# overrides the version prepared on the next line. That field says 11.26.0,
+# which is what development and CI need — pnpm-workspace.yaml uses pnpm 10+
+# keys. The image must NOT follow it: .dockerignore deliberately keeps that
+# workspace file out, so a pnpm 11 install here applies the default
+# release-age policy without the repo's exclusions and fails on any dependency
+# published in the last few days. Note that failure is time-based, so a build
+# retried a day later looks green while silently running the wrong pnpm.
+ENV COREPACK_ENABLE_PROJECT_SPEC=0
 RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 
 WORKDIR /build
@@ -35,6 +44,15 @@ RUN apk add --no-cache jq
 # Enable corepack and pin pnpm version (must match builder)
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
+# Corepack otherwise reads `packageManager` out of the copied package.json and
+# overrides the version prepared on the next line. That field says 11.26.0,
+# which is what development and CI need — pnpm-workspace.yaml uses pnpm 10+
+# keys. The image must NOT follow it: .dockerignore deliberately keeps that
+# workspace file out, so a pnpm 11 install here applies the default
+# release-age policy without the repo's exclusions and fails on any dependency
+# published in the last few days. Note that failure is time-based, so a build
+# retried a day later looks green while silently running the wrong pnpm.
+ENV COREPACK_ENABLE_PROJECT_SPEC=0
 RUN corepack enable && corepack prepare pnpm@9.15.4 --activate
 
 WORKDIR /app

@@ -2,6 +2,7 @@
   "name": "ha-guest-portal",
   "version": "0.0.1",
   "type": "module",
+  "packageManager": "pnpm@11.26.0",
   "engines": {
     "node": ">=24"
   },

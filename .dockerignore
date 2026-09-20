@@ -4,7 +4,11 @@ node_modules
 # Build artifacts
 dist
 
-# Workspace config (only used for allowBuilds in development)
+# Kept out of the image on purpose. It carries allowBuilds and
+# minimumReleaseAgeExclude, and the image installs from the lockfile alone with
+# pnpm 9 — which predates both keys. Un-ignoring it means raising the image's
+# pnpm to 11 as well, and accepting that the release-age policy can then fail a
+# publish because a dependency was published too recently.
 pnpm-workspace.yaml
 
 # Development
