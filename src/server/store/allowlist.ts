@@ -3,7 +3,7 @@ import type { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
 import type { AllowlistRow } from '../../shared/api.js'
 
-export type AllowlistChangeListener = (entityIds: string[]) => void
+export type AllowlistChangeListener = (portalId: string, entityIds: string[]) => void
 
 const ExposedDeviceRowSchema = z.object({
   entity_id: z.string(),
@@ -24,12 +24,12 @@ export class AllowlistStore {
     this.db = db
   }
 
-  list(): AllowlistRow[] {
+  list(portalId: string): AllowlistRow[] {
     const rows = this.db
       .prepare(
-        'SELECT entity_id, label, allowed_actions, sort_order FROM exposed_device ORDER BY sort_order, entity_id',
+        'SELECT entity_id, label, allowed_actions, sort_order FROM exposed_device WHERE portal_id = ? ORDER BY sort_order, entity_id',
       )
-      .all()
+      .all(portalId)
 
     const result: AllowlistRow[] = []
 
@@ -64,10 +64,10 @@ export class AllowlistStore {
     return result
   }
 
-  entityIds(): string[] {
+  entityIds(portalId: string): string[] {
     const rows = this.db
-      .prepare('SELECT entity_id FROM exposed_device ORDER BY sort_order, entity_id')
-      .all()
+      .prepare('SELECT entity_id FROM exposed_device WHERE portal_id = ? ORDER BY sort_order, entity_id')
+      .all(portalId)
 
     const result: string[] = []
 
@@ -82,8 +82,8 @@ export class AllowlistStore {
     return result
   }
 
-  asMap(): Map<string, readonly string[]> {
-    const rows = this.list()
+  asMap(portalId: string): Map<string, readonly string[]> {
+    const rows = this.list(portalId)
     const map = new Map<string, readonly string[]>()
 
     for (const row of rows) {
@@ -93,27 +93,25 @@ export class AllowlistStore {
     return map
   }
 
-  replace(rows: AllowlistRow[]): void {
+  replace(portalId: string, rows: AllowlistRow[]): void {
     try {
       this.db.exec('BEGIN')
 
-      // Delete all existing rows
-      this.db.prepare('DELETE FROM exposed_device').run()
+      this.db.prepare('DELETE FROM exposed_device WHERE portal_id = ?').run(portalId)
 
-      // Insert new rows
       const insert = this.db.prepare(
-        'INSERT INTO exposed_device (entity_id, label, allowed_actions, sort_order) VALUES (?, ?, ?, ?)',
+        'INSERT INTO exposed_device (portal_id, entity_id, label, allowed_actions, sort_order) VALUES (?, ?, ?, ?, ?)',
       )
 
       for (const row of rows) {
-        insert.run(row.entityId, row.label, JSON.stringify(row.allowedActions), row.sortOrder)
+        insert.run(portalId, row.entityId, row.label, JSON.stringify(row.allowedActions), row.sortOrder)
       }
 
       this.db.exec('COMMIT')
 
       // Fire listeners only after successful commit
       const entityIds = rows.map((r) => r.entityId)
-      this.notifyListeners(entityIds)
+      this.notifyListeners(portalId, entityIds)
     } catch (error) {
       this.db.exec('ROLLBACK')
       throw error
@@ -133,10 +131,10 @@ export class AllowlistStore {
     }
   }
 
-  private notifyListeners(entityIds: string[]): void {
+  private notifyListeners(portalId: string, entityIds: string[]): void {
     for (const listener of this.listeners) {
       try {
-        listener(entityIds)
+        listener(portalId, entityIds)
       } catch {
         // Swallow errors to prevent one listener from breaking others
       }

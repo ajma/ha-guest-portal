@@ -4,6 +4,7 @@ import { z } from 'zod'
 import type { Role } from '../../shared/api.js'
 
 export type AuditEntry = {
+  portalId: string
   ts: number
   entityId: string
   action: string
@@ -28,16 +29,20 @@ export class AuditLog {
 
   record(e: AuditEntry): void {
     this.db
-      .prepare('INSERT INTO action_log (ts, entity_id, action, role, ok) VALUES (?, ?, ?, ?, ?)')
-      .run(e.ts, e.entityId, e.action, e.role, e.ok ? 1 : 0)
+      .prepare(
+        'INSERT INTO action_log (portal_id, ts, entity_id, action, role, ok) VALUES (?, ?, ?, ?, ?, ?)',
+      )
+      .run(e.portalId, e.ts, e.entityId, e.action, e.role, e.ok ? 1 : 0)
   }
 
-  recent(limit: number): AuditEntry[] {
+  recent(portalId: string, limit: number): Array<Omit<AuditEntry, 'portalId'>> {
     const rows = this.db
-      .prepare('SELECT ts, entity_id, action, role, ok FROM action_log ORDER BY id DESC LIMIT ?')
-      .all(limit)
+      .prepare(
+        'SELECT ts, entity_id, action, role, ok FROM action_log WHERE portal_id = ? ORDER BY id DESC LIMIT ?',
+      )
+      .all(portalId, limit)
 
-    const result: AuditEntry[] = []
+    const result: Array<Omit<AuditEntry, 'portalId'>> = []
 
     for (const row of rows) {
       const parsed = ActionLogRowSchema.safeParse(row)

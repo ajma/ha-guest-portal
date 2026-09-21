@@ -17,7 +17,7 @@
 - Version numbers (`package.json`, `config.yaml`, `manifest.json`) are not to be bumped as part of this plan unless the project owner explicitly instructs it (standing project rule, established this session).
 - No comments unless explaining non-obvious WHY; match existing code style exactly (see files quoted throughout this plan).
 - TDD throughout: a task's test step must be run and observed to fail before its implementation step.
-- Every task's diff must leave `pnpm typecheck`, `pnpm lint`, and `pnpm vitest run` (TypeScript) or `pytest` (Python) clean before its commit step.
+- Every task's diff must leave `pnpm lint` clean, and must leave clean whichever test files directly cover the task's own changed code (the "run to verify it passes" step each task specifies). `pnpm typecheck` and the *full* `pnpm vitest run`/`pytest` suite are expected clean at phase checkpoints, not after every individual task — Phase 1 (Tasks 1-5) deliberately changes the shared SQLite schema before every store consuming it is migrated, so the full suite is red by design between Task 1 and Task 5. The same applies to any later phase whose tasks share a not-yet-fully-migrated interface. Run the full suite at the end of each phase (already called out explicitly at the end of Tasks 15 and 25) and treat red there as a real gate.
 
 ---
 
@@ -1239,6 +1239,7 @@ export class SessionStore {
   }
 }
 
+// Hash both sides to ensure constant length for timingSafeEqual
 export function verifyPassword(supplied: string, expected: string): boolean {
   const suppliedHash = createHash('sha256').update(supplied, 'utf8').digest()
   const expectedHash = createHash('sha256').update(expected, 'utf8').digest()
@@ -1246,6 +1247,8 @@ export function verifyPassword(supplied: string, expected: string): boolean {
   try {
     return timingSafeEqual(suppliedHash, expectedHash)
   } catch {
+    // timingSafeEqual throws if buffers have different lengths,
+    // but we've hashed both so they're always 32 bytes
     return false
   }
 }
@@ -1739,6 +1742,11 @@ export function createRoutes(deps: Deps) {
       // Just created it; always present.
       if (session === undefined) throw new Error('Session vanished immediately after creation')
 
+      // httpOnly: prevent XSS
+      // SameSite=Lax: prevent CSRF
+      // Path=/: session is valid for all routes
+      // NO Secure: this is plain HTTP on LAN; setting Secure would cause
+      //            browsers to silently drop the cookie, breaking login
       const cookieValue = `${SESSION_COOKIE}=${sessionId}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`
 
       return c.json(SessionResponse.parse(sessionResponseFor(session)), {
@@ -1849,6 +1857,8 @@ export function createRoutes(deps: Deps) {
           })
         }
 
+        // not_allowlisted returns 404 to avoid confirming entity existence
+        // All other validation failures return 403
         const status = FAILURE_STATUS[validation.reason]
         return c.json(
           { error: validation.reason === 'not_allowlisted' ? 'Not found' : 'Forbidden' },
@@ -1881,6 +1891,12 @@ export function createRoutes(deps: Deps) {
     },
 
     // GET /api/health
+    // Unauthenticated healthcheck for Docker HEALTHCHECK.
+    // Reports process health, not Home Assistant reachability — if HA is
+    // unreachable we return 200 with haStale:true rather than failing, because
+    // restarting the container does not fix HA connectivity and would drop all
+    // guest sessions. The portal can still serve pages and actuate devices over
+    // REST even when the WebSocket is down.
     async health(c: HonoContext) {
       return c.json({ ok: true, haStale: ha.stale })
     },
@@ -2344,6 +2360,7 @@ export class SseHub {
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
     })
+    // Flush headers immediately so EventSource fires 'open'
     res.flushHeaders()
 
     this.clients.set(res, { role, portalId })
@@ -2379,6 +2396,7 @@ export class SseHub {
     try {
       data = `data: ${JSON.stringify(frame)}\n\n`
     } catch {
+      // Frame not serialisable - drop this send
       return
     }
 
@@ -2742,6 +2760,10 @@ export function createRuntime(deps: Deps): Runtime {
     const frame: SseFrame = SseFrameSchema.parse({ type: 'portal', enabled })
     hub.broadcastToPortal(portalId, frame)
 
+    // Broadcast first, then drop: a guest that receives the frame switches to
+    // the disabled screen immediately. Closing the stream is the fallback —
+    // the client's existing stream-drop recheck hits /api/session and lands on
+    // the same screen even if the frame was missed.
     if (!enabled) {
       hub.closePortalGuests(portalId)
     }
@@ -2817,6 +2839,9 @@ export function createRuntime(deps: Deps): Runtime {
   ) {
     const remoteAddress = req.socket.remoteAddress
 
+    // Ingress listener security gate: ONLY Supervisor connections allowed
+    // This must be the first check - before static serving, before SSE, before Hono
+    // Keep this outside try/catch - it must not become reachable through an error path
     if (!isFromSupervisor(remoteAddress)) {
       res.writeHead(403, { 'Content-Type': 'application/json' })
       res.end(JSON.stringify({ error: 'Forbidden' }))
@@ -2824,6 +2849,7 @@ export function createRuntime(deps: Deps): Runtime {
     }
 
     try {
+      // Valid Supervisor request - continue to handler logic
       let pathname = requestPathname(req.url)
       if (pathname.endsWith('/') && pathname.length > 1) {
         pathname = pathname.slice(0, -1)
@@ -2984,6 +3010,12 @@ function webRootFor(deps: Deps): string {
   return deps.cfg.webRoot ?? DEFAULT_WEB_ROOT
 }
 
+/**
+ * The portal title is owner-supplied text going into two HTML contexts — a
+ * double-quoted attribute and element text. Escaping these five characters
+ * covers both. `&` must be replaced first, or the escapes introduced by the
+ * later replacements would themselves be re-escaped.
+ */
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -3037,6 +3069,10 @@ function renderIndexHtml(deps: Deps, baseHref: string, session: SessionData | nu
       () => `<html data-theme="${theme}" data-ingress-base="${escapedBase}"`,
     )
 
+  // The two title-bearing replacements take a *function*, not a string. A
+  // string replacement expands `$&`, `` $` `` and `$'`, and escaping does not
+  // defuse them — `$&` escapes to `$&amp;`, which still starts `$&` — so a
+  // title containing one would splice the matched tag into its own attribute.
   if (title !== null) {
     const escapedTitle = escapeHtml(title)
     html2 = html2
@@ -5255,7 +5291,7 @@ Expected: FAIL — `getPortals` isn't called anywhere yet, `role === 'admin'`'s 
 import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
 import type { z } from 'zod'
 import type { PortalDetailResponse, SessionResponse } from '@shared/api.js'
-import { createPortal, getPortals, getSession, logout, putLastSelectedPortal, setUnauthorizedCallback } from './api.js'
+import { getPortals, getSession, logout, putLastSelectedPortal, setUnauthorizedCallback } from './api.js'
 import { Portal } from './routes/Portal.js'
 import { setPortalEnabled, useDeviceStore } from './store.js'
 import { activeTheme, componentsFor } from './themes/active.js'
@@ -5528,6 +5564,8 @@ Replace the earlier stub effect with this one — there should be exactly one `u
 
 Read each theme's `Login.tsx` in full. Update its `onSuccess` prop type to `(session: z.infer<typeof SessionResponse>) => void` (or `Promise<void>`, matching whatever the current signature already returns), and update its call site (wherever it currently calls `login(password)` and passes `result.data.role` or similar to `onSuccess`) to pass `result.data` — the whole session object — instead of just extracting `.role`.
 
+Each theme's `Login.tsx` has its own test file (grep for it, e.g. `test/unit/login-*.test.tsx` or similar per-theme naming — read whichever exists). Update every test that asserts what `onSuccess` was called with (likely currently asserting a bare role string) to assert the full session object instead, matching whatever fixture shape `SessionResponse` now requires (e.g. `{ role: 'admin' }` or `{ role: 'guest', portalId, portalTitle, portalTheme, portalEnabled }`).
+
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `pnpm vitest run test/unit/app.test.tsx`
@@ -5614,9 +5652,15 @@ import type { Env } from '../app.js'
 import type { Deps } from './routes-guest.js'
 import { IntegrationEnabledRequest, IntegrationStateResponse } from '../../shared/api.js'
 
+/**
+ * Reported to the Home Assistant integration so it can raise a repair issue
+ * against an add-on too old to speak its protocol, rather than failing on a
+ * missing field. Bump when the shape of /api/integration/state changes.
+ */
 export const INTEGRATION_API_VERSION = '2.0.0'
 
 function tokenMatches(supplied: string, expected: string): boolean {
+  // Hash both sides so timingSafeEqual always sees equal-length buffers.
   const suppliedHash = createHash('sha256').update(supplied, 'utf8').digest()
   const expectedHash = createHash('sha256').update(expected, 'utf8').digest()
 
@@ -5627,6 +5671,14 @@ function tokenMatches(supplied: string, expected: string): boolean {
   }
 }
 
+/**
+ * Bearer-token routes for the Home Assistant integration.
+ *
+ * Deliberately no cookie or session path: this is a machine client. The token
+ * opens exactly these routes — it cannot read or write the allowlist, read
+ * the audit log, or log in. It is served on the LAN-facing port because the
+ * plain Docker deployment has no Supervisor network available.
+ */
 export function mountIntegrationRoutes(app: Hono<Env>, deps: Deps): void {
   const { allowlist, ha, settings, interactions, portals } = deps
 

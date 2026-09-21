@@ -1,8 +1,8 @@
-// src/server/store/interactions.ts
 import type { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
 
 export type GuestInteraction = {
+  portalId: string
   ts: number
   kind: 'action' | 'login'
   entityId: string | null
@@ -21,11 +21,11 @@ const InteractionRowSchema = z.object({
 })
 
 /**
- * Holds only the most recent guest interaction, upserted on id = 1.
- *
- * Home Assistant's recorder keeps the state history of the sensor fed by this
- * row, so a second history here would be redundant. It is persisted rather
- * than held in memory so the sensor does not blank to `unknown` on restart.
+ * Append-only per portal. Home Assistant's recorder keeps the state history of
+ * the sensor fed by each portal's latest row, so a second history here would
+ * be redundant — `latest()` is the only read this store needs to support. It is
+ * persisted to SQLite rather than held in memory so the sensor does not blank to
+ * `unknown` on restart.
  */
 export class InteractionStore {
   private db: DatabaseSync
@@ -37,23 +37,18 @@ export class InteractionStore {
   record(e: GuestInteraction): void {
     this.db
       .prepare(
-        `INSERT INTO guest_interaction (id, ts, kind, entity_id, label, action, ok)
-         VALUES (1, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-           ts = excluded.ts,
-           kind = excluded.kind,
-           entity_id = excluded.entity_id,
-           label = excluded.label,
-           action = excluded.action,
-           ok = excluded.ok`,
+        `INSERT INTO guest_interaction (portal_id, ts, kind, entity_id, label, action, ok)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(e.ts, e.kind, e.entityId, e.label, e.action, e.ok ? 1 : 0)
+      .run(e.portalId, e.ts, e.kind, e.entityId, e.label, e.action, e.ok ? 1 : 0)
   }
 
-  latest(): GuestInteraction | null {
+  latest(portalId: string): Omit<GuestInteraction, 'portalId'> | null {
     const row = this.db
-      .prepare('SELECT ts, kind, entity_id, label, action, ok FROM guest_interaction WHERE id = 1')
-      .get()
+      .prepare(
+        'SELECT ts, kind, entity_id, label, action, ok FROM guest_interaction WHERE portal_id = ? ORDER BY id DESC LIMIT 1',
+      )
+      .get(portalId)
 
     if (row === undefined) return null
 

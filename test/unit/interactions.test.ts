@@ -9,15 +9,17 @@ describe('InteractionStore', () => {
 
   beforeEach(() => {
     db = openDb(':memory:')
+    db.exec("INSERT INTO portal (id, title, theme, password, enabled, created_at) VALUES ('portal-default', 'Default', 'classic', 'p', 1, 0)")
     store = new InteractionStore(db)
   })
 
   it('returns null before any interaction', () => {
-    expect(store.latest()).toBeNull()
+    expect(store.latest('portal-default')).toBeNull()
   })
 
   it('round-trips an action interaction', () => {
     store.record({
+      portalId: 'portal-default',
       ts: 1_700_000_000_000,
       kind: 'action',
       entityId: 'lock.front',
@@ -26,7 +28,7 @@ describe('InteractionStore', () => {
       ok: true,
     })
 
-    expect(store.latest()).toEqual({
+    expect(store.latest('portal-default')).toEqual({
       ts: 1_700_000_000_000,
       kind: 'action',
       entityId: 'lock.front',
@@ -38,6 +40,7 @@ describe('InteractionStore', () => {
 
   it('round-trips a login interaction with null device columns', () => {
     store.record({
+      portalId: 'portal-default',
       ts: 1_700_000_000_001,
       kind: 'login',
       entityId: null,
@@ -46,7 +49,7 @@ describe('InteractionStore', () => {
       ok: true,
     })
 
-    expect(store.latest()).toEqual({
+    expect(store.latest('portal-default')).toEqual({
       ts: 1_700_000_000_001,
       kind: 'login',
       entityId: null,
@@ -56,8 +59,9 @@ describe('InteractionStore', () => {
     })
   })
 
-  it('keeps only the most recent interaction', () => {
+  it('latest() returns the most recent interaction', () => {
     store.record({
+      portalId: 'portal-default',
       ts: 1,
       kind: 'login',
       entityId: null,
@@ -66,6 +70,7 @@ describe('InteractionStore', () => {
       ok: true,
     })
     store.record({
+      portalId: 'portal-default',
       ts: 2,
       kind: 'action',
       entityId: 'light.porch',
@@ -74,14 +79,15 @@ describe('InteractionStore', () => {
       ok: false,
     })
 
-    expect(store.latest()?.ts).toBe(2)
+    expect(store.latest('portal-default')?.ts).toBe(2)
 
     const count = db.prepare('SELECT COUNT(*) AS n FROM guest_interaction').get() as { n: number }
-    expect(count.n).toBe(1)
+    expect(count.n).toBe(2)
   })
 
   it('persists across store instances', () => {
     store.record({
+      portalId: 'portal-default',
       ts: 42,
       kind: 'login',
       entityId: null,
@@ -90,11 +96,12 @@ describe('InteractionStore', () => {
       ok: true,
     })
 
-    expect(new InteractionStore(db).latest()?.ts).toBe(42)
+    expect(new InteractionStore(db).latest('portal-default')?.ts).toBe(42)
   })
 
   it('records a failed action', () => {
     store.record({
+      portalId: 'portal-default',
       ts: 7,
       kind: 'action',
       entityId: 'lock.back',
@@ -103,6 +110,23 @@ describe('InteractionStore', () => {
       ok: false,
     })
 
-    expect(store.latest()?.ok).toBe(false)
+    expect(store.latest('portal-default')?.ok).toBe(false)
+  })
+
+  it('keeps each portal\'s latest interaction separate and append-only', () => {
+    db.exec("INSERT INTO portal (id, title, theme, password, enabled, created_at) VALUES ('portal-timothy', 't', 'classic', 'p1', 1, 0), ('portal-mary', 'm', 'classic', 'p2', 1, 0)")
+
+    const timothy = 'portal-timothy'
+    const mary = 'portal-mary'
+
+    store.record({ portalId: timothy, ts: 1, kind: 'login', entityId: null, label: null, action: null, ok: true })
+    store.record({ portalId: mary, ts: 2, kind: 'login', entityId: null, label: null, action: null, ok: true })
+    store.record({ portalId: timothy, ts: 3, kind: 'action', entityId: 'light.a', label: 'A', action: 'turn_on', ok: true })
+
+    expect(store.latest(timothy)?.ts).toBe(3)
+    expect(store.latest(mary)?.ts).toBe(2)
+
+    const count = db.prepare('SELECT COUNT(*) AS n FROM guest_interaction').get() as { n: number }
+    expect(count.n).toBe(3)
   })
 })
