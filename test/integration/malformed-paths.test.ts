@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import type { Server } from 'node:http'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { HaClient } from '../../src/server/ha/client.ts'
 import { type LoginRateLimiter, SessionStore } from '../../src/server/http/auth.ts'
 import { SseHub } from '../../src/server/http/sse.ts'
@@ -7,12 +10,25 @@ import { AllowlistStore } from '../../src/server/store/allowlist.ts'
 import { AuditLog } from '../../src/server/store/auditlog.ts'
 import { SettingsStore } from '../../src/server/store/settings.ts'
 import { InteractionStore } from '../../src/server/store/interactions.ts'
+import { PortalStore } from '../../src/server/store/portals.ts'
 import { openDb } from '../../src/server/store/db.ts'
 import type { Config } from '../../src/server/config.ts'
 import { createRuntime, type Runtime } from '../../src/server/runtime.ts'
 import { FakeHomeAssistant } from '../fake-ha.ts'
 
+// The SPA-fallback tests below expect a real index.html to serve. Relying on
+// dist/web/index.html from a prior `pnpm build` made this suite's outcome
+// depend on execution order/history rather than its own setup — CI runs unit
+// tests before build, so a truly fresh checkout has no dist/ yet. An isolated
+// scratch root, written fresh in beforeEach, matches the convention already
+// used by base-href.test.ts and routes-guest.test.ts.
+const WEB_ROOT = mkdtempSync(join(tmpdir(), 'portal-malformed-paths-'))
+
 describe('Malformed path handling', () => {
+  afterAll(() => {
+    rmSync(WEB_ROOT, { recursive: true, force: true })
+  })
+
   let fake: FakeHomeAssistant
   let runtime: Runtime
   let directServer: Server
@@ -25,12 +41,18 @@ describe('Malformed path handling', () => {
   let audit: AuditLog
   let settings: SettingsStore
   let interactions: InteractionStore
+  let portals: PortalStore
   let sessions: SessionStore
   let limiter: LoginRateLimiter
   let hub: SseHub
   let cfg: Config
 
   beforeEach(async () => {
+    writeFileSync(
+      join(WEB_ROOT, 'index.html'),
+      '<!DOCTYPE html>\n<html lang="en">\n  <head>\n    <title>t</title>\n  </head>\n  <body></body>\n</html>',
+    )
+
     // Start fake HA
     fake = await FakeHomeAssistant.start({ token: 'test-ha-token' })
     fake.seed([{ entityId: 'light.test', state: 'off', name: 'Test' }], [])
@@ -39,7 +61,9 @@ describe('Malformed path handling', () => {
     db = openDb(':memory:')
 
     allowlist = new AllowlistStore(db)
-    allowlist.replace([
+    portals = new PortalStore(db)
+    const defaultPortal = portals.create({ title: 'Default Portal', password: 'guest-pass' })
+    allowlist.replace(defaultPortal.id, [
       {
         entityId: 'light.test',
         label: 'Test',
@@ -62,12 +86,12 @@ describe('Malformed path handling', () => {
       haBaseUrl: fake.baseUrl,
       haWsUrl: undefined,
       haToken: fake.token,
-      guestPassword: 'guest-pass',
       adminPassword: 'admin-pass',
       port: 8080,
       ingressPort: 8099, // Enable ingress to test both handlers
       dbPath: ':memory:',
       trustProxy: undefined,
+      webRoot: WEB_ROOT,
     }
 
     haClient = HaClient.create({
@@ -77,7 +101,7 @@ describe('Malformed path handling', () => {
     haClient.start()
 
     await new Promise((resolve) => setTimeout(resolve, 100))
-    await haClient.setWatchedEntities(allowlist.entityIds())
+    await haClient.setWatchedEntities(allowlist.entityIds(defaultPortal.id))
 
     runtime = createRuntime({
       cfg,
@@ -86,6 +110,7 @@ describe('Malformed path handling', () => {
       audit,
       settings,
       interactions,
+      portals,
       sessions,
       limiter,
       hub,

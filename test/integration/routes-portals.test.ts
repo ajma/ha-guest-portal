@@ -1,12 +1,7 @@
-// Task 15 wires mountPortalRoutes into app.ts alongside mountAdminRoutes.
-// Until then, app.ts/runtime.ts remain on the pre-multi-portal API (and
-// routes-admin.ts's admin-role gate still compares the session's `role`
-// context value to the string 'admin', which broke when routes-guest.ts
-// started storing the full SessionData object there in Task 9). This file
-// builds its own minimal harness — mounting mountPortalRoutes directly onto
-// a bare Hono app with its own session/admin-role middleware — rather than
-// going through createApp/createRuntime, so it isn't coupled to that
-// still-pending rewrite.
+// This file builds its own minimal harness — mounting mountPortalRoutes
+// directly onto a bare Hono app with its own session/admin-role middleware —
+// rather than going through createApp/createRuntime, since it only needs to
+// exercise the portal management routes themselves.
 import type { Server } from 'node:http'
 import { getRequestListener } from '@hono/node-server'
 import { createServer } from 'node:http'
@@ -16,12 +11,7 @@ import { HaClient } from '../../src/server/ha/client.ts'
 import type { Env } from '../../src/server/app.ts'
 import { createRoutes, type Deps } from '../../src/server/http/routes-guest.ts'
 import { mountPortalRoutes } from '../../src/server/http/routes-portals.ts'
-import {
-  LoginRateLimiter,
-  SESSION_COOKIE,
-  SessionStore,
-  type SessionData,
-} from '../../src/server/http/auth.ts'
+import { LoginRateLimiter, SESSION_COOKIE, SessionStore } from '../../src/server/http/auth.ts'
 import { SseHub } from '../../src/server/http/sse.ts'
 import { AllowlistStore } from '../../src/server/store/allowlist.ts'
 import { AuditLog } from '../../src/server/store/auditlog.ts'
@@ -43,12 +33,12 @@ function buildApp(deps: Deps) {
     const sessionId = match?.[1]
     const session = sessionId ? deps.sessions.get(sessionId) : undefined
     if (!session) return c.json({ error: 'Unauthorized' }, 401)
-    c.set('role', session as unknown as Env['Variables']['role'])
+    c.set('session', session)
     await next()
   }
 
   const requireAdmin: MiddlewareHandler<Env> = async (c, next) => {
-    const session = c.get('role') as unknown as SessionData
+    const session = c.var.session
     if (session.role !== 'admin') return c.json({ error: 'Forbidden' }, 403)
     await next()
   }

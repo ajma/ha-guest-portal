@@ -7,6 +7,7 @@ import { AllowlistStore } from '../../src/server/store/allowlist.ts'
 import { AuditLog } from '../../src/server/store/auditlog.ts'
 import { SettingsStore } from '../../src/server/store/settings.ts'
 import { InteractionStore } from '../../src/server/store/interactions.ts'
+import { PortalStore } from '../../src/server/store/portals.ts'
 import { openDb } from '../../src/server/store/db.ts'
 import type { Config } from '../../src/server/config.ts'
 import { createRuntime, type Runtime } from '../../src/server/runtime.ts'
@@ -25,6 +26,7 @@ describe('Ingress security - source address enforcement', () => {
   let audit: AuditLog
   let settings: SettingsStore
   let interactions: InteractionStore
+  let portals: PortalStore
   let sessions: SessionStore
   let limiter: LoginRateLimiter
   let hub: SseHub
@@ -44,9 +46,11 @@ describe('Ingress security - source address enforcement', () => {
     // Open in-memory DB
     db = openDb(':memory:')
 
-    // Seed allowlist
+    // Seed allowlist against a default portal
     allowlist = new AllowlistStore(db)
-    allowlist.replace([
+    portals = new PortalStore(db)
+    const defaultPortal = portals.create({ title: 'Default Portal', password: 'guest-pass-12345678' })
+    allowlist.replace(defaultPortal.id, [
       {
         entityId: 'light.porch',
         label: 'Porch',
@@ -66,7 +70,6 @@ describe('Ingress security - source address enforcement', () => {
       haBaseUrl: fake.baseUrl,
       haWsUrl: undefined,
       haToken: fake.token,
-      guestPassword: 'guest-pass-12345678',
       adminPassword: 'admin-pass-87654321',
       port: 8080,
       ingressPort: 8099, // Enable ingress
@@ -85,7 +88,7 @@ describe('Ingress security - source address enforcement', () => {
     await new Promise((resolve) => setTimeout(resolve, 100))
 
     // Set watched entities
-    await haClient.setWatchedEntities(allowlist.entityIds())
+    await haClient.setWatchedEntities(allowlist.entityIds(defaultPortal.id))
 
     // Create runtime - this wires all the event handlers and creates TWO servers
     runtime = createRuntime({
@@ -95,6 +98,7 @@ describe('Ingress security - source address enforcement', () => {
       audit,
       settings,
       interactions,
+      portals,
       sessions,
       limiter,
       hub,
@@ -264,6 +268,7 @@ describe('Ingress security - source address enforcement', () => {
         audit,
         settings,
         interactions,
+        portals,
         sessions,
         limiter,
         hub,

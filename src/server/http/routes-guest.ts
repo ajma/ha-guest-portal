@@ -45,19 +45,6 @@ function getClientIp(c: HonoContext, cfg: Config): string {
 }
 
 /**
- * app.ts's session middleware stores the authenticated session under the
- * `role` context key and won't be renamed to `session` until it's rewritten
- * (a later task, alongside the `Role` -> `SessionData` context-variable type
- * update). At runtime the value stored there is already the full
- * `SessionData` object `SessionStore.get()` returns - only the context's
- * declared type still lags. This reads that same key under the name this
- * file actually needs, without depending on the rename.
- */
-function currentSession(c: HonoContext): SessionData | undefined {
-  return c.get('role') as unknown as SessionData | undefined
-}
-
-/**
  * A guest's portal is fixed by their session. An admin session carries no
  * portal of its own — they act on whichever portal `?portalId=` names, since
  * one admin identity reaches every portal.
@@ -201,7 +188,7 @@ export function createRoutes(deps: Deps) {
 
     // GET /api/session
     async session(c: HonoContext) {
-      const session = currentSession(c)
+      const session = c.var.session
       if (!session) {
         return c.json({ error: 'Unauthorized' }, 401)
       }
@@ -211,7 +198,7 @@ export function createRoutes(deps: Deps) {
 
     // GET /api/devices
     async devices(c: HonoContext) {
-      const session = currentSession(c)
+      const session = c.var.session
       if (!session) {
         return c.json({ error: 'Unauthorized' }, 401)
       }
@@ -239,7 +226,7 @@ export function createRoutes(deps: Deps) {
 
     // POST /api/devices/:entityId/:action
     async callAction(c: HonoContext) {
-      const session = currentSession(c)
+      const session = c.var.session
       if (!session) {
         return c.json({ error: 'Unauthorized' }, 401)
       }

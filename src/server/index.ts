@@ -4,6 +4,7 @@ import { AllowlistStore } from './store/allowlist.js'
 import { AuditLog } from './store/auditlog.js'
 import { SettingsStore } from './store/settings.js'
 import { InteractionStore } from './store/interactions.js'
+import { PortalStore } from './store/portals.js'
 import { SessionStore, LoginRateLimiter } from './http/auth.js'
 import { SseHub } from './http/sse.js'
 import { HaClient } from './ha/client.js'
@@ -22,6 +23,7 @@ async function main() {
   const audit = new AuditLog(db)
   const settings = new SettingsStore(db)
   const interactions = new InteractionStore(db)
+  const portals = new PortalStore(db)
   const sessions = new SessionStore()
   const limiter = new LoginRateLimiter()
   const hub = new SseHub()
@@ -31,11 +33,19 @@ async function main() {
     haWsUrl: cfg.haWsUrl,
   })
 
-  // Set initial watched entities
+  // Set initial watched entities: the union across every portal's allowlist,
+  // matching the same union runtime.ts recomputes on every subsequent
+  // allowlist change.
   // This is safe to call before HA is reachable - the client defers it
   // Do NOT wrap this in try/catch that swallows failure - silently never
   // subscribing is a failure mode this project has gone to trouble to eliminate
-  await ha.setWatchedEntities(allowlist.entityIds())
+  const initialWatchedEntities = new Set<string>()
+  for (const portal of portals.list()) {
+    for (const entityId of allowlist.entityIds(portal.id)) {
+      initialWatchedEntities.add(entityId)
+    }
+  }
+  await ha.setWatchedEntities([...initialWatchedEntities])
 
   // Start HA client
   ha.start()
@@ -48,6 +58,7 @@ async function main() {
     audit,
     settings,
     interactions,
+    portals,
     sessions,
     limiter,
     hub,
@@ -69,7 +80,7 @@ async function main() {
   if (supervisorToken) {
     void publishDiscovery({
       supervisorToken,
-      portalId: settings.getPortalId(),
+      portalId: settings.getDeploymentId(),
       token: settings.getIntegrationToken(),
       port: cfg.port,
     })

@@ -3078,6 +3078,8 @@ git commit -m "feat: fan out SSE snapshots and patches per portal"
 
 **Files:**
 - Modify: `src/server/app.ts` (full current contents 175 lines)
+- Modify: `src/server/index.ts` (full current contents 107 lines — see Step 3c; no task in this plan otherwise touches this file, and it is the actual process entrypoint)
+- Fix: `test/integration/server-process.test.ts` (see Step 3d — a pre-existing bug unrelated to multi-portal, but this task is what makes it matter)
 - Test: `test/integration/base-href.test.ts`, `test/integration/ingress-security.test.ts`, `test/integration/malformed-paths.test.ts` (existing — update as needed)
 
 **Interfaces:**
@@ -3381,6 +3383,60 @@ git add src/server/http/routes-guest.ts src/server/http/routes-admin.ts
 git commit -m "refactor: read the session context variable directly now that app.ts provides it"
 ```
 
+- [ ] **Step 3c: Fix `index.ts` — the only file in this plan that constructs `createRuntime`'s `Deps` directly**
+
+No other task touches this file, and it is the real process entrypoint (`node dist/server/index.js`), not test scaffolding — it currently fails `pnpm typecheck` for the same two reasons every other pre-Task-15 caller did: it builds `Deps` without `portals`, and it calls a `SettingsStore` method Task 5 renamed.
+
+1. Add the import: `import { PortalStore } from './store/portals.js'`
+2. Construct a `PortalStore` alongside the other stores and add it to the `createRuntime(...)` call's object literal:
+
+```ts
+const portals = new PortalStore(db)
+```
+
+(add this line next to `const interactions = new InteractionStore(db)`, and add `portals,` to the `createRuntime({ cfg, ha, allowlist, audit, settings, interactions, ... })` object)
+
+3. `settings.getPortalId()` (in the `publishDiscovery(...)` call) no longer exists — Task 5 renamed it to `getDeploymentId()`. Change the call site to `deploymentId: settings.getDeploymentId()`... except `publishDiscovery`'s own parameter is still named `portalId` (see `src/server/hassio/discovery.ts`'s `DiscoveryOptions` type) and stays that way deliberately: it's the JSON key sent to the Supervisor, read by `config_flow.py`'s `async_step_hassio` on the Python side, and this plan does not change that wire-format key (see Task 27's note on this exact point). So change only the *value*, not the key:
+
+```ts
+void publishDiscovery({
+  supervisorToken,
+  portalId: settings.getDeploymentId(),
+  token: settings.getIntegrationToken(),
+  port: cfg.port,
+})
+```
+
+4. Run `pnpm exec tsc -p tsconfig.server.json --noEmit` and confirm zero errors reference `index.ts`.
+
+```bash
+git add src/server/index.ts
+git commit -m "fix: wire index.ts's Deps and discovery call for multi-portal"
+```
+
+- [ ] **Step 3d: Fix `test/integration/server-process.test.ts`'s hardcoded checkout path**
+
+Unrelated to multi-portal, but this is the task that makes it matter: the file's `'stays alive for 8+ seconds...'` test hardcodes `cwd: '/home/andm/workspace/ha-guest-portal'` for both its `pnpm build` and `node dist/server/index.js` spawns. When this test runs from a worktree (this plan has been executed from one throughout), that path is the *main checkout*, not the worktree — the test has been building and running the main checkout's `dist/`, never the worktree's own `src/server/`, for the entire duration of this plan. It would keep passing even if this very step's `index.ts` fix were wrong, because it never touches this checkout's code at all. Fix it to resolve the repo root dynamically, matching the convention already used in `test/unit/addon-config.test.ts`:
+
+```ts
+import { join } from 'node:path'
+// ...
+const projectRoot = join(import.meta.dirname, '..', '..')
+```
+
+Replace both hardcoded `cwd: '/home/andm/workspace/ha-guest-portal'` occurrences in this file with `cwd: projectRoot`.
+
+```bash
+pnpm vitest run test/integration/server-process.test.ts
+```
+
+Expected: PASS, and — this is the point of the fix — now actually exercising this worktree's own build output.
+
+```bash
+git add test/integration/server-process.test.ts
+git commit -m "fix: resolve server-process.test.ts's checkout path dynamically instead of hardcoding the main checkout"
+```
+
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `pnpm vitest run test/integration/base-href.test.ts test/integration/ingress-security.test.ts test/integration/malformed-paths.test.ts`
@@ -3393,7 +3449,7 @@ git add src/server/app.ts test/integration/base-href.test.ts test/integration/in
 git commit -m "feat: theme the pre-login page neutrally, theme post-login by resolved portal"
 ```
 
-At this point the entire server side should compile and pass its full suite. Run `pnpm vitest run && pnpm typecheck && pnpm lint` before moving to Phase 6 and treat any remaining red as a real gap in this plan, not something to defer further.
+At this point the entire server side should compile and pass its full suite, with one named exception: `src/server/http/routes-integration.ts` remains on the pre-multi-portal API until Task 26 rewrites it (it is not otherwise touched by any task before then) — its errors, and only its errors, are expected red here. Run `pnpm vitest run && pnpm typecheck && pnpm lint` before moving to Phase 6 and treat any remaining red outside that one file as a real gap in this plan, not something to defer further.
 
 ## Phase 6: Web app
 

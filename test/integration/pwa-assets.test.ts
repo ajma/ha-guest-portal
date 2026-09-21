@@ -14,6 +14,7 @@ import { AllowlistStore } from '../../src/server/store/allowlist.ts'
 import { AuditLog } from '../../src/server/store/auditlog.ts'
 import { openDb } from '../../src/server/store/db.ts'
 import { InteractionStore } from '../../src/server/store/interactions.ts'
+import { PortalStore } from '../../src/server/store/portals.ts'
 import { SettingsStore } from '../../src/server/store/settings.ts'
 
 /**
@@ -59,7 +60,6 @@ describe('PWA assets are served from the root', () => {
       haBaseUrl: 'http://127.0.0.1:1',
       haWsUrl: undefined,
       haToken: 'test-ha-token',
-      guestPassword: 'guest-pass-12345678',
       adminPassword: 'admin-pass-87654321',
       port: 8080,
       ingressPort: undefined,
@@ -76,6 +76,7 @@ describe('PWA assets are served from the root', () => {
       audit: new AuditLog(db),
       settings: new SettingsStore(db),
       interactions: new InteractionStore(db),
+      portals: new PortalStore(db),
       sessions: new SessionStore(),
       limiter: new LoginRateLimiter({ perIpMax: 10, windowMs: 60_000 }),
       hub: new SseHub(),

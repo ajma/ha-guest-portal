@@ -1,43 +1,38 @@
 import type { ServerResponse } from 'node:http'
 import type { Role, SseFrame } from '../../shared/api.js'
 
+type ClientInfo = { role: Role; portalId: string | null }
+
 export class SseHub {
-  private readonly clients = new Map<ServerResponse, Role>()
+  private readonly clients = new Map<ServerResponse, ClientInfo>()
   private readonly heartbeatMs: number
   private readonly maxBufferBytes: number
   private heartbeatTimer: NodeJS.Timeout | null = null
 
   constructor(opts?: { heartbeatMs?: number; maxBufferBytes?: number }) {
     this.heartbeatMs = opts?.heartbeatMs ?? 25_000
-    this.maxBufferBytes = opts?.maxBufferBytes ?? 1_048_576 // 1 MB default
+    this.maxBufferBytes = opts?.maxBufferBytes ?? 1_048_576
   }
 
-  add(res: ServerResponse, role: Role): () => void {
-    // Write SSE headers
+  add(res: ServerResponse, role: Role, portalId: string | null): () => void {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
     })
-
     // Flush headers immediately so EventSource fires 'open'
     res.flushHeaders()
 
-    // Add to clients
-    this.clients.set(res, role)
+    this.clients.set(res, { role, portalId })
 
-    // Start heartbeat if this is the first client
     if (this.clients.size === 1 && this.heartbeatTimer === null) {
       this.startHeartbeat()
     }
 
-    // Auto-remove on close or error
     const remove = () => {
       if (this.clients.has(res)) {
         this.clients.delete(res)
-
-        // Stop heartbeat if no clients remain
         if (this.clients.size === 0) {
           this.stopHeartbeat()
         }
@@ -47,58 +42,62 @@ export class SseHub {
     res.on('close', remove)
     res.on('error', remove)
 
-    // Return idempotent remover
     return () => {
-      // Detach listeners
       res.off('close', remove)
       res.off('error', remove)
-
       remove()
-      // Safe to call end on already-closed response
       if (!res.writableEnded) {
         res.end()
       }
     }
   }
 
-  broadcast(frame: SseFrame): void {
+  private writeFrame(client: ServerResponse, frame: SseFrame): void {
     let data: string
     try {
       data = `data: ${JSON.stringify(frame)}\n\n`
-    } catch (_error) {
-      // Frame not serialisable - drop this broadcast
+    } catch {
+      // Frame not serialisable - drop this send
       return
     }
 
-    for (const client of this.clients.keys()) {
-      try {
-        if (client.writableEnded) {
-          continue
-        }
+    try {
+      if (client.writableEnded) return
 
-        // Evict client if buffer exceeds cap
-        if (client.writableLength > this.maxBufferBytes) {
-          this.clients.delete(client)
-          client.end()
-          continue
-        }
-
-        client.write(data)
-      } catch (_error) {
-        // Remove dead client silently
+      if (client.writableLength > this.maxBufferBytes) {
         this.clients.delete(client)
+        client.end()
+        return
+      }
+
+      client.write(data)
+    } catch {
+      this.clients.delete(client)
+    }
+  }
+
+  broadcast(frame: SseFrame): void {
+    for (const client of this.clients.keys()) {
+      this.writeFrame(client, frame)
+    }
+  }
+
+  broadcastToPortal(portalId: string, frame: SseFrame): void {
+    for (const [client, info] of this.clients) {
+      if (info.portalId === portalId) {
+        this.writeFrame(client, frame)
       }
     }
   }
 
   /**
-   * End every stream held by the named role, leaving others connected.
-   * Used by the kill-switch: disabling the portal must drop guest streams
-   * without disturbing an admin watching the same hub over ingress.
+   * Ends every guest stream bound to this portal, leaving its admins and every
+   * other portal's connections untouched. Used by the kill-switch: disabling
+   * one portal must drop only that portal's guests.
    */
-  closeRole(role: Role): void {
-    for (const [client, clientRole] of this.clients) {
-      if (clientRole !== role) continue
+  closePortalGuests(portalId: string): void {
+    for (const [client, info] of this.clients) {
+      if (info.role !== 'guest' || info.portalId !== portalId) continue
 
       this.clients.delete(client)
 
@@ -117,21 +116,7 @@ export class SseHub {
   }
 
   send(res: ServerResponse, frame: SseFrame): void {
-    let data: string
-    try {
-      data = `data: ${JSON.stringify(frame)}\n\n`
-    } catch (_error) {
-      // Frame not serialisable - drop this send
-      return
-    }
-
-    try {
-      if (!res.writableEnded) {
-        res.write(data)
-      }
-    } catch {
-      // Ignore write errors on individual send
-    }
+    this.writeFrame(res, frame)
   }
 
   get clientCount(): number {
@@ -139,17 +124,12 @@ export class SseHub {
   }
 
   close(): void {
-    // End all responses
     for (const client of this.clients.keys()) {
       if (!client.writableEnded) {
         client.end()
       }
     }
-
-    // Clear clients
     this.clients.clear()
-
-    // Stop heartbeat
     this.stopHeartbeat()
   }
 
@@ -159,11 +139,8 @@ export class SseHub {
 
       for (const client of this.clients.keys()) {
         try {
-          if (client.writableEnded) {
-            continue
-          }
+          if (client.writableEnded) continue
 
-          // Evict client if buffer exceeds cap
           if (client.writableLength > this.maxBufferBytes) {
             this.clients.delete(client)
             client.end()
@@ -171,13 +148,11 @@ export class SseHub {
           }
 
           client.write(ping)
-        } catch (_error) {
-          // Remove dead client silently
+        } catch {
           this.clients.delete(client)
         }
       }
 
-      // Stop heartbeat if all clients died
       if (this.clients.size === 0) {
         this.stopHeartbeat()
       }

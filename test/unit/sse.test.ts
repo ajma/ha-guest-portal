@@ -12,7 +12,7 @@ describe('SseHub', () => {
     hub = new SseHub()
     server = createServer((req: IncomingMessage, res: ServerResponse) => {
       if (req.url === '/events') {
-        hub.add(res, 'guest')
+        hub.add(res, 'guest', 'portal-1')
       }
     })
 
@@ -272,7 +272,7 @@ describe('SseHub', () => {
     const removerPromise = new Promise<() => void>((resolve) => {
       const customServer = createServer((req: IncomingMessage, res: ServerResponse) => {
         if (req.url === '/events') {
-          const remover = hub.add(res, 'guest')
+          const remover = hub.add(res, 'guest', 'portal-1')
           resolve(remover)
         }
       })
@@ -302,7 +302,7 @@ describe('SseHub', () => {
     const shortHub = new SseHub({ heartbeatMs: 100 })
     const customServer = createServer((req: IncomingMessage, res: ServerResponse) => {
       if (req.url === '/events') {
-        shortHub.add(res, 'guest')
+        shortHub.add(res, 'guest', 'portal-1')
       }
     })
 
@@ -368,7 +368,7 @@ describe('SseHub', () => {
     const shortHub = new SseHub({ heartbeatMs: 100 })
     const customServer = createServer((req: IncomingMessage, res: ServerResponse) => {
       if (req.url === '/events') {
-        shortHub.add(res, 'guest')
+        shortHub.add(res, 'guest', 'portal-1')
       }
     })
 
@@ -409,7 +409,7 @@ describe('SseHub', () => {
     const cappedHub = new SseHub({ maxBufferBytes: 1024 })
     const customServer = createServer((req: IncomingMessage, res: ServerResponse) => {
       if (req.url === '/events') {
-        cappedHub.add(res, 'guest')
+        cappedHub.add(res, 'guest', 'portal-1')
       }
     })
 
@@ -565,7 +565,7 @@ describe('SseHub', () => {
     const removerPromise = new Promise<() => void>((resolve) => {
       const customServer = createServer((req: IncomingMessage, res: ServerResponse) => {
         if (req.url === '/events') {
-          const remover = hub.add(res, 'guest')
+          const remover = hub.add(res, 'guest', 'portal-1')
           resolve(remover)
         }
       })
@@ -589,17 +589,80 @@ describe('SseHub', () => {
     expect(hub.clientCount).toBe(0)
   })
 
-  describe('closeRole', () => {
+  describe('broadcastToPortal', () => {
+    let portalServer: Server
+    let portalPort: number
+
+    beforeEach(async () => {
+      // Create a server that binds each connection to a portal from the query string
+      portalServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+        const url = new URL(req.url ?? '/', `http://localhost`)
+        const role = url.searchParams.get('role')
+        const portalId = url.searchParams.get('portal')
+        if (url.pathname === '/events' && (role === 'guest' || role === 'admin')) {
+          hub.add(res, role as 'guest' | 'admin', portalId)
+        }
+      })
+
+      portalPort = await new Promise<number>((resolve) => {
+        portalServer.listen(0, () => {
+          const addr = portalServer.address()
+          if (addr && typeof addr === 'object') {
+            resolve(addr.port)
+          }
+        })
+      })
+    })
+
+    afterEach(async () => {
+      await new Promise<void>((resolve, reject) => {
+        portalServer.close((err) => {
+          if (err) reject(err)
+          else resolve()
+        })
+      })
+    })
+
+    it('routes a patch only to connections bound to the affected portal', async () => {
+      const clientA = await fetch(`http://localhost:${portalPort}/events?role=guest&portal=portal-a`)
+      const clientB = await fetch(`http://localhost:${portalPort}/events?role=guest&portal=portal-b`)
+
+      const readerA = clientA.body?.getReader()
+      const readerB = clientB.body?.getReader()
+
+      if (!readerA || !readerB) throw new Error('No readers')
+
+      const frame: SseFrame = { type: 'patch', devices: [] }
+      hub.broadcastToPortal('portal-a', frame)
+
+      const resultA = await readerA.read()
+      const textA = new TextDecoder().decode(resultA.value)
+      expect(textA).toContain('"type":"patch"')
+
+      // portal-b's connection must not receive portal-a's frame
+      const outcome = await Promise.race([
+        readerB.read().then(() => 'received' as const),
+        new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 100)),
+      ])
+      expect(outcome).toBe('timeout')
+
+      await readerA.cancel()
+      await readerB.cancel()
+    })
+  })
+
+  describe('closePortalGuests', () => {
     let roleServer: Server
     let rolePort: number
 
     beforeEach(async () => {
-      // Create a server that assigns roles based on query parameter
+      // Create a server that binds each connection to a role and portal from the query string
       roleServer = createServer((req: IncomingMessage, res: ServerResponse) => {
         const url = new URL(req.url ?? '/', `http://localhost`)
         const role = url.searchParams.get('role')
+        const portalId = url.searchParams.get('portal')
         if (url.pathname === '/events' && (role === 'guest' || role === 'admin')) {
-          hub.add(res, role as 'guest' | 'admin')
+          hub.add(res, role as 'guest' | 'admin', portalId)
         }
       })
 
@@ -622,63 +685,50 @@ describe('SseHub', () => {
       })
     })
 
-    it('closes only connections with the named role', async () => {
-      const guestClient = await fetch(`http://localhost:${rolePort}/events?role=guest`)
-      const adminClient = await fetch(`http://localhost:${rolePort}/events?role=admin`)
+    it("ends only that portal's guest connections", async () => {
+      const guestAClient = await fetch(`http://localhost:${rolePort}/events?role=guest&portal=portal-a`)
+      const guestBClient = await fetch(`http://localhost:${rolePort}/events?role=guest&portal=portal-b`)
+      const adminAClient = await fetch(`http://localhost:${rolePort}/events?role=admin&portal=portal-a`)
 
-      const guestReader = guestClient.body?.getReader()
-      const adminReader = adminClient.body?.getReader()
+      const guestAReader = guestAClient.body?.getReader()
+      const guestBReader = guestBClient.body?.getReader()
+      const adminAReader = adminAClient.body?.getReader()
 
-      if (!guestReader || !adminReader) throw new Error('No readers')
+      if (!guestAReader || !guestBReader || !adminAReader) throw new Error('No readers')
+
+      expect(hub.clientCount).toBe(3)
+
+      hub.closePortalGuests('portal-a')
 
       expect(hub.clientCount).toBe(2)
 
-      hub.closeRole('guest')
+      // portal-a's guest stream should end
+      const guestAResult = await guestAReader.read()
+      expect(guestAResult.done).toBe(true)
 
-      expect(hub.clientCount).toBe(1)
-
-      // Guest stream should end
-      const guestResult = await guestReader.read()
-      expect(guestResult.done).toBe(true)
-
-      // Admin stream should still be open
-      await adminReader.cancel()
-    })
-
-    it('still broadcasts to the surviving role', async () => {
-      const guestClient = await fetch(`http://localhost:${rolePort}/events?role=guest`)
-      const adminClient = await fetch(`http://localhost:${rolePort}/events?role=admin`)
-
-      const guestReader = guestClient.body?.getReader()
-      const adminReader = adminClient.body?.getReader()
-
-      if (!guestReader || !adminReader) throw new Error('No readers')
-
-      hub.closeRole('guest')
-
+      // portal-b's guest and portal-a's admin should still be open
       const frame: SseFrame = { type: 'portal', enabled: false }
       hub.broadcast(frame)
 
-      // Admin should receive the broadcast
-      const adminResult = await adminReader.read()
-      const adminText = new TextDecoder().decode(adminResult.value)
+      const guestBResult = await guestBReader.read()
+      expect(new TextDecoder().decode(guestBResult.value)).toContain('"type":"portal"')
 
-      expect(adminText).toContain('"type":"portal"')
-      expect(adminText).toContain('"enabled":false')
+      const adminAResult = await adminAReader.read()
+      expect(new TextDecoder().decode(adminAResult.value)).toContain('"type":"portal"')
 
-      await guestReader.cancel()
-      await adminReader.cancel()
+      await guestBReader.cancel()
+      await adminAReader.cancel()
     })
 
-    it('is a no-op when no connection has that role', async () => {
-      const adminClient = await fetch(`http://localhost:${rolePort}/events?role=admin`)
+    it('is a no-op when no guest is bound to that portal', async () => {
+      const adminClient = await fetch(`http://localhost:${rolePort}/events?role=admin&portal=portal-a`)
       const adminReader = adminClient.body?.getReader()
 
       if (!adminReader) throw new Error('No reader')
 
       expect(hub.clientCount).toBe(1)
 
-      expect(() => hub.closeRole('guest')).not.toThrow()
+      expect(() => hub.closePortalGuests('portal-a')).not.toThrow()
       expect(hub.clientCount).toBe(1)
 
       await adminReader.cancel()

@@ -79,4 +79,19 @@ describe('PortalStore', () => {
     const updatedWhitespace = store.update(created.id, { title: '   ' })
     expect(updatedWhitespace.title).toBe('Guest Portal')
   })
+
+  it('notifies onEnabledChange only when enabled actually flips', () => {
+    const created = store.create({ title: 'Timothy', password: 'a-secret-4' })
+    const seen: Array<{ portalId: string; enabled: boolean }> = []
+    store.onEnabledChange((portalId, enabled) => seen.push({ portalId, enabled }))
+
+    store.update(created.id, { title: 'Tim' }) // no enabled change
+    expect(seen).toEqual([])
+
+    store.update(created.id, { enabled: false })
+    expect(seen).toEqual([{ portalId: created.id, enabled: false }])
+
+    store.update(created.id, { enabled: false }) // already false, no change
+    expect(seen).toEqual([{ portalId: created.id, enabled: false }])
+  })
 })

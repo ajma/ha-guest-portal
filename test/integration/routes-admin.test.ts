@@ -1,14 +1,11 @@
 // This harness builds its own minimal Hono app around mountAdminRoutes
-// instead of going through createApp/createRuntime. app.ts/runtime.ts are
-// still on the pre-multi-portal API (SettingsStore lost its title/theme/
-// portal-enabled methods, Config lost `guestPassword`, login now resolves
-// guests through PortalStore) and won't be rewritten until Task 15. Sessions
-// are created directly via SessionStore, bypassing the password/portal login
-// flow entirely, since this file only needs to exercise the admin-role gate
-// and the entity catalog route — neither of which involves login.
-// test/integration/routes-portals.test.ts (Task 10) established the bare-Hono
-// -app half of this pattern; it still drives real /api/login for its own
-// tests since portal creation is what it's actually testing.
+// instead of going through createApp/createRuntime, since this file only
+// needs to exercise the admin-role gate and the entity catalog route —
+// neither of which involves login. Sessions are created directly via
+// SessionStore, bypassing the password/portal login flow entirely.
+// test/integration/routes-portals.test.ts established the bare-Hono-app half
+// of this pattern; it still drives real /api/login for its own tests since
+// portal creation is what it's actually testing.
 import type { Server } from 'node:http'
 import { getRequestListener } from '@hono/node-server'
 import { createServer } from 'node:http'
@@ -38,7 +35,7 @@ function buildApp(deps: Deps) {
     const sessionId = match?.[1]
     const session = sessionId ? deps.sessions.get(sessionId) : undefined
     if (session) {
-      c.set('role', session as unknown as Env['Variables']['role'])
+      c.set('session', session)
     }
     await next()
   }

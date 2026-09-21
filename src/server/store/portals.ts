@@ -52,9 +52,17 @@ function isUniqueConstraintError(error: unknown): boolean {
 
 export class PortalStore {
   private db: DatabaseSync
+  private enabledListeners: Set<(portalId: string, enabled: boolean) => void> = new Set()
 
   constructor(db: DatabaseSync) {
     this.db = db
+  }
+
+  onEnabledChange(fn: (portalId: string, enabled: boolean) => void): () => void {
+    this.enabledListeners.add(fn)
+    return () => {
+      this.enabledListeners.delete(fn)
+    }
   }
 
   list(): Portal[] {
@@ -124,6 +132,13 @@ export class PortalStore {
 
     const updated = this.get(id)
     if (updated === null) throw new Error(`Portal ${id} vanished during update`)
+
+    if (updated.enabled !== current.enabled) {
+      for (const listener of this.enabledListeners) {
+        listener(id, updated.enabled)
+      }
+    }
+
     return updated
   }
 

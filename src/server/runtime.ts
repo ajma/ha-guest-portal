@@ -1,7 +1,7 @@
 import type { Server } from 'node:http'
 import { createServer } from 'node:http'
 import { getRequestListener } from '@hono/node-server'
-import type { Role, SseFrame } from '../shared/api.js'
+import type { SseFrame } from '../shared/api.js'
 import { SseFrameSchema } from '../shared/api.js'
 import type { Config } from './config.js'
 import type { HaClient } from './ha/client.js'
@@ -9,7 +9,8 @@ import type { AllowlistStore } from './store/allowlist.js'
 import type { AuditLog } from './store/auditlog.js'
 import type { SettingsStore } from './store/settings.js'
 import type { InteractionStore } from './store/interactions.js'
-import { SESSION_COOKIE, type SessionStore, type LoginRateLimiter } from './http/auth.js'
+import type { PortalStore } from './store/portals.js'
+import { SESSION_COOKIE, type SessionStore, type SessionData, type LoginRateLimiter } from './http/auth.js'
 import type { SseHub } from './http/sse.js'
 import { createApp } from './app.js'
 import { assembleDevices } from './device-assembly.js'
@@ -50,6 +51,7 @@ export type Deps = {
   audit: AuditLog
   settings: SettingsStore
   interactions: InteractionStore
+  portals: PortalStore
   sessions: SessionStore
   limiter: LoginRateLimiter
   hub: SseHub
@@ -78,7 +80,10 @@ export function isFromSupervisor(remoteAddress: string | undefined): boolean {
 }
 
 // Shared session check used by both Hono middleware and SSE handler
-export function checkSession(cookie: string | undefined, sessions: SessionStore): Role | null {
+export function checkSession(
+  cookie: string | undefined,
+  sessions: SessionStore,
+): SessionData | null {
   if (!cookie) return null
 
   const match = new RegExp(`${SESSION_COOKIE}=([^;]+)`).exec(cookie)
@@ -91,72 +96,70 @@ export function checkSession(cookie: string | undefined, sessions: SessionStore)
 }
 
 export function createRuntime(deps: Deps): Runtime {
-  const { ha, allowlist, hub, sessions, settings } = deps
+  const { ha, allowlist, hub, sessions, portals } = deps
 
-  // Wire allowlist.onChange → ha.setWatchedEntities → broadcast snapshot
-  allowlist.onChange((entityIds) => {
-    ha.setWatchedEntities(entityIds)
+  // Wire allowlist.onChange → ha.setWatchedEntities (union across ALL portals)
+  // → broadcast a fresh snapshot to just the portal that changed.
+  allowlist.onChange((portalId, _entityIds) => {
+    const allPortalIds = portals.list().map((p) => p.id)
+    const watchedAcrossAllPortals = new Set<string>()
+    for (const id of allPortalIds) {
+      for (const entityId of allowlist.entityIds(id)) {
+        watchedAcrossAllPortals.add(entityId)
+      }
+    }
+
+    ha.setWatchedEntities([...watchedAcrossAllPortals])
       .then(() => {
-        // After resubscribing, send a fresh snapshot to all clients
-        const allowlistRows = allowlist.list()
+        const allowlistRows = allowlist.list(portalId)
         const states = ha.getStates()
         const stale = ha.stale
-
         const devices = assembleDevices(allowlistRows, states, stale)
 
-        const snapshot: SseFrame = SseFrameSchema.parse({
-          type: 'snapshot',
-          devices,
-          stale,
-        })
-
-        hub.broadcast(snapshot)
+        const snapshot: SseFrame = SseFrameSchema.parse({ type: 'snapshot', devices, stale })
+        hub.broadcastToPortal(portalId, snapshot)
       })
       .catch((error) => {
         console.error('Failed to update watched entities:', error)
       })
   })
 
-  // Wire ha.onChange → hub.broadcast({type:'patch'})
+  // Wire ha.onChange → for each portal whose allowlist includes a changed
+  // entity, broadcast a patch scoped to that portal. One HA state change can
+  // fan out to more than one portal, since an entity may be shared.
   ha.onChange((changedStates) => {
-    const allowlistRows = allowlist.list()
     const stale = ha.stale
 
-    // Only include changed devices that are in the allowlist
-    const allowlistRowsFiltered = allowlistRows.filter((row) => changedStates.has(row.entityId))
-    const changedDevices = assembleDevices(allowlistRowsFiltered, changedStates, stale)
+    for (const portal of portals.list()) {
+      const allowlistRows = allowlist.list(portal.id)
+      const affectedRows = allowlistRows.filter((row) => changedStates.has(row.entityId))
+      if (affectedRows.length === 0) continue
 
-    if (changedDevices.length > 0) {
-      const patch: SseFrame = SseFrameSchema.parse({
-        type: 'patch',
-        devices: changedDevices,
-      })
-
-      hub.broadcast(patch)
+      const changedDevices = assembleDevices(affectedRows, changedStates, stale)
+      const patch: SseFrame = SseFrameSchema.parse({ type: 'patch', devices: changedDevices })
+      hub.broadcastToPortal(portal.id, patch)
     }
   })
 
-  // Wire ha.onStaleChange → hub.broadcast({type:'degraded'})
+  // Wire ha.onStaleChange → broadcast to everyone (HA reachability is a
+  // deployment-wide fact, not a per-portal one — `broadcast`, not
+  // `broadcastToPortal`, is correct here).
   ha.onStaleChange((stale) => {
-    const degraded: SseFrame = SseFrameSchema.parse({
-      type: 'degraded',
-      stale,
-    })
-
+    const degraded: SseFrame = SseFrameSchema.parse({ type: 'degraded', stale })
     hub.broadcast(degraded)
   })
 
-  // Wire settings.onPortalEnabledChange → broadcast + drop guest streams
-  settings.onPortalEnabledChange((enabled) => {
+  // Wire portals.onEnabledChange → broadcast to that portal + drop its guests.
+  portals.onEnabledChange((portalId, enabled) => {
     const frame: SseFrame = SseFrameSchema.parse({ type: 'portal', enabled })
-    hub.broadcast(frame)
+    hub.broadcastToPortal(portalId, frame)
 
     // Broadcast first, then drop: a guest that receives the frame switches to
     // the disabled screen immediately. Closing the stream is the fallback —
     // the client's existing stream-drop recheck hits /api/session and lands on
     // the same screen even if the frame was missed.
     if (!enabled) {
-      hub.closeRole('guest')
+      hub.closePortalGuests(portalId)
     }
   })
 
@@ -180,25 +183,36 @@ export function createRuntime(deps: Deps): Runtime {
 
       // Intercept /api/stream before Hono sees it
       if (pathname === '/api/stream' && req.method === 'GET') {
-        // Check session
-        const role = checkSession(req.headers.cookie, sessions)
-        if (!role) {
+        const session = checkSession(req.headers.cookie, sessions)
+        if (!session) {
           res.writeHead(401, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: 'Unauthorized' }))
           return
         }
 
-        if (settings.blocksGuest(role)) {
-          res.writeHead(403, { 'Content-Type': 'application/json' })
-          res.end(JSON.stringify({ error: 'portal_disabled' }))
+        const url = new URL(req.url ?? '/', 'http://localhost')
+        const portalId =
+          session.role === 'guest' ? session.portalId : url.searchParams.get('portalId')
+
+        if (portalId === null) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Missing portalId' }))
           return
         }
 
-        // Session valid - handle SSE
-        hub.add(res, role)
+        if (session.role === 'guest') {
+          const portal = portals.get(portalId)
+          if (portal === null || !portal.enabled) {
+            res.writeHead(403, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'portal_disabled' }))
+            return
+          }
+        }
+
+        hub.add(res, session.role, portalId)
 
         // Send initial snapshot immediately
-        const allowlistRows = allowlist.list()
+        const allowlistRows = allowlist.list(portalId)
         const states = ha.getStates()
         const stale = ha.stale
 
@@ -256,11 +270,20 @@ export function createRuntime(deps: Deps): Runtime {
 
       // Intercept /api/stream before Hono sees it
       if (pathname === '/api/stream' && req.method === 'GET') {
+        const url = new URL(req.url ?? '/', 'http://localhost')
+        const portalId = url.searchParams.get('portalId')
+
+        if (portalId === null) {
+          res.writeHead(400, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Missing portalId' }))
+          return
+        }
+
         // Supervisor-authenticated request - grant admin access without session
-        hub.add(res, 'admin')
+        hub.add(res, 'admin', portalId)
 
         // Send initial snapshot immediately
-        const allowlistRows = allowlist.list()
+        const allowlistRows = allowlist.list(portalId)
         const states = ha.getStates()
         const stale = ha.stale
 
