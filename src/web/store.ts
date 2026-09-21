@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import type { Device, SseFrame } from '@shared/api.js'
 import { SseFrameSchema } from '@shared/api.js'
+import { apiUrl } from './basePath.js'
 
 export type DeviceStoreSnapshot = {
   devices: Device[]
@@ -142,7 +143,7 @@ export function connectDeviceStore(): () => void {
       // In test environment without EventSource, just set disconnected
       setConnected(false)
     } else {
-      eventSource = new EventSource('/api/stream', { withCredentials: true })
+      eventSource = new EventSource(apiUrl('/api/stream'), { withCredentials: true })
 
       eventSource.addEventListener('message', (event) => {
         try {

@@ -17,6 +17,16 @@
 // cache, which is how an old shell is evicted.
 const CACHE = 'portal-shell-v1'
 
+// Under Supervisor ingress the whole app — including this worker's own scope
+// — lives under a per-session prefix (`/api/hassio_ingress/<token>/`), not at
+// the origin root. This file is static and cannot read the `data-*`
+// attributes the server injects into index.html, but the scope a worker was
+// registered with is always available on `self.registration`, so it is
+// derived from there instead. `registerServiceWorker.ts` is what makes the
+// scope equal to the ingress base in the first place.
+const SCOPE_PATH = new URL(self.registration.scope).pathname
+const SCOPE_DIR = SCOPE_PATH.endsWith('/') ? SCOPE_PATH : `${SCOPE_PATH}/`
+
 self.addEventListener('install', (event) => {
   // Take over as soon as possible rather than waiting for every tab to close.
   event.waitUntil(self.skipWaiting())
@@ -43,21 +53,26 @@ self.addEventListener('fetch', (event) => {
 
   // Never the API. Not cached, not intercepted — it fails as the network fails,
   // which is what the unreachable screen is waiting for.
-  if (url.pathname.startsWith('/api/')) return
+  if (url.pathname.startsWith(`${SCOPE_DIR}api/`)) return
 
   if (request.mode === 'navigate') {
     // Network-first: a reachable portal always wins, so an add-on update is
     // picked up on the next online load instead of being pinned by the cache.
+    //
+    // The cache key is the worker's own scope directory rather than the
+    // request URL, so a write here and the read in the `.catch` below always
+    // agree on the same key regardless of exactly which URL the navigation
+    // was for.
     event.respondWith(
       fetch(request)
         .then((response) => {
           if (response.ok) {
             const copy = response.clone()
-            void caches.open(CACHE).then((cache) => cache.put('/', copy))
+            void caches.open(CACHE).then((cache) => cache.put(SCOPE_DIR, copy))
           }
           return response
         })
-        .catch(() => caches.match('/').then((hit) => hit ?? Response.error())),
+        .catch(() => caches.match(SCOPE_DIR).then((hit) => hit ?? Response.error())),
     )
     return
   }

@@ -113,6 +113,11 @@ describe('Base href injection', () => {
     const html = await get('/', '/api/hassio_ingress/abc123')
 
     expect(html).toContain('<base href="/api/hassio_ingress/abc123/">')
+    // The client's own fetch/EventSource/service-worker calls are
+    // root-absolute paths that <base href> cannot help with (it only affects
+    // relative URLs), so the same value also has to reach the client as a
+    // data attribute for `apiUrl`/`readBasePath` (src/web/basePath.ts) to read.
+    expect(html).toContain('data-ingress-base="/api/hassio_ingress/abc123/"')
   })
 
   it('ignores the header on a request that is not from the Supervisor', async () => {
@@ -120,6 +125,7 @@ describe('Base href injection', () => {
 
     expect(html).toContain('<base href="/">')
     expect(html).not.toContain('abc123')
+    expect(html).toContain('data-ingress-base="/"')
   })
 
   it('escapes a base href that would otherwise break out of the attribute', async () => {
@@ -135,6 +141,9 @@ describe('Base href injection', () => {
     // replacement still escapes the tag while closing the attribute early. The
     // whole expected value is what proves the attribute survived intact.
     expect(html).toContain('<base href="/x&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;/">')
+    expect(html).toContain(
+      'data-ingress-base="/x&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;/"',
+    )
   })
 
   it('escapes an ampersand in the base href', async () => {

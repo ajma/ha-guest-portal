@@ -1,4 +1,5 @@
-import { describe, expect, it, beforeEach } from 'vitest'
+// @vitest-environment happy-dom
+import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import type { Device, SseFrame } from '@shared/api.js'
 
 // Store functions to be implemented
@@ -201,6 +202,40 @@ describe('Device store', () => {
 
       setConnected(false)
       expect(getSnapshot().connected).toBe(false)
+    })
+  })
+
+  describe('ingress base path', () => {
+    afterEach(() => {
+      delete document.documentElement.dataset.ingressBase
+    })
+
+    it('opens the stream under the ingress base rather than the origin root', async () => {
+      // Same bug as the fetch calls in api.ts: a hardcoded '/api/stream'
+      // resolves against the browser's real origin under Supervisor ingress,
+      // not the per-session prefix the page is actually served from.
+      document.documentElement.dataset.ingressBase = '/api/hassio_ingress/tok/'
+
+      const store = await import('../../src/web/store.js')
+
+      let openedUrl: string | undefined
+      const OriginalEventSource = globalThis.EventSource
+      globalThis.EventSource = class FakeEventSource {
+        constructor(url: string) {
+          openedUrl = url
+        }
+        addEventListener() {}
+        close() {}
+      } as unknown as typeof EventSource
+
+      try {
+        const teardown = store.connectDeviceStore()
+        expect(openedUrl).toBe('/api/hassio_ingress/tok/api/stream')
+        teardown()
+      } finally {
+        globalThis.EventSource = OriginalEventSource
+        resetStore()
+      }
     })
   })
 

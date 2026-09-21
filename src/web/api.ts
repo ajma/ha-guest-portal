@@ -1,4 +1,5 @@
 import type { z } from 'zod'
+import { apiUrl } from './basePath.js'
 import {
   AdminPortalResponse,
   type AllowlistRow,
@@ -61,7 +62,7 @@ async function handleResponse<T>(
 export async function login(
   password: string,
 ): Promise<ApiResult<{ role: Role; portalEnabled: boolean }>> {
-  const response = await fetch('/api/login', {
+  const response = await fetch(apiUrl('/api/login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password }),
@@ -72,14 +73,14 @@ export async function login(
 }
 
 export async function logout(): Promise<void> {
-  await fetch('/api/logout', {
+  await fetch(apiUrl('/api/logout'), {
     method: 'POST',
     credentials: 'same-origin',
   })
 }
 
 export async function getSession(): Promise<{ role: Role; portalEnabled: boolean } | null> {
-  const response = await fetch('/api/session', {
+  const response = await fetch(apiUrl('/api/session'), {
     credentials: 'same-origin',
   })
 
@@ -92,7 +93,7 @@ export async function getSession(): Promise<{ role: Role; portalEnabled: boolean
 }
 
 export async function getDevices(): Promise<ApiResult<z.infer<typeof DevicesResponse>>> {
-  const response = await fetch('/api/devices', {
+  const response = await fetch(apiUrl('/api/devices'), {
     credentials: 'same-origin',
   })
 
@@ -100,7 +101,7 @@ export async function getDevices(): Promise<ApiResult<z.infer<typeof DevicesResp
 }
 
 export async function performAction(entityId: string, action: string): Promise<ApiResult<void>> {
-  const response = await fetch(`/api/devices/${entityId}/${action}`, {
+  const response = await fetch(apiUrl(`/api/devices/${entityId}/${action}`), {
     method: 'POST',
     credentials: 'same-origin',
   })
@@ -121,7 +122,7 @@ export async function performAction(entityId: string, action: string): Promise<A
 }
 
 export async function getCatalog(): Promise<ApiResult<CatalogEntry[]>> {
-  const response = await fetch('/api/admin/entities', {
+  const response = await fetch(apiUrl('/api/admin/entities'), {
     credentials: 'same-origin',
   })
 
@@ -134,7 +135,7 @@ export async function getCatalog(): Promise<ApiResult<CatalogEntry[]>> {
 export async function getAllowlist(): Promise<
   ApiResult<{ devices: AllowlistRow[]; orphaned: string[] }>
 > {
-  const response = await fetch('/api/admin/allowlist', {
+  const response = await fetch(apiUrl('/api/admin/allowlist'), {
     credentials: 'same-origin',
   })
 
@@ -142,7 +143,7 @@ export async function getAllowlist(): Promise<
 }
 
 export async function putAllowlist(devices: AllowlistRow[]): Promise<ApiResult<void>> {
-  const response = await fetch('/api/admin/allowlist', {
+  const response = await fetch(apiUrl('/api/admin/allowlist'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ devices }),
@@ -173,7 +174,7 @@ export async function getAdminPortal(): Promise<
     title: string
   }>
 > {
-  const response = await fetch('/api/admin/portal', {
+  const response = await fetch(apiUrl('/api/admin/portal'), {
     credentials: 'same-origin',
   })
 
@@ -181,7 +182,7 @@ export async function getAdminPortal(): Promise<
 }
 
 export async function putAdminPortal(enabled: boolean): Promise<ApiResult<void>> {
-  const response = await fetch('/api/admin/portal', {
+  const response = await fetch(apiUrl('/api/admin/portal'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ enabled }),
@@ -203,7 +204,7 @@ export async function putAdminPortal(enabled: boolean): Promise<ApiResult<void>>
 }
 
 export async function putAdminTheme(theme: ThemeId): Promise<ApiResult<void>> {
-  const response = await fetch('/api/admin/theme', {
+  const response = await fetch(apiUrl('/api/admin/theme'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ theme }),
@@ -225,7 +226,7 @@ export async function putAdminTheme(theme: ThemeId): Promise<ApiResult<void>> {
 }
 
 export async function putAdminTitle(title: string): Promise<ApiResult<void>> {
-  const response = await fetch('/api/admin/title', {
+  const response = await fetch(apiUrl('/api/admin/title'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title }),

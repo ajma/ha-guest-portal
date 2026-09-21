@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { registerServiceWorker } from '../../src/web/registerServiceWorker.ts'
 
@@ -14,6 +15,7 @@ describe('registerServiceWorker', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
+    delete document.documentElement.dataset.ingressBase
   })
 
   it('registers when the browser supports it', () => {
@@ -22,7 +24,24 @@ describe('registerServiceWorker', () => {
 
     registerServiceWorker()
 
-    expect(register).toHaveBeenCalledWith('/sw.js')
+    expect(register).toHaveBeenCalledWith('/sw.js', { scope: '/' })
+  })
+
+  it('registers under the ingress base, with a matching scope, when one is set', () => {
+    // Without this, the worker's script URL and scope both resolve against
+    // the browser's real origin under Supervisor ingress instead of the
+    // per-session prefix the page is served from — the same class of bug as
+    // the hardcoded '/api/...' fetches in api.ts.
+    document.documentElement.dataset.ingressBase = '/api/hassio_ingress/tok/'
+
+    const register = vi.fn().mockResolvedValue({})
+    vi.stubGlobal('navigator', { serviceWorker: { register } })
+
+    registerServiceWorker()
+
+    expect(register).toHaveBeenCalledWith('/api/hassio_ingress/tok/sw.js', {
+      scope: '/api/hassio_ingress/tok/',
+    })
   })
 
   it('does nothing when the browser has no service worker support', () => {

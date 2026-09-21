@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 
 describe('API client', () => {
@@ -8,6 +9,7 @@ describe('API client', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+    delete document.documentElement.dataset.ingressBase
   })
 
   describe('error handling', () => {
@@ -85,6 +87,30 @@ describe('API client', () => {
       if (!result.ok) return
 
       expect(result.data.role).toBe('guest')
+    })
+
+    it('prefixes the request with the ingress base when the server wrote one', async () => {
+      // The bug this whole module change exists for: under Supervisor ingress
+      // the page lives at /api/hassio_ingress/<token>/, and a hardcoded
+      // '/api/session' resolves against the browser's real origin instead of
+      // that prefix, so it never reaches this add-on at all.
+      document.documentElement.dataset.ingressBase = '/api/hassio_ingress/tok/'
+
+      const { getSession } = await import('../../src/web/api.js')
+
+      vi.mocked(fetch).mockResolvedValueOnce(
+        new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+
+      await getSession()
+
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/hassio_ingress/tok/api/session',
+        expect.anything(),
+      )
     })
 
     it('handles getSession returning null for 401', async () => {

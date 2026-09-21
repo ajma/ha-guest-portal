@@ -63,11 +63,14 @@ function renderIndexHtml(deps: Deps, baseHref: string): string | null {
   // string replacement expands `$&`, `` $` `` and `$'`, and escaping does not
   // defuse them — `$&` escapes to `$&amp;`, which still starts `$&` — so a
   // title containing one would splice the matched tag into its own attribute.
+  const escapedBase = escapeHtml(normalizedBase)
+
   return html
-    .replace(/(<head[^>]*>)/i, (head) => `${head}\n    <base href="${escapeHtml(normalizedBase)}">`)
+    .replace(/(<head[^>]*>)/i, (head) => `${head}\n    <base href="${escapedBase}">`)
     .replace(
       /<html/i,
-      () => `<html data-theme="${deps.settings.getTheme()}" data-portal-title="${title}"`,
+      () =>
+        `<html data-theme="${deps.settings.getTheme()}" data-portal-title="${title}" data-ingress-base="${escapedBase}"`,
     )
     .replace(/<title>[^<]*<\/title>/i, () => `<title>${title}</title>`)
 }
