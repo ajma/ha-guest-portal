@@ -202,6 +202,39 @@ Replace `192.168.1.10` with your server's LAN IP address.
 
 Guests can now control only the devices you've explicitly allowed.
 
+## Theme Previews (development)
+
+The committed theme previews in `src/web/theme-previews/` double as the admin
+picker's thumbnails **and** as Playwright's visual-regression baselines, and CI
+compares them inside the Playwright container. Regenerate them with
+`pnpm previews:update:ci`, which runs in that same container.
+`pnpm previews:update` regenerates them with whatever fonts this machine has,
+which is useful for looking at a change and wrong for committing one.
+
+`previews:update:ci` is the authoritative command. It pulls
+`mcr.microsoft.com/playwright:v1.63.0-noble` (~2 GB the first time), which must
+stay in step with both `@playwright/test` in `package.json` and the `container:`
+image in `.github/workflows/ci.yml`; if those three ever disagree, CI compares
+baselines against a different browser build and the comparison means nothing.
+
+Its `docker run` flags are load-bearing, so do not trim them:
+
+- `--user "$(id -u):$(id -g)"` with `-e HOME=/tmp` — without these the container
+  runs as root and every file it writes into the bind mount (the PNGs, `dist/`,
+  anything pnpm touches) comes back root-owned and unremovable.
+- `corepack enable --install-directory /tmp/bin` — a plain `corepack enable`
+  writes its shims next to the `node` binary, which is `/usr/bin` in that image
+  and not writable by a non-root user.
+- `--ipc=host` — Playwright's own recommendation for running Chromium in
+  Docker; the default 64 MB `/dev/shm` can crash the browser mid-run.
+
+If the three `preview:` tests fail in CI but pass locally, the container is the
+authority: run `pnpm previews:update:ci` and commit the regenerated PNGs. Do
+**not** raise the tolerances in `test/e2e/theme-previews.spec.ts`. They are tight
+on purpose — what they guard is a low-saturation tint, and a looser threshold
+was measured to let a green-to-purple repaint of a lock tile's icon through
+undetected.
+
 ## Environment Variables
 
 | Variable | Required | Default | Description |
