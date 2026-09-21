@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AllowlistRow, CatalogEntry, Device } from '@shared/api.js'
+import { DOMAIN_ACTIONS, type SupportedDomain } from '@shared/devices.js'
 import { putAllowlist } from '../api.js'
+
+function defaultActionsFor(domain: string): readonly string[] {
+  return Object.hasOwn(DOMAIN_ACTIONS, domain)
+    ? DOMAIN_ACTIONS[domain as SupportedDomain]
+    : []
+}
 
 export type AllowlistEditor = {
   rows: AllowlistRow[]
@@ -135,7 +142,12 @@ export function useAllowlistEditor(devices: Device[]): AllowlistEditor {
       mutate((current) =>
         reindex([
           ...current,
-          { entityId: entity.entityId, label: entity.name, allowedActions: [], sortOrder: 0 },
+          {
+            entityId: entity.entityId,
+            label: entity.name,
+            allowedActions: [...defaultActionsFor(entity.domain)],
+            sortOrder: 0,
+          },
         ]),
       ),
     remove: (entityId) =>

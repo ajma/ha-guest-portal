@@ -114,8 +114,13 @@ describe('useAllowlistEditor', () => {
     expect(sent?.find((r) => r.entityId === 'lock.front')?.label).toBe('Front')
   })
 
-  it('adds a device with no allowed actions so it cannot be operated yet', async () => {
-    const entry = { entityId: 'switch.fan', name: 'Fan', supported: true } as CatalogEntry
+  it('adds a device with every action for its domain, so it is usable immediately', async () => {
+    const entry = {
+      entityId: 'switch.fan',
+      name: 'Fan',
+      domain: 'switch',
+      supported: true,
+    } as CatalogEntry
     const { result } = renderHook(() => useAllowlistEditor(two))
     act(() => {
       result.current.add(entry)
@@ -123,8 +128,27 @@ describe('useAllowlistEditor', () => {
     await waitFor(() => expect(api.putAllowlist).toHaveBeenCalled())
     const sent = vi.mocked(api.putAllowlist).mock.calls[0]?.[0]
     const added = sent?.find((r) => r.entityId === 'switch.fan')
-    expect(added?.allowedActions).toEqual([])
+    expect(added?.allowedActions).toEqual(['turn_on', 'turn_off', 'toggle'])
     expect(added?.sortOrder).toBe(2)
+  })
+
+  // The picker only offers supported domains, so this shouldn't occur in
+  // practice — but the lookup itself has to fail closed rather than throw.
+  it('adds a device with no allowed actions when its domain has none defined', async () => {
+    const entry = {
+      entityId: 'climate.thermostat',
+      name: 'Thermostat',
+      domain: 'climate',
+      supported: false,
+    } as CatalogEntry
+    const { result } = renderHook(() => useAllowlistEditor(two))
+    act(() => {
+      result.current.add(entry)
+    })
+    await waitFor(() => expect(api.putAllowlist).toHaveBeenCalled())
+    const sent = vi.mocked(api.putAllowlist).mock.calls[0]?.[0]
+    const added = sent?.find((r) => r.entityId === 'climate.thermostat')
+    expect(added?.allowedActions).toEqual([])
   })
 
   it('toggles an action off and on again', async () => {

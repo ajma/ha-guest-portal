@@ -84,29 +84,18 @@ async function addDevice(page: Page, query: string, entityId: string): Promise<v
 }
 
 /**
- * A device added from the picker starts with NO allowed actions — visible to a
- * guest but inert until the owner says what may be done with it. The deleted
- * admin page granted the domain's whole set on add, so the seeding flow gained
- * this step rather than losing one.
- *
- * Each checkbox saves on the spot, so each one is awaited — not because a
- * later write would otherwise be built on a list that predates the earlier
- * (the editor now carries its own edits forward until the stream confirms
- * them), but so that a failure is attributed to the checkbox that caused it.
+ * A device added from the picker starts with every action for its domain
+ * already allowed — usable by a guest immediately, not inert until the owner
+ * visits the tile editor. This asserts that default rather than switching it
+ * on, since there is nothing left to check.
  */
-async function allowActions(page: Page, label: string, actions: string[]): Promise<void> {
+async function expectActionsAllowed(page: Page, label: string, actions: string[]): Promise<void> {
   await page.getByRole('button', { name: `Edit ${label}` }).click()
 
   for (const action of actions) {
     // `exact`: a role name match is a substring by default, so 'lock' would
     // also find 'unlock'.
     const box = page.getByRole('checkbox', { name: action, exact: true })
-    const saved = page.waitForResponse(
-      (response) =>
-        response.url().endsWith('/api/admin/allowlist') && response.request().method() === 'PUT',
-    )
-    await box.check()
-    expect((await saved).status()).toBe(200)
     await expect(box).toBeChecked()
   }
 
@@ -138,13 +127,13 @@ test.describe('Portal E2E', () => {
     // Step 3: Add multiple devices to show variety of tile types, through the
     // ghost tile, then say what a guest may do with each
     await addDevice(page, 'porch', 'light.porch')
-    await allowActions(page, 'Porch Light', ['turn_on', 'turn_off', 'toggle'])
+    await expectActionsAllowed(page, 'Porch Light', ['turn_on', 'turn_off', 'toggle'])
 
     await addDevice(page, 'garage', 'cover.garage_door')
-    await allowActions(page, 'Garage Door', ['open_cover', 'close_cover', 'stop_cover'])
+    await expectActionsAllowed(page, 'Garage Door', ['open_cover', 'close_cover', 'stop_cover'])
 
     await addDevice(page, 'front door', 'lock.front_door')
-    await allowActions(page, 'Front Door Lock', ['lock', 'unlock'])
+    await expectActionsAllowed(page, 'Front Door Lock', ['lock', 'unlock'])
 
     // Screenshot: the owner's edit mode with the picker open over the themed grid
     await page.getByRole('button', { name: /add device/i }).click()
@@ -249,7 +238,7 @@ test.describe('Portal E2E', () => {
     if (!alreadyThere) {
       await enterEditMode(page)
       await addDevice(page, 'porch', 'light.porch')
-      await allowActions(page, 'Porch Light', ['turn_on', 'turn_off', 'toggle'])
+      await expectActionsAllowed(page, 'Porch Light', ['turn_on', 'turn_off', 'toggle'])
       await leaveEditMode(page)
     }
 
@@ -346,7 +335,7 @@ test.describe('Portal E2E', () => {
       // Add a device
       await page.getByPlaceholder(/search/i).fill('porch')
       await page.getByRole('option', { name: /light\.porch/ }).click()
-      await allowActions(page, 'Porch Light', ['turn_on', 'turn_off', 'toggle'])
+      await expectActionsAllowed(page, 'Porch Light', ['turn_on', 'turn_off', 'toggle'])
 
       // Step 4: Back to the ordinary portal
       await page.goto(baseUrl)
