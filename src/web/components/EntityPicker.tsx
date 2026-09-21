@@ -1,5 +1,6 @@
 import type { CatalogEntry } from '@shared/api.js'
 import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from 'react'
+import { MdiIcon } from './MdiIcon.js'
 
 interface EntityPickerProps {
   entities: CatalogEntry[]
@@ -204,7 +205,10 @@ export function EntityPicker({ entities, exclude, onSelect }: EntityPickerProps)
                 backgroundColor: index === activeIndex ? 'var(--surfaceActive)' : 'var(--surface)',
               }}
             >
-              <div style={{ fontWeight: 500 }}>{entity.name}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <MdiIcon icon={entity.icon} />
+                <div style={{ fontWeight: 500 }}>{entity.name}</div>
+              </div>
               <div style={optionArea}>{entity.area ?? 'No area'}</div>
               <div style={optionId}>{entity.entityId}</div>
             </div>

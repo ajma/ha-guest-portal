@@ -82,6 +82,7 @@ describe('CatalogResponse', () => {
           area: 'bedroom',
           domain: 'light',
           supported: true,
+          icon: 'mdi:lightbulb',
         },
         {
           entityId: 'climate.living',
@@ -89,6 +90,7 @@ describe('CatalogResponse', () => {
           area: null,
           domain: 'climate',
           supported: false,
+          icon: null,
         },
       ],
     }

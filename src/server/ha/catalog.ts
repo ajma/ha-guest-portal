@@ -11,6 +11,12 @@ function nonEmpty(s: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null
 }
 
+// Mirrors Home Assistant's Entity.icon precedence: a user's registry override
+// wins, otherwise fall back to the integration's original_icon.
+function resolveIcon(entity: z.infer<typeof RegistryEntity>): string | null {
+  return nonEmpty(entity.icon) ?? nonEmpty(entity.original_icon)
+}
+
 // Mirrors Home Assistant's Entity._friendly_name_internal precedence
 function resolveDisplayName(
   entity: z.infer<typeof RegistryEntity>,
@@ -84,6 +90,7 @@ export async function fetchCatalog(conn: HaConnection): Promise<CatalogEntry[]> 
       area: resolvedArea,
       domain,
       supported: isSupportedEntity(entity.entity_id),
+      icon: resolveIcon(entity),
     })
   }
 

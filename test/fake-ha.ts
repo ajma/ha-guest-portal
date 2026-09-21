@@ -41,6 +41,8 @@ export type FakeEntity = {
   attributes?: Record<string, unknown>
   disabledBy?: string | null
   hiddenBy?: string | null
+  icon?: string | null
+  originalIcon?: string | null
 }
 
 export type ServiceCall = {
@@ -85,6 +87,8 @@ export class FakeHomeAssistant {
       deviceId?: string | null
       disabledBy?: string | null
       hiddenBy?: string | null
+      icon?: string | null
+      originalIcon?: string | null
     }
   >()
   private connections = new Set<WebSocket>()
@@ -386,6 +390,8 @@ export class FakeHomeAssistant {
                 disabled_by: meta?.disabledBy ?? null,
                 hidden_by: meta?.hiddenBy ?? null,
                 entity_category: null,
+                icon: meta?.icon ?? null,
+                original_icon: meta?.originalIcon ?? null,
               }
             }),
           },
@@ -557,6 +563,8 @@ export class FakeHomeAssistant {
         deviceId?: string | null
         disabledBy?: string | null
         hiddenBy?: string | null
+        icon?: string | null
+        originalIcon?: string | null
       } = {}
       if (entity.name !== undefined) meta.name = entity.name
       if (entity.originalName !== undefined) meta.originalName = entity.originalName
@@ -565,6 +573,8 @@ export class FakeHomeAssistant {
       if (entity.deviceId !== undefined) meta.deviceId = entity.deviceId
       if (entity.disabledBy !== undefined) meta.disabledBy = entity.disabledBy
       if (entity.hiddenBy !== undefined) meta.hiddenBy = entity.hiddenBy
+      if (entity.icon !== undefined) meta.icon = entity.icon
+      if (entity.originalIcon !== undefined) meta.originalIcon = entity.originalIcon
       this.entityMeta.set(entity.entityId, meta)
     }
   }

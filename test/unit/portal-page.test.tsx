@@ -43,8 +43,22 @@ const PORCH = light('light.porch', 'Porch', 0)
 const KITCHEN = light('light.kitchen', 'Kitchen', 1)
 
 const CATALOG: CatalogEntry[] = [
-  { entityId: 'switch.heater', name: 'Heater', area: 'Hall', domain: 'switch', supported: true },
-  { entityId: 'light.porch', name: 'Porch', area: 'Outside', domain: 'light', supported: true },
+  {
+    entityId: 'switch.heater',
+    name: 'Heater',
+    area: 'Hall',
+    domain: 'switch',
+    supported: true,
+    icon: null,
+  },
+  {
+    entityId: 'light.porch',
+    name: 'Porch',
+    area: 'Outside',
+    domain: 'light',
+    supported: true,
+    icon: null,
+  },
 ]
 
 function seed(devices: Device[] = [PORCH, KITCHEN]): void {
@@ -443,7 +457,7 @@ describe('Portal page', () => {
   describe('The ghost tile', () => {
     // Kills: a ghost tile that never fetches, or one that renders lookalike
     // markup instead of the real picker.
-    it('adds the chosen device, with no actions allowed', async () => {
+    it('adds the chosen device, with every action for its domain allowed', async () => {
       const user = userEvent.setup()
       seed()
       renderPortal('admin')
@@ -454,8 +468,8 @@ describe('Portal page', () => {
       await user.type(search, 'Heater')
       await user.click(await screen.findByRole('option', { name: /heater/i }))
 
-      // A new device arrives inert: visible to guests, not operable, until the
-      // owner allows an action.
+      // A new device arrives usable immediately, not inert until the owner
+      // manually checks boxes in the tile editor.
       expect(api.putAllowlist).toHaveBeenCalledWith([
         {
           entityId: 'light.porch',
@@ -469,7 +483,12 @@ describe('Portal page', () => {
           allowedActions: ['turn_on', 'turn_off'],
           sortOrder: 1,
         },
-        { entityId: 'switch.heater', label: 'Heater', allowedActions: [], sortOrder: 2 },
+        {
+          entityId: 'switch.heater',
+          label: 'Heater',
+          allowedActions: ['turn_on', 'turn_off', 'toggle'],
+          sortOrder: 2,
+        },
       ])
     })
 

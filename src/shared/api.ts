@@ -48,6 +48,7 @@ const CatalogEntrySchema = z.object({
   area: z.string().nullable(),
   domain: z.string(),
   supported: z.boolean(),
+  icon: z.string().nullable(),
 })
 
 export const CatalogResponse = z.object({

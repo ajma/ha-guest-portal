@@ -12,6 +12,7 @@ describe('EntityPicker', () => {
       area: 'Front Yard',
       domain: 'light',
       supported: true,
+      icon: 'mdi:lightbulb-outline',
     },
     {
       entityId: 'light.living_room',
@@ -19,6 +20,7 @@ describe('EntityPicker', () => {
       area: 'Living Room',
       domain: 'light',
       supported: true,
+      icon: null,
     },
     {
       entityId: 'switch.kitchen',
@@ -26,6 +28,7 @@ describe('EntityPicker', () => {
       area: null,
       domain: 'switch',
       supported: true,
+      icon: null,
     },
     {
       entityId: 'climate.upstairs',
@@ -33,6 +36,7 @@ describe('EntityPicker', () => {
       area: 'Bedroom',
       domain: 'climate',
       supported: false,
+      icon: null,
     },
   ]
 
@@ -291,6 +295,40 @@ describe('EntityPicker', () => {
     expect(option.textContent).toMatch(/Kitchen Switch/)
     // Should show some placeholder for null area
     expect(option.textContent).toMatch(/no area/i)
+  })
+
+  it("renders the entity's icon before its name", async () => {
+    const user = userEvent.setup()
+
+    const onSelect = vi.fn()
+    render(<EntityPicker entities={entities} exclude={[]} onSelect={onSelect} />)
+
+    const input = screen.getByRole('combobox')
+    await user.type(input, 'porch')
+
+    const listbox = screen.getByRole('listbox')
+    const option = within(listbox).getByRole('option')
+
+    const svg = option.querySelector('svg')
+    expect(svg).not.toBeNull()
+    expect(svg?.compareDocumentPosition(screen.getByText('Porch Light'))).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    )
+  })
+
+  it('renders no icon markup for an entity with no icon', async () => {
+    const user = userEvent.setup()
+
+    const onSelect = vi.fn()
+    render(<EntityPicker entities={entities} exclude={[]} onSelect={onSelect} />)
+
+    const input = screen.getByRole('combobox')
+    await user.type(input, 'kitchen')
+
+    const listbox = screen.getByRole('listbox')
+    const option = within(listbox).getByRole('option')
+
+    expect(option.querySelector('svg')).toBeNull()
   })
 
   it('shows entity ID as secondary text', async () => {

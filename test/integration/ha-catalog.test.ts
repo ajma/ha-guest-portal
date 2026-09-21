@@ -369,6 +369,74 @@ describe('fetchCatalog', () => {
     expect(catalog).toEqual([])
   })
 
+  describe('icon resolution (mirrors HA Entity.icon precedence)', () => {
+    it('registry icon override wins over the integration default', async () => {
+      fake = await FakeHomeAssistant.start()
+      fake.seed(
+        [
+          {
+            entityId: 'light.override',
+            name: 'Override Light',
+            state: 'on',
+            icon: 'mdi:lightbulb-on',
+            originalIcon: 'mdi:lightbulb',
+          },
+        ],
+        [],
+        [],
+      )
+      const connection = await setupConnection()
+
+      const catalog = await fetchCatalog(connection)
+
+      expect(catalog).toHaveLength(1)
+      expect(catalog[0]?.icon).toBe('mdi:lightbulb-on')
+    })
+
+    it('falls back to original_icon when there is no registry override', async () => {
+      fake = await FakeHomeAssistant.start()
+      fake.seed(
+        [
+          {
+            entityId: 'light.default',
+            name: 'Default Light',
+            state: 'on',
+            originalIcon: 'mdi:lightbulb',
+          },
+        ],
+        [],
+        [],
+      )
+      const connection = await setupConnection()
+
+      const catalog = await fetchCatalog(connection)
+
+      expect(catalog).toHaveLength(1)
+      expect(catalog[0]?.icon).toBe('mdi:lightbulb')
+    })
+
+    it('is null when neither icon nor original_icon is set', async () => {
+      fake = await FakeHomeAssistant.start()
+      fake.seed(
+        [
+          {
+            entityId: 'light.no_icon',
+            name: 'No Icon Light',
+            state: 'on',
+          },
+        ],
+        [],
+        [],
+      )
+      const connection = await setupConnection()
+
+      const catalog = await fetchCatalog(connection)
+
+      expect(catalog).toHaveLength(1)
+      expect(catalog[0]?.icon).toBeNull()
+    })
+  })
+
   describe('display name resolution (mirrors HA Entity._friendly_name_internal)', () => {
     it('registry override (entity.name) always wins', async () => {
       fake = await FakeHomeAssistant.start()

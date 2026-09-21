@@ -93,6 +93,8 @@ export const RegistryEntity = z
     disabled_by: z.string().nullable(),
     hidden_by: z.string().nullable(),
     entity_category: z.string().nullable(),
+    icon: z.string().nullable().optional(),
+    original_icon: z.string().nullable().optional(),
   })
   .loose()
 
