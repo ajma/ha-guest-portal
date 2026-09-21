@@ -290,6 +290,37 @@ describe('Portal page', () => {
       expect((backdrop as HTMLElement | null)?.style.position).toBe('fixed')
     })
 
+    // Kills: `height: 100%` on the picker's inner box. With the result list set
+    // to `flex: 1 1 auto` that does not merely allow a tall dialog, it forces
+    // one — a search matching a single entity rendered as ~700px of empty
+    // white. The dialog must be free to size to its content and merely *able*
+    // to grow, which is the difference between max-height and height.
+    it('sizes the picker to its content rather than the viewport', async () => {
+      const user = userEvent.setup()
+      seed()
+      renderPortal('admin')
+      await enterEditMode(user)
+      await user.click(screen.getByRole('button', { name: /add device/i }))
+      const search = await screen.findByRole('combobox')
+
+      const inner = screen.getByTestId('picker-overlay').firstElementChild as HTMLElement
+      expect(inner.style.height).toBe('')
+      expect(inner.style.maxHeight).toBe('100%')
+
+      // And a floor, so narrowing to a single match does not collapse the list
+      // to one row that jumps taller again on the next keystroke. One match is
+      // the case that exposed the original bug.
+      await user.type(search, 'Heater')
+      await screen.findByRole('option', { name: /heater/i })
+
+      // Asserted as a real pixel floor rather than "not empty": React writes
+      // `minHeight: 0` out as the string '0', so a not-''/not-'0px' check
+      // passes against exactly the mutation it is supposed to catch.
+      const floor = screen.getByRole('listbox').style.minHeight
+      expect(floor).not.toMatch(/^0(px)?$/)
+      expect(floor).toMatch(/\b[1-9]\d*px\b/)
+    })
+
     // Kills: settings sharing the tile editor's 520px box. The theme picker
     // lays three previews side by side, so at that width each thumbnail is
     // about 155px across — too small to tell the themes apart, which is the

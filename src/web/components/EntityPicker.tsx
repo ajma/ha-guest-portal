@@ -37,7 +37,11 @@ const listbox: CSSProperties = {
   // height. The ghost tile only opens this; once open it is the whole task, so
   // a short scroll window over a long list is wasted screen.
   flex: '1 1 auto',
-  minHeight: 0,
+  // A floor rather than the usual `minHeight: 0`, so a search narrowed to one
+  // match does not collapse to a single row and then jump taller on the next
+  // keystroke. Capped against the viewport as well as in pixels: on a short
+  // window a flat 320px floor would push the dialog past its own max-height.
+  minHeight: 'min(320px, 40vh)',
   maxHeight: 'min(60vh, 520px)',
   overflow: 'auto',
 }

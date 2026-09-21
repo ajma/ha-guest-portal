@@ -154,10 +154,15 @@ const settingsInner: CSSProperties = {
 // The picker gets more room again. Settings and the tile editor are forms;
 // this is a search over every entity in the house, and the ghost tile exists
 // only to open it.
+//
+// Height is deliberately *not* set here, only inherited as `maxHeight: 100%`.
+// The result list is `flex: 1 1 auto`, so a fixed height does not permit a
+// tall dialog, it compels one: a search matching a single entity used to
+// render as a near-fullscreen panel of empty white. The list carries its own
+// floor instead, so the dialog grows with the results and stops there.
 const pickerInner: CSSProperties = {
   ...overlayInner,
   maxWidth: '720px',
-  height: '100%',
   display: 'flex',
   flexDirection: 'column',
   overflowY: 'visible',
