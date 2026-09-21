@@ -1,0 +1,100 @@
+name: CI
+
+# Push only, deliberately. With `pull_request:` as well, a PR from a branch in
+# this repository triggers two runs: the concurrency group keys on github.ref,
+# which differs between refs/heads/x and refs/pull/N/merge, so they do not
+# cancel each other. Push alone covers every branch, including ones worked on
+# without ever opening a PR, which is how this repository is actually used.
+#
+# The gap is a pull request from a FORK, which no push event here covers. There
+# are none today. If outside contributions ever arrive, add `pull_request:`
+# back and scope `push:` to the long-lived branches at the same time.
+on:
+  push:
+
+# Superseded runs are wasted minutes and a confusing queue.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Nothing here writes anything. Checkout needs read; artifact upload uses the
+# runner's own token, not this one.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+
+    # The whole job runs in the Playwright image, matched to the installed
+    # @playwright/test (1.63.0 — verified against
+    # node_modules/@playwright/test/package.json, not copied from a document).
+    # Browsers and their system libraries are already there, and — the reason
+    # that matters here — so are a fixed set of fonts. Three e2e tests are pixel
+    # comparisons of the theme previews, tight enough to catch a tile's state
+    # colour changing, which is a low-saturation tint. A baseline generated on
+    # one font stack and compared against another is a coin toss.
+    #
+    # Chromium runs as root in here, which is fine: Playwright passes
+    # --no-sandbox unless launchOptions sets chromiumSandbox: true, and
+    # playwright.config.ts does not.
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # The image's bundled Node tracks a NODE_VERSION build arg, currently 24
+      # but not pinned to a patch and not a promise. The e2e harness spawns the
+      # built server, which imports node:sqlite, and package.json requires >=24.
+      # Pin it rather than inherit it.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
+      # corepack reads packageManager from package.json and activates pnpm
+      # 11.26.0 — the same pnpm this repo is developed with. (The Dockerfile
+      # deliberately stays on pnpm 9 and sets COREPACK_ENABLE_PROJECT_SPEC=0 to
+      # keep this field from overriding it; that is the image's business, not
+      # CI's.) No `cache: pnpm` on setup-node above: pnpm does not exist on PATH
+      # until this step has run.
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        # Zero warnings, not just zero errors. The repo has held that line and
+        # a warning here is how it stops being held.
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm vitest run
+
+      - name: Build
+        run: pnpm build
+
+      - name: End-to-end tests
+        run: pnpm test:e2e
+
+      # A screenshot comparison that fails in CI is unreadable without the diff
+      # image, and without it the temptation is to loosen the tolerance rather
+      # than look. Playwright writes <name>-actual/-expected/-diff.png into
+      # test-results/ — verified by mutating a baseline locally and watching
+      # where the files landed. playwright-report/ is listed for the day someone
+      # adds the html reporter; with today's `reporter: 'list'` it is never
+      # created, which is why if-no-files-found stays at its default warning
+      # rather than erroring.
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
