@@ -144,7 +144,7 @@ describe('the guest route', () => {
     store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
     store.setConnected(true)
 
-    render(<Portal role={GUEST} onLogout={async () => {}} />)
+    render(<Portal role={GUEST} portalId="p1" onLogout={async () => {}} />)
 
     // `classic` is what resolves with no data-theme attribute, and its tiles
     // render an MDI glyph where the default set renders no icon at all. A page

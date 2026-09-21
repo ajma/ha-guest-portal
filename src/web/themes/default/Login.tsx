@@ -27,7 +27,7 @@ export function Login({ onSuccess }: LoginProps): ReactElement {
         return
       }
 
-      onSuccess(result.data.role)
+      onSuccess(result.data)
     } finally {
       setSubmitting(false)
     }

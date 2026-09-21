@@ -66,8 +66,8 @@ function seed(devices: Device[] = [PORCH, KITCHEN]): void {
   store.setConnected(true)
 }
 
-function renderPortal(role: 'admin' | 'guest'): void {
-  render(<Portal role={role} onLogout={async () => {}} />)
+function renderPortal(role: 'admin' | 'guest', portalId = 'portal-1'): void {
+  render(<Portal role={role} portalId={portalId} onLogout={async () => {}} />)
 }
 
 /** The header's Edit button, by its accessible name — 'Done' once edit is on. */
@@ -80,6 +80,12 @@ async function enterEditMode(user: ReturnType<typeof userEvent.setup>): Promise<
   await screen.findByRole('button', { name: 'Done' })
 }
 
+// Constants rather than `role="admin"` / `role="guest"`: Biome's
+// useValidAriaRole reads a literal `role` attribute on any JSX element as an
+// ARIA role, component or not.
+const ADMIN = 'admin'
+const GUEST = 'guest'
+
 describe('Portal page', () => {
   beforeEach(() => {
     store.resetStore()
@@ -90,32 +96,22 @@ describe('Portal page', () => {
     // supplies the snapshot that stream would have delivered.
     vi.spyOn(store, 'connectDeviceStore').mockReturnValue(() => {})
     vi.mocked(api.performAction).mockResolvedValue({ ok: true, data: undefined })
-    vi.mocked(api.putAllowlist).mockResolvedValue({ ok: true, data: undefined })
+    vi.mocked(api.putPortalAllowlist).mockResolvedValue({ ok: true, data: undefined })
     vi.mocked(api.getCatalog).mockResolvedValue({ ok: true, data: CATALOG })
-    vi.mocked(api.getAllowlist).mockResolvedValue({
+    vi.mocked(api.getPortalAllowlist).mockResolvedValue({
       ok: true,
       data: { devices: [], orphaned: [] },
     })
-    vi.mocked(api.getAdminPortal).mockResolvedValue({
+    vi.mocked(api.getDeploymentSettings).mockResolvedValue({
       ok: true,
-      data: {
-        enabled: true,
-        integrationToken: 'a'.repeat(64),
-        portalId: '11111111-1111-1111-1111-111111111111',
-        theme: 'classic',
-        title: 'Guest Portal',
-      },
+      data: { integrationToken: 'a'.repeat(64), deploymentId: 'deployment-1' },
     })
-    vi.mocked(api.putAdminTheme).mockResolvedValue({ ok: true, data: undefined })
-    vi.mocked(api.putAdminPortal).mockResolvedValue({ ok: true, data: undefined })
-    vi.mocked(api.putAdminTitle).mockResolvedValue({ ok: true, data: undefined })
   })
 
   afterEach(() => {
     cleanup()
     store.resetStore()
     vi.restoreAllMocks()
-    document.documentElement.removeAttribute('data-portal-title')
   })
 
   describe('Who sees the owner controls', () => {
@@ -157,47 +153,43 @@ describe('Portal page', () => {
       renderPortal('guest')
 
       await waitFor(() => expect(screen.getByRole('button', { name: /log out/i })).toBeTruthy())
-      expect(api.getAllowlist).not.toHaveBeenCalled()
+      expect(api.getPortalAllowlist).not.toHaveBeenCalled()
       expect(api.getCatalog).not.toHaveBeenCalled()
     })
   })
 
-  describe('The header title', () => {
-    // Kills: a Shell title hardcoded in the page rather than read from the
-    // injected attribute.
-    it('shows the injected portal title', () => {
-      document.documentElement.dataset.portalTitle = 'Beach House'
+  describe('Portal identity in the header', () => {
+    // Kills: an admin dropdown rendered without a `portals` list, or one that
+    // does not reflect which portal is currently selected.
+    it('shows the portal dropdown for an admin with multiple portals', () => {
       seed()
-      renderPortal('guest')
+      render(
+        <Portal
+          role={ADMIN}
+          portalId="p1"
+          onLogout={async () => {}}
+          portals={[
+            { id: 'p1', title: 'Timothy', theme: 'classic', enabled: true },
+            { id: 'p2', title: 'Mary', theme: 'tiles', enabled: true },
+          ]}
+          onSelectPortal={vi.fn()}
+          onAddPortal={vi.fn()}
+        />,
+      )
 
-      expect(screen.getByRole('heading', { name: 'Beach House' })).toBeTruthy()
+      const dropdown = screen.getByRole('combobox', { name: /portal/i }) as HTMLSelectElement
+      expect(dropdown.value).toBe('p1')
     })
 
-    // Kills: a Shell title read from the injected attribute during render, as
-    // this page did. The attribute is written once by the server, so the owner
-    // renamed the portal in the panel and their own header kept the old name
-    // until they reloaded — the exact indirection this restructure removes.
-    // Guests still need a reload, by design; the owner editing the page does
-    // not.
-    it('moves the header when the owner saves a new name, with no reload', async () => {
-      const user = userEvent.setup()
-      document.documentElement.dataset.portalTitle = 'Guest Portal'
+    // Kills: a guest handed the admin dropdown, or one whose title falls back
+    // to the wrong value. A guest has no `portals` list to look their own
+    // title up in — it has to come straight through as `guestPortalTitle`.
+    it('a guest sees their portal title as plain text, no dropdown', () => {
       seed()
-      renderPortal('admin')
+      render(<Portal role={GUEST} portalId="p1" guestPortalTitle="Timothy" onLogout={async () => {}} />)
 
-      // Level 1 specifically: the settings panel itself contains an h2 reading
-      // 'Guest Portal' (the kill switch's section heading), so an unqualified
-      // heading query cannot tell the page header from it.
-      expect(screen.getByRole('heading', { level: 1, name: 'Guest Portal' })).toBeTruthy()
-
-      await user.click(screen.getByRole('button', { name: 'Settings' }))
-      const field = await screen.findByLabelText(/portal name/i)
-      await user.clear(field)
-      await user.type(field, 'Beach House')
-      await user.tab()
-
-      expect(await screen.findByRole('heading', { level: 1, name: 'Beach House' })).toBeTruthy()
-      expect(screen.queryByRole('heading', { level: 1, name: 'Guest Portal' })).toBeNull()
+      expect(screen.getByRole('heading').textContent).toBe('Timothy')
+      expect(screen.queryByRole('combobox', { name: /portal/i })).toBeNull()
     })
   })
 
@@ -352,7 +344,7 @@ describe('Portal page', () => {
 
       await user.click(screen.getByRole('button', { name: 'Settings' }))
       const settingsWidth = await overlayMaxWidth('settings-overlay')
-      await user.click(screen.getByRole('button', { name: 'Settings' }))
+      await user.click(await screen.findByRole('button', { name: /close/i }))
 
       await enterEditMode(user)
       await user.click(screen.getByRole('button', { name: 'Porch' }))
@@ -420,24 +412,17 @@ describe('Portal page', () => {
     })
   })
 
-  describe('Overlay exclusivity', () => {
-    // Kills: two booleans kept in step by hand, which lets both overlays stack.
-    it('closes edit mode when Settings opens, and the reverse', async () => {
+  describe('The deployment settings overlay', () => {
+    // Kills: a gear button that never mounts the panel, or mounts something
+    // else. The panel owns its own testid, so this pins the wiring rather than
+    // the panel's own contents (covered by its own test file).
+    it('the gear icon opens the deployment settings panel', async () => {
       const user = userEvent.setup()
       seed()
       renderPortal('admin')
 
-      await enterEditMode(user)
-      expect(screen.getByRole('button', { name: /add device/i })).toBeTruthy()
-
-      await user.click(screen.getByRole('button', { name: 'Settings' }))
-      expect(await screen.findByRole('heading', { name: 'Settings' })).toBeTruthy()
-      expect(screen.queryByRole('button', { name: /add device/i })).toBeNull()
-      expect(screen.queryByRole('status')).toBeNull()
-
-      await enterEditMode(user)
-      expect(screen.getByRole('button', { name: /add device/i })).toBeTruthy()
-      expect(screen.queryByRole('heading', { name: 'Settings' })).toBeNull()
+      await user.click(screen.getByRole('button', { name: /^settings$/i }))
+      expect(await screen.findByTestId('deployment-settings-panel')).toBeTruthy()
     })
 
     // Kills: a Settings button that only ever opens the panel, leaving the
@@ -451,6 +436,25 @@ describe('Portal page', () => {
       await user.click(await screen.findByRole('button', { name: /close/i }))
 
       expect(screen.queryByRole('heading', { name: 'Settings' })).toBeNull()
+    })
+  })
+
+  describe('The per-portal settings accordion', () => {
+    // Kills: the accordion still gated behind a mode, rather than always
+    // present alongside the grid.
+    it('is always present for an admin, not a mode', () => {
+      seed()
+      renderPortal('admin')
+
+      expect(screen.getByRole('button', { name: /portal settings/i })).toBeTruthy()
+    })
+
+    // Kills: a guest handed the owner's per-portal settings.
+    it('a guest sees no per-portal settings accordion', () => {
+      seed()
+      renderPortal('guest')
+
+      expect(screen.queryByRole('button', { name: /portal settings/i })).toBeNull()
     })
   })
 
@@ -470,7 +474,7 @@ describe('Portal page', () => {
 
       // A new device arrives usable immediately, not inert until the owner
       // manually checks boxes in the tile editor.
-      expect(api.putAllowlist).toHaveBeenCalledWith([
+      expect(api.putPortalAllowlist).toHaveBeenCalledWith('portal-1', [
         {
           entityId: 'light.porch',
           label: 'Porch',
@@ -528,7 +532,7 @@ describe('Portal page', () => {
 
   describe('Orphaned devices', () => {
     beforeEach(() => {
-      vi.mocked(api.getAllowlist).mockResolvedValue({
+      vi.mocked(api.getPortalAllowlist).mockResolvedValue({
         ok: true,
         data: { devices: [], orphaned: ['light.porch'] },
       })
@@ -587,11 +591,11 @@ describe('Portal page', () => {
       expect(screen.getByRole('button', { name: /remove/i })).toBeTruthy()
     })
 
-    // Kills: a bare `void getAllowlist()`. A network-level rejection there is
-    // unhandled, and the owner is told nothing.
+    // Kills: a bare `void getPortalAllowlist()`. A network-level rejection
+    // there is unhandled, and the owner is told nothing.
     it('says so when the orphan check fails', async () => {
       const user = userEvent.setup()
-      vi.mocked(api.getAllowlist).mockRejectedValue(new Error('offline'))
+      vi.mocked(api.getPortalAllowlist).mockRejectedValue(new Error('offline'))
       seed()
       renderPortal('admin')
       await enterEditMode(user)
@@ -603,7 +607,7 @@ describe('Portal page', () => {
     // existed to avoid.
     it('retries the orphan check', async () => {
       const user = userEvent.setup()
-      vi.mocked(api.getAllowlist).mockRejectedValueOnce(new Error('offline'))
+      vi.mocked(api.getPortalAllowlist).mockRejectedValueOnce(new Error('offline'))
       seed()
       renderPortal('admin')
       await enterEditMode(user)
@@ -612,7 +616,7 @@ describe('Portal page', () => {
       await user.click(screen.getByRole('button', { name: /retry/i }))
 
       expect(await screen.findByText(/orphaned/i)).toBeTruthy()
-      expect(api.getAllowlist).toHaveBeenCalledTimes(2)
+      expect(api.getPortalAllowlist).toHaveBeenCalledTimes(2)
     })
   })
 

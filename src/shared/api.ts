@@ -175,7 +175,10 @@ const PortalFieldsSchema = z.object({
 })
 
 export const PortalSummaryResponse = PortalFieldsSchema
-export const PortalsListResponse = z.object({ portals: z.array(PortalFieldsSchema) })
+export const PortalsListResponse = z.object({
+  portals: z.array(PortalFieldsSchema),
+  lastSelectedPortalId: z.string().nullable(),
+})
 
 export const PortalDetailResponse = PortalFieldsSchema.extend({
   password: z.string(),

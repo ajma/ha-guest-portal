@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AllowlistRow, CatalogEntry, Device } from '@shared/api.js'
 import { DOMAIN_ACTIONS, type SupportedDomain } from '@shared/devices.js'
-import { putAllowlist } from '../api.js'
+import { putPortalAllowlist } from '../api.js'
 
 function defaultActionsFor(domain: string): readonly string[] {
   return Object.hasOwn(DOMAIN_ACTIONS, domain)
@@ -75,7 +75,7 @@ function allowlistKey(rows: AllowlistRow[]): string {
  * Mutations are keyed by entity id, never by index — another session's edit can
  * reorder the list underneath, and an index would then hit the wrong device.
  */
-export function useAllowlistEditor(devices: Device[]): AllowlistEditor {
+export function useAllowlistEditor(devices: Device[], portalId: string): AllowlistEditor {
   const [optimistic, setOptimistic] = useState<AllowlistRow[] | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -100,10 +100,10 @@ export function useAllowlistEditor(devices: Device[]): AllowlistEditor {
 
       let saved = false
       try {
-        const result = await putAllowlist(next)
+        const result = await putPortalAllowlist(portalId, next)
         saved = result.ok
       } catch {
-        // `putAllowlist` reports HTTP failures as `{ ok: false }`, but nothing
+        // `putPortalAllowlist` reports HTTP failures as `{ ok: false }`, but nothing
         // in the api client guards `fetch` itself — offline, aborted and DNS
         // failures reject. Callers reach this through `void commit(...)`, so
         // without this the owner would see the edit silently revert with no
@@ -119,7 +119,7 @@ export function useAllowlistEditor(devices: Device[]): AllowlistEditor {
       }
       setPending(false)
     },
-    [],
+    [portalId],
   )
 
   const mutate = useCallback(

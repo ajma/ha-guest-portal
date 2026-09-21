@@ -3493,9 +3493,9 @@ it('createPortal posts title and password', async () => {
   const result = await createPortal({ title: 'Timothy', password: 'a-secret' })
 
   expect(result.ok).toBe(true)
-  const [, init] = mockFetch.mock.calls[0]
-  expect(init.method).toBe('POST')
-  expect(JSON.parse(init.body)).toEqual({ title: 'Timothy', password: 'a-secret' })
+  const init = mockFetch.mock.calls[0]?.[1]
+  expect(init?.method).toBe('POST')
+  expect(JSON.parse(init?.body as string)).toEqual({ title: 'Timothy', password: 'a-secret' })
 })
 
 it('getDevices appends portalId when given one', async () => {
@@ -3506,7 +3506,7 @@ it('getDevices appends portalId when given one', async () => {
 
   await getDevices('portal-123')
 
-  expect(mockFetch.mock.calls[0][0]).toBe('/api/devices?portalId=portal-123')
+  expect(mockFetch.mock.calls[0]?.[0]).toBe('/api/devices?portalId=portal-123')
 })
 
 it('getDevices omits portalId when not given one', async () => {
@@ -3517,7 +3517,7 @@ it('getDevices omits portalId when not given one', async () => {
 
   await getDevices()
 
-  expect(mockFetch.mock.calls[0][0]).toBe('/api/devices')
+  expect(mockFetch.mock.calls[0]?.[0]).toBe('/api/devices')
 })
 ```
 
@@ -3962,7 +3962,7 @@ describe('CreatePortalScreen', () => {
 
   it('creates a portal with the entered title and password', async () => {
     const user = userEvent.setup()
-    const created = { id: 'p1', title: 'Timothy', theme: 'classic', enabled: true, password: 'a-secret' }
+    const created = { id: 'p1', title: 'Timothy', theme: 'classic' as const, enabled: true, password: 'a-secret' }
     vi.mocked(api.createPortal).mockResolvedValue({ ok: true, data: created })
     const onCreated = vi.fn()
 
@@ -4208,8 +4208,8 @@ import userEvent from '@testing-library/user-event'
 import { PortalDropdown } from '../../src/web/components/PortalDropdown.js'
 
 const PORTALS = [
-  { id: 'p1', title: 'Timothy', theme: 'classic', enabled: true },
-  { id: 'p2', title: 'Mary', theme: 'tiles', enabled: true },
+  { id: 'p1', title: 'Timothy', theme: 'classic' as const, enabled: true },
+  { id: 'p2', title: 'Mary', theme: 'tiles' as const, enabled: true },
 ]
 
 describe('PortalDropdown', () => {
@@ -4346,7 +4346,7 @@ import { PortalSettingsAccordion } from '../../src/web/components/PortalSettings
 
 vi.mock('../../src/web/api.js')
 
-const PORTAL = { id: 'p1', title: 'Timothy', theme: 'classic', enabled: true, password: 'orig-pass' }
+const PORTAL = { id: 'p1', title: 'Timothy', theme: 'classic' as const, enabled: true, password: 'orig-pass' }
 
 describe('PortalSettingsAccordion', () => {
   beforeEach(() => {
@@ -4441,6 +4441,7 @@ import { useEffect, useState } from 'react'
 import type { z } from 'zod'
 import type { PortalDetailResponse } from '@shared/api.js'
 import { isThemeId, type ThemeId } from '@shared/themes.js'
+import { MAX_PORTAL_TITLE_LENGTH } from '@shared/portalTitle.js'
 import { deletePortal, getPortal, updatePortal } from '../api.js'
 import { listThemes } from '../themes/registry.js'
 
@@ -4616,6 +4617,7 @@ export function PortalSettingsAccordion({
                 <input
                   id="portal-settings-title"
                   type="text"
+                  maxLength={MAX_PORTAL_TITLE_LENGTH}
                   style={textInput}
                   value={titleDraft ?? portal.title}
                   onChange={(e) => setTitleDraft(e.target.value)}
@@ -5130,6 +5132,7 @@ export function Portal({
   role,
   portalId,
   onLogout,
+  guestPortalTitle,
   portals,
   onSelectPortal,
   onAddPortal,
@@ -5446,7 +5449,8 @@ git commit -m "feat: wire the portal dropdown, accordion, add-portal overlay, an
 
 **Files:**
 - Modify: `src/web/App.tsx` (full current contents 146 lines)
-- Modify: `src/web/themes/default/Login.tsx` (and the other three themes' `Login.tsx`) — **read each in full before editing**; not dumped during research. Their `onSuccess` callback's parameter type must change from whatever it is today to `z.infer<typeof SessionResponse>` (the full discriminated union `login()` now resolves to, per Task 16), since `App.tsx` needs the whole session, not just a role, to seed portal state on login.
+- Modify: `src/web/themes/types.ts` — `LoginProps.onSuccess` widens from `(role: Role) => void` to `(session: z.infer<typeof SessionResponse>) => void` (see Step 3b — all four `Login.tsx` files import this shared type rather than declaring their own, the same pattern `ShellProps` used in Task 23)
+- Modify: `src/web/themes/default/Login.tsx` (and the other three themes' `Login.tsx`) — **read each in full before editing**; not dumped during research. Each one's call site that currently passes `result.data.role` to `onSuccess` must change to pass `result.data` — the whole session object — instead, since `App.tsx` needs the whole session, not just a role, to seed portal state on login.
 - Test: `test/unit/app.test.tsx` if it exists (grep for it — App-level behavior may currently be covered inside `test/unit/portal-page.test.tsx`'s broader fixtures instead; read whichever file actually exercises `<App />` directly)
 
 **Interfaces:**
@@ -5536,8 +5540,57 @@ describe('App', () => {
     // src/web/themes/default/Disabled.tsx and the existing App-level disabled
     // test coverage (however it asserts this today) before writing this line
   })
+
+  it('updates the dropdown immediately when the owner renames the selected portal, with no reload', async () => {
+    // Task 24's review found this exact behavior — the header/dropdown
+    // reflecting a rename live — had a test removed (it pinned Portal.tsx's
+    // own now-deleted title-state mechanism) with no replacement anywhere.
+    // This is that replacement, exercised at the level the behavior now
+    // actually lives: App.tsx's handlePortalUpdated threading a fresh
+    // `portals` array down through PortalDropdown, not inside Portal.tsx.
+    vi.mocked(api.getSession).mockResolvedValue({ role: 'admin' })
+    vi.mocked(api.getPortals).mockResolvedValue({
+      ok: true,
+      data: {
+        portals: [
+          { id: 'p1', title: 'Timothy', theme: 'classic', enabled: true },
+          { id: 'p2', title: 'Mary', theme: 'tiles', enabled: true },
+        ],
+        lastSelectedPortalId: 'p1',
+      },
+    })
+    vi.mocked(api.getCatalog).mockResolvedValue({ ok: true, data: [] })
+    vi.mocked(api.getPortalAllowlist).mockResolvedValue({ ok: true, data: { devices: [], orphaned: [] } })
+    vi.mocked(api.getPortal).mockResolvedValue({
+      ok: true,
+      data: { id: 'p1', title: 'Timothy', theme: 'classic', enabled: true, password: 'orig-pass' },
+    })
+    vi.mocked(api.updatePortal).mockResolvedValue({
+      ok: true,
+      data: { id: 'p1', title: 'Tim', theme: 'classic', enabled: true, password: 'orig-pass' },
+    })
+
+    const user = userEvent.setup()
+    render(<App />)
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /portal/i })).toHaveValue('p1'))
+
+    await user.click(screen.getByRole('button', { name: /portal settings/i }))
+    const titleField = await screen.findByLabelText(/portal name/i)
+    await user.clear(titleField)
+    await user.type(titleField, 'Tim')
+    await user.tab()
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Tim' })).toBeInTheDocument())
+    // The stale option must be gone, not just the new one present — a naive
+    // append-without-replace bug in handlePortalUpdated's .map() would leave
+    // both.
+    expect(screen.queryByRole('option', { name: 'Timothy' })).not.toBeInTheDocument()
+  })
 })
 ```
+
+(This new test needs `userEvent` imported — add `import userEvent from '@testing-library/user-event'` to this file's imports alongside the others, matching the pattern already used in `test/unit/portal-settings-accordion.test.tsx`.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -5551,6 +5604,7 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 import type { z } from 'zod'
 import type { PortalDetailResponse, SessionResponse } from '@shared/api.js'
 import { getPortals, getSession, logout, putLastSelectedPortal, setUnauthorizedCallback } from './api.js'
+import { CreatePortalScreen } from './components/CreatePortalScreen.js'
 import { Portal } from './routes/Portal.js'
 import { setPortalEnabled, useDeviceStore } from './store.js'
 import { activeTheme, componentsFor } from './themes/active.js'
@@ -5819,9 +5873,27 @@ useEffect(() => {
 
 Replace the earlier stub effect with this one — there should be exactly one `useEffect` handling the connect→disconnect transition in the final file, not two.
 
+- [ ] **Step 3b: Widen the shared `LoginProps` contract in `src/web/themes/types.ts`**
+
+All four `Login.tsx` files import their prop type from here (`import type { LoginProps } from '../types.js'`) rather than declaring their own — the same shared-contract shape `ShellProps` used for Task 23's `belowHeader` addition. It currently reads:
+
+```ts
+export type LoginProps = { onSuccess: (role: Role) => void }
+```
+
+Change it to:
+
+```ts
+export type LoginProps = { onSuccess: (session: z.infer<typeof SessionResponse>) => void }
+```
+
+This needs two import changes at the top of the file: add `import type { z } from 'zod'`, and change the existing `import type { Device, Role } from '@shared/api.js'` to `import { SessionResponse } from '@shared/api.js'` and `import type { Device } from '@shared/api.js'` as two separate imports — `SessionResponse` is a Zod schema (a runtime value, needed for `z.infer<typeof SessionResponse>`), not a type-only export, so it cannot go in the `import type` line the way `Role` did. `Role` itself becomes unused in this file once `LoginProps` no longer references it — remove it from the import entirely rather than leaving a lint error.
+
+Without this step, Step 4 below will not compile: each `Login.tsx` destructures `{ onSuccess }: LoginProps`, so changing what each file *passes* to `onSuccess` without first widening what `LoginProps` itself permits is a type error at the exact call site Step 4 asks you to change.
+
 - [ ] **Step 4: Update the four `Login.tsx` components**
 
-Read each theme's `Login.tsx` in full. Update its `onSuccess` prop type to `(session: z.infer<typeof SessionResponse>) => void` (or `Promise<void>`, matching whatever the current signature already returns), and update its call site (wherever it currently calls `login(password)` and passes `result.data.role` or similar to `onSuccess`) to pass `result.data` — the whole session object — instead of just extracting `.role`.
+Read each theme's `Login.tsx` in full. Update its call site (wherever it currently calls `login(password)` and passes `result.data.role` to `onSuccess`) to pass `result.data` — the whole session object — instead of just extracting `.role`. (The prop *type* itself no longer needs changing per-file — it now comes from the widened shared `LoginProps` in Step 3b above.)
 
 Each theme's `Login.tsx` has its own test file (grep for it, e.g. `test/unit/login-*.test.tsx` or similar per-theme naming — read whichever exists). Update every test that asserts what `onSuccess` was called with (likely currently asserting a bare role string) to assert the full session object instead, matching whatever fixture shape `SessionResponse` now requires (e.g. `{ role: 'admin' }` or `{ role: 'guest', portalId, portalTitle, portalTheme, portalEnabled }`).
 
@@ -5838,7 +5910,7 @@ Expected: clean across the entire repo — this is the task where every remainin
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/web/App.tsx src/web/themes/default/Login.tsx src/web/themes/cards/Login.tsx src/web/themes/classic/Login.tsx src/web/themes/tiles/Login.tsx test/unit/app.test.tsx
+git add src/web/App.tsx src/web/themes/types.ts src/web/themes/default/Login.tsx src/web/themes/cards/Login.tsx src/web/themes/classic/Login.tsx src/web/themes/tiles/Login.tsx test/unit/app.test.tsx
 git commit -m "feat: give App a portal list, zero-portal gate, and per-session portal theming"
 ```
 

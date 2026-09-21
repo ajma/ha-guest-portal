@@ -1,5 +1,6 @@
-import type { ComponentType, ReactElement } from 'react'
-import type { Device, Role } from '@shared/api.js'
+import type { ComponentType, ReactElement, ReactNode } from 'react'
+import type { z } from 'zod'
+import type { Device, SessionResponse } from '@shared/api.js'
 import type { ThemeId } from '@shared/themes.js'
 import type { SupportedDomain } from '@shared/devices.js'
 import type { ThemeTokens } from './tokens.js'
@@ -10,7 +11,7 @@ export type ShellProps = {
   onLogout: () => void
   loggingOut: boolean
   /** The owner-configured portal name. Never hardcode a title in a Shell. */
-  title: string
+  title: ReactNode
   /**
    * Owner-only controls (Edit, Settings), or undefined for a guest. A Shell
    * MUST render this when present — dropping it locks an owner out of their
@@ -18,8 +19,9 @@ export type ShellProps = {
    * enforces it for every registered theme.
    */
   headerActions?: ReactElement
+  belowHeader?: ReactNode
 }
-export type LoginProps = { onSuccess: (role: Role) => void }
+export type LoginProps = { onSuccess: (session: z.infer<typeof SessionResponse>) => void }
 export type DisabledProps = { onRetry: () => void }
 /**
  * `Disabled` means the owner switched the portal off; `Unreachable` means we

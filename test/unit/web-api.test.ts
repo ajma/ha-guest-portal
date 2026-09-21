@@ -76,10 +76,19 @@ describe('API client', () => {
       const { login } = await import('../../src/web/api.js')
 
       vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
+        new Response(
+          JSON.stringify({
+            role: 'guest',
+            portalId: 'p1',
+            portalTitle: 'Guest Portal',
+            portalTheme: 'classic',
+            portalEnabled: true,
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
       )
 
       const result = await login('correct')
@@ -99,10 +108,19 @@ describe('API client', () => {
       const { getSession } = await import('../../src/web/api.js')
 
       vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'guest', portalEnabled: true }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
+        new Response(
+          JSON.stringify({
+            role: 'guest',
+            portalId: 'p1',
+            portalTitle: 'Guest Portal',
+            portalTheme: 'classic',
+            portalEnabled: true,
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        ),
       )
 
       await getSession()
@@ -131,14 +149,14 @@ describe('API client', () => {
       const { getSession } = await import('../../src/web/api.js')
 
       vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ role: 'admin', portalEnabled: true }), {
+        new Response(JSON.stringify({ role: 'admin' }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         }),
       )
 
       const result = await getSession()
-      expect(result).toEqual({ role: 'admin', portalEnabled: true })
+      expect(result).toEqual({ role: 'admin' })
     })
 
     it('omits retryAfter for non-numeric Retry-After header', async () => {
@@ -222,113 +240,63 @@ describe('API client', () => {
     })
   })
 
-  describe('admin portal API', () => {
-    it('fetches portal state', async () => {
-      const { getAdminPortal } = await import('../../src/web/api.js')
+  describe('portal management API', () => {
+    it('getPortals fetches the portal list with the ingress-prefixed URL', async () => {
+      document.documentElement.dataset.ingressBase = '/api/hassio_ingress/tok/'
+      const mockFetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ portals: [], lastSelectedPortalId: null }), { status: 200 }),
+      )
+      vi.stubGlobal('fetch', mockFetch)
 
-      vi.mocked(fetch).mockResolvedValueOnce(
+      const { getPortals } = await import('../../src/web/api.js')
+      await getPortals()
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        '/api/hassio_ingress/tok/api/admin/portals',
+        expect.anything(),
+      )
+    })
+
+    it('createPortal posts title and password', async () => {
+      const mockFetch = vi.fn().mockResolvedValue(
         new Response(
-          JSON.stringify({
-            enabled: false,
-            integrationToken: 'a'.repeat(64),
-            portalId: '11111111-1111-1111-1111-111111111111',
-            theme: 'classic',
-            title: 'Guest Portal',
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
+          JSON.stringify({ id: 'p1', title: 'Timothy', theme: 'classic', enabled: true, password: 'x' }),
+          { status: 200 },
         ),
       )
+      vi.stubGlobal('fetch', mockFetch)
 
-      const result = await getAdminPortal()
-
-      expect(result.ok).toBe(true)
-      if (result.ok) expect(result.data.enabled).toBe(false)
-    })
-
-    it('reports a failed portal fetch', async () => {
-      const { getAdminPortal } = await import('../../src/web/api.js')
-
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: 'Forbidden' }), {
-          status: 403,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-
-      const result = await getAdminPortal()
-
-      expect(result.ok).toBe(false)
-    })
-
-    it('puts a new enabled value', async () => {
-      const { putAdminPortal } = await import('../../src/web/api.js')
-
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ enabled: false }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-
-      const result = await putAdminPortal(false)
+      const { createPortal } = await import('../../src/web/api.js')
+      const result = await createPortal({ title: 'Timothy', password: 'a-secret' })
 
       expect(result.ok).toBe(true)
+      const init = mockFetch.mock.calls[0]?.[1]
+      expect(init?.method).toBe('POST')
+      expect(JSON.parse(init?.body as string)).toEqual({ title: 'Timothy', password: 'a-secret' })
     })
 
-    it('reports a failed put', async () => {
-      const { putAdminPortal } = await import('../../src/web/api.js')
-
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: 'boom' }), {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' },
-        }),
+    it('getDevices appends portalId when given one', async () => {
+      const mockFetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ devices: [], stale: false }), { status: 200 }),
       )
+      vi.stubGlobal('fetch', mockFetch)
 
-      const result = await putAdminPortal(false)
+      const { getDevices } = await import('../../src/web/api.js')
+      await getDevices('portal-123')
 
-      expect(result.ok).toBe(false)
+      expect(mockFetch.mock.calls[0]?.[0]).toBe('/api/devices?portalId=portal-123')
     })
 
-    it('calls unauthorized callback on 401', async () => {
-      const { putAdminPortal, setUnauthorizedCallback } = await import('../../src/web/api.js')
-
-      const callback = vi.fn()
-      setUnauthorizedCallback(callback)
-
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' },
-        }),
+    it('getDevices omits portalId when not given one', async () => {
+      const mockFetch = vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ devices: [], stale: false }), { status: 200 }),
       )
+      vi.stubGlobal('fetch', mockFetch)
 
-      await putAdminPortal(false)
-      expect(callback).toHaveBeenCalledOnce()
+      const { getDevices } = await import('../../src/web/api.js')
+      await getDevices()
 
-      setUnauthorizedCallback(null)
-    })
-
-    it('does not call unauthorized callback on non-401 errors', async () => {
-      const { putAdminPortal, setUnauthorizedCallback } = await import('../../src/web/api.js')
-
-      const callback = vi.fn()
-      setUnauthorizedCallback(callback)
-
-      vi.mocked(fetch).mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: 'Internal Server Error' }), {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-
-      await putAdminPortal(false)
-      expect(callback).not.toHaveBeenCalled()
-
-      setUnauthorizedCallback(null)
+      expect(mockFetch.mock.calls[0]?.[0]).toBe('/api/devices')
     })
   })
 })

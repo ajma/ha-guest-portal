@@ -15,6 +15,7 @@ export function Shell({
   loggingOut,
   title,
   headerActions,
+  belowHeader,
 }: ShellProps): ReactElement {
   return (
     <div
@@ -40,6 +41,7 @@ export function Shell({
       </header>
 
       <div className="px-[var(--tilePadding)] pb-[var(--tilePadding)]">
+        {belowHeader}
         <div className="grid max-w-5xl grid-cols-2 gap-[var(--tileGap)] md:grid-cols-3 lg:grid-cols-4">
           {children}
         </div>

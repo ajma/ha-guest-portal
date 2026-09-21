@@ -4,6 +4,8 @@ import type { AllowlistRow, CatalogEntry, Device } from '@shared/api.js'
 import { useAllowlistEditor, type AllowlistEditor } from '../../src/web/hooks/useAllowlistEditor.ts'
 import * as api from '../../src/web/api.ts'
 
+vi.mock('../../src/web/api.ts')
+
 // Promise.withResolvers is ES2024; this project's lib is ES2022.
 function defer<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void
@@ -43,7 +45,7 @@ const three = [
 
 /** The payload of the nth PUT (1-based), as the server would receive it. */
 function putBody(n: number): AllowlistRow[] {
-  const body = vi.mocked(api.putAllowlist).mock.calls[n - 1]?.[0]
+  const body = vi.mocked(api.putPortalAllowlist).mock.calls[n - 1]?.[1]
   if (body === undefined) throw new Error(`no PUT #${n} was sent`)
   return body
 }
@@ -62,7 +64,7 @@ async function settled(
   calls: number,
 ): Promise<void> {
   await waitFor(() => {
-    expect(api.putAllowlist).toHaveBeenCalledTimes(calls)
+    expect(api.putPortalAllowlist).toHaveBeenCalledTimes(calls)
     expect(result.current.pending).toBe(false)
   })
 }
@@ -76,7 +78,7 @@ function rowOf(body: AllowlistRow[], entityId: string): AllowlistRow {
 describe('useAllowlistEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.spyOn(api, 'putAllowlist').mockResolvedValue({ ok: true, data: undefined })
+    vi.mocked(api.putPortalAllowlist).mockResolvedValue({ ok: true, data: undefined })
   })
 
   afterEach(() => {
@@ -85,17 +87,17 @@ describe('useAllowlistEditor', () => {
   })
 
   it('derives rows from the live devices, sorted', () => {
-    const { result } = renderHook(() => useAllowlistEditor([two[1] as Device, two[0] as Device]))
+    const { result } = renderHook(() => useAllowlistEditor([two[1] as Device, two[0] as Device], 'portal-1'))
     expect(result.current.rows.map((r) => r.entityId)).toEqual(['light.porch', 'lock.front'])
   })
 
   it('renames by entity id, not by position', async () => {
-    const { result } = renderHook(() => useAllowlistEditor(two))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
     act(() => {
       result.current.rename('lock.front', 'Front Door')
     })
-    await waitFor(() => expect(api.putAllowlist).toHaveBeenCalled())
-    const sent = vi.mocked(api.putAllowlist).mock.calls[0]?.[0]
+    await waitFor(() => expect(api.putPortalAllowlist).toHaveBeenCalled())
+    const sent = vi.mocked(api.putPortalAllowlist).mock.calls[0]?.[1]
     expect(sent?.find((r) => r.entityId === 'lock.front')?.label).toBe('Front Door')
     expect(sent?.find((r) => r.entityId === 'light.porch')?.label).toBe('Porch')
   })
@@ -104,12 +106,12 @@ describe('useAllowlistEditor', () => {
     // Another session's edit can reorder the list underneath us. Rows are ordered
     // by sortOrder, so here the incoming array order and the row order disagree:
     // anything keyed by array position would rename the other device.
-    const { result } = renderHook(() => useAllowlistEditor([two[1] as Device, two[0] as Device]))
+    const { result } = renderHook(() => useAllowlistEditor([two[1] as Device, two[0] as Device], 'portal-1'))
     act(() => {
       result.current.rename('light.porch', 'Porch Light')
     })
-    await waitFor(() => expect(api.putAllowlist).toHaveBeenCalled())
-    const sent = vi.mocked(api.putAllowlist).mock.calls[0]?.[0]
+    await waitFor(() => expect(api.putPortalAllowlist).toHaveBeenCalled())
+    const sent = vi.mocked(api.putPortalAllowlist).mock.calls[0]?.[1]
     expect(sent?.find((r) => r.entityId === 'light.porch')?.label).toBe('Porch Light')
     expect(sent?.find((r) => r.entityId === 'lock.front')?.label).toBe('Front')
   })
@@ -121,12 +123,12 @@ describe('useAllowlistEditor', () => {
       domain: 'switch',
       supported: true,
     } as CatalogEntry
-    const { result } = renderHook(() => useAllowlistEditor(two))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
     act(() => {
       result.current.add(entry)
     })
-    await waitFor(() => expect(api.putAllowlist).toHaveBeenCalled())
-    const sent = vi.mocked(api.putAllowlist).mock.calls[0]?.[0]
+    await waitFor(() => expect(api.putPortalAllowlist).toHaveBeenCalled())
+    const sent = vi.mocked(api.putPortalAllowlist).mock.calls[0]?.[1]
     const added = sent?.find((r) => r.entityId === 'switch.fan')
     expect(added?.allowedActions).toEqual(['turn_on', 'turn_off', 'toggle'])
     expect(added?.sortOrder).toBe(2)
@@ -141,45 +143,45 @@ describe('useAllowlistEditor', () => {
       domain: 'climate',
       supported: false,
     } as CatalogEntry
-    const { result } = renderHook(() => useAllowlistEditor(two))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
     act(() => {
       result.current.add(entry)
     })
-    await waitFor(() => expect(api.putAllowlist).toHaveBeenCalled())
-    const sent = vi.mocked(api.putAllowlist).mock.calls[0]?.[0]
+    await waitFor(() => expect(api.putPortalAllowlist).toHaveBeenCalled())
+    const sent = vi.mocked(api.putPortalAllowlist).mock.calls[0]?.[1]
     const added = sent?.find((r) => r.entityId === 'climate.thermostat')
     expect(added?.allowedActions).toEqual([])
   })
 
   it('toggles an action off and on again', async () => {
-    const { result } = renderHook(() => useAllowlistEditor(two))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
     act(() => {
       result.current.toggleAction('light.porch', 'turn_off')
     })
-    await waitFor(() => expect(api.putAllowlist).toHaveBeenCalled())
-    const sent = vi.mocked(api.putAllowlist).mock.calls[0]?.[0]
+    await waitFor(() => expect(api.putPortalAllowlist).toHaveBeenCalled())
+    const sent = vi.mocked(api.putPortalAllowlist).mock.calls[0]?.[1]
     expect(sent?.find((r) => r.entityId === 'light.porch')?.allowedActions).toEqual(['turn_on'])
   })
 
   it('removes by entity id', async () => {
-    const { result } = renderHook(() => useAllowlistEditor(two))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
     act(() => {
       result.current.remove('light.porch')
     })
-    await waitFor(() => expect(api.putAllowlist).toHaveBeenCalled())
-    const sent = vi.mocked(api.putAllowlist).mock.calls[0]?.[0]
+    await waitFor(() => expect(api.putPortalAllowlist).toHaveBeenCalled())
+    const sent = vi.mocked(api.putPortalAllowlist).mock.calls[0]?.[1]
     expect(sent?.map((r) => r.entityId)).toEqual(['lock.front'])
     // The survivor closes the gap the removal left, so sortOrder stays contiguous.
     expect(sent?.map((r) => r.sortOrder)).toEqual([0])
   })
 
   it('reindexes sortOrder after a move so the order is contiguous', async () => {
-    const { result } = renderHook(() => useAllowlistEditor(two))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
     act(() => {
       result.current.move('lock.front', -1)
     })
-    await waitFor(() => expect(api.putAllowlist).toHaveBeenCalled())
-    const sent = vi.mocked(api.putAllowlist).mock.calls[0]?.[0]
+    await waitFor(() => expect(api.putPortalAllowlist).toHaveBeenCalled())
+    const sent = vi.mocked(api.putPortalAllowlist).mock.calls[0]?.[1]
     expect(sent?.map((r) => [r.entityId, r.sortOrder])).toEqual([
       ['lock.front', 0],
       ['light.porch', 1],
@@ -187,26 +189,26 @@ describe('useAllowlistEditor', () => {
   })
 
   it('ignores a move that would fall off either end', async () => {
-    const { result } = renderHook(() => useAllowlistEditor(two))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
     act(() => {
       result.current.move('light.porch', -1)
     })
     act(() => {
       result.current.move('lock.front', 1)
     })
-    expect(api.putAllowlist).not.toHaveBeenCalled()
+    expect(api.putPortalAllowlist).not.toHaveBeenCalled()
     // Control: an in-range move through the same entry point does save, so the
     // assertion above pins the bounds check rather than a hook that never writes.
     act(() => {
       result.current.move('light.porch', 1)
     })
-    await waitFor(() => expect(api.putAllowlist).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(api.putPortalAllowlist).toHaveBeenCalledTimes(1))
   })
 
   it('shows the change immediately, before the server answers', async () => {
-    const deferred = defer<Awaited<ReturnType<typeof api.putAllowlist>>>()
-    vi.spyOn(api, 'putAllowlist').mockReturnValue(deferred.promise)
-    const { result } = renderHook(() => useAllowlistEditor(two))
+    const deferred = defer<Awaited<ReturnType<typeof api.putPortalAllowlist>>>()
+    vi.mocked(api.putPortalAllowlist).mockReturnValue(deferred.promise)
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
 
     act(() => {
       result.current.rename('light.porch', 'Porch Light')
@@ -230,14 +232,14 @@ describe('useAllowlistEditor', () => {
   // something else.
   it('adopts the value the stream delivers once the save lands', async () => {
     const { result, rerender } = renderHook(
-      ({ devices }: { devices: Device[] }) => useAllowlistEditor(devices),
+      ({ devices }: { devices: Device[] }) => useAllowlistEditor(devices, 'portal-1'),
       { initialProps: { devices: [device()] } },
     )
 
     act(() => {
       result.current.rename('light.porch', '  Porch Light  ')
     })
-    await waitFor(() => expect(api.putAllowlist).toHaveBeenCalled())
+    await waitFor(() => expect(api.putPortalAllowlist).toHaveBeenCalled())
 
     // What the server actually stored, arriving over SSE.
     rerender({ devices: [device({ label: 'Porch Light' })] })
@@ -263,7 +265,7 @@ describe('useAllowlistEditor', () => {
    */
   describe('with the stream yet to confirm', () => {
     it('does not resurrect a revoked action when the device is then renamed', async () => {
-      const { result } = renderHook(() => useAllowlistEditor(two))
+      const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
 
       act(() => {
         result.current.toggleAction('light.porch', 'turn_off')
@@ -284,7 +286,7 @@ describe('useAllowlistEditor', () => {
     })
 
     it('toggles the same action twice, rather than sending the same change twice', async () => {
-      const { result } = renderHook(() => useAllowlistEditor(two))
+      const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
 
       act(() => {
         result.current.toggleAction('light.porch', 'turn_off')
@@ -301,7 +303,7 @@ describe('useAllowlistEditor', () => {
     })
 
     it('moves a device two positions for two clicks of Move up', async () => {
-      const { result } = renderHook(() => useAllowlistEditor(three))
+      const { result } = renderHook(() => useAllowlistEditor(three, 'portal-1'))
 
       act(() => {
         result.current.move('switch.fan', -1)
@@ -317,7 +319,7 @@ describe('useAllowlistEditor', () => {
     })
 
     it('accumulates three different edits instead of each reverting the last', async () => {
-      const { result } = renderHook(() => useAllowlistEditor(two))
+      const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
 
       act(() => {
         result.current.rename('light.porch', 'Porch Light')
@@ -346,14 +348,14 @@ describe('useAllowlistEditor', () => {
     })
 
     it('reverts the edit that failed, and only that edit', async () => {
-      const { result } = renderHook(() => useAllowlistEditor(two))
+      const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
 
       act(() => {
         result.current.toggleAction('light.porch', 'turn_off')
       })
       await settled(result, 1)
 
-      vi.mocked(api.putAllowlist).mockResolvedValue({ ok: false, status: 500 })
+      vi.mocked(api.putPortalAllowlist).mockResolvedValue({ ok: false, status: 500 })
       act(() => {
         result.current.rename('light.porch', 'Porch Light')
       })
@@ -370,7 +372,7 @@ describe('useAllowlistEditor', () => {
 
     it('adopts the stream again as soon as it delivers a different list', async () => {
       const { result, rerender } = renderHook(
-        ({ devices }: { devices: Device[] }) => useAllowlistEditor(devices),
+        ({ devices }: { devices: Device[] }) => useAllowlistEditor(devices, 'portal-1'),
         { initialProps: { devices: [device()] } },
       )
 
@@ -401,13 +403,13 @@ describe('useAllowlistEditor', () => {
   })
 
   it('reports a network failure instead of leaking an unhandled rejection', async () => {
-    // putAllowlist reports HTTP failures as { ok: false }, but nothing in the
+    // putPortalAllowlist reports HTTP failures as { ok: false }, but nothing in the
     // api client guards fetch itself — offline and aborted requests reject.
     // Mutations are fired with `void commit(...)`, so an uncaught rejection
     // here would surface as an unhandled error and the owner would see the
     // edit revert with no explanation.
-    vi.spyOn(api, 'putAllowlist').mockRejectedValue(new Error('offline'))
-    const { result } = renderHook(() => useAllowlistEditor(two))
+    vi.mocked(api.putPortalAllowlist).mockRejectedValue(new Error('offline'))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
 
     act(() => {
       result.current.rename('light.porch', 'Porch Light')
@@ -419,8 +421,8 @@ describe('useAllowlistEditor', () => {
   })
 
   it('reverts and reports when the save fails', async () => {
-    vi.spyOn(api, 'putAllowlist').mockResolvedValue({ ok: false, status: 500 })
-    const { result } = renderHook(() => useAllowlistEditor(two))
+    vi.mocked(api.putPortalAllowlist).mockResolvedValue({ ok: false, status: 500 })
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
 
     act(() => {
       result.current.rename('light.porch', 'Porch Light')
@@ -433,8 +435,8 @@ describe('useAllowlistEditor', () => {
   })
 
   it('clears the error once it is dismissed', async () => {
-    vi.spyOn(api, 'putAllowlist').mockResolvedValue({ ok: false, status: 500 })
-    const { result } = renderHook(() => useAllowlistEditor(two))
+    vi.mocked(api.putPortalAllowlist).mockResolvedValue({ ok: false, status: 500 })
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
 
     act(() => {
       result.current.rename('light.porch', 'Porch Light')
@@ -445,5 +447,14 @@ describe('useAllowlistEditor', () => {
       result.current.dismissError()
     })
     expect(result.current.error).toBeNull()
+  })
+
+  it('saves against the given portal id', async () => {
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-42'))
+    act(() => {
+      result.current.add({ entityId: 'switch.fan', name: 'Fan', domain: 'switch', supported: true } as CatalogEntry)
+    })
+    await waitFor(() => expect(api.putPortalAllowlist).toHaveBeenCalled())
+    expect(vi.mocked(api.putPortalAllowlist).mock.calls[0]?.[0]).toBe('portal-42')
   })
 })

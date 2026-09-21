@@ -229,8 +229,30 @@ describe('Device store', () => {
       } as unknown as typeof EventSource
 
       try {
-        const teardown = store.connectDeviceStore()
-        expect(openedUrl).toBe('/api/hassio_ingress/tok/api/stream')
+        const teardown = store.connectDeviceStore('portal-1')
+        expect(openedUrl).toBe('/api/hassio_ingress/tok/api/stream?portalId=portal-1')
+        teardown()
+      } finally {
+        globalThis.EventSource = OriginalEventSource
+        resetStore()
+      }
+    })
+
+    it('opens the stream at the given portal id', async () => {
+      const store = await import('../../src/web/store.js')
+      const OriginalEventSource = globalThis.EventSource
+      const seenUrls: string[] = []
+      globalThis.EventSource = class FakeEventSource {
+        constructor(url: string) {
+          seenUrls.push(url)
+        }
+        addEventListener() {}
+        close() {}
+      } as unknown as typeof EventSource
+
+      try {
+        const teardown = store.connectDeviceStore('portal-99')
+        expect(seenUrls[0]).toContain('portalId=portal-99')
         teardown()
       } finally {
         globalThis.EventSource = OriginalEventSource
@@ -255,8 +277,8 @@ describe('Device store', () => {
       } as unknown as typeof EventSource
 
       try {
-        const teardownA = store.connectDeviceStore()
-        const teardownB = store.connectDeviceStore()
+        const teardownA = store.connectDeviceStore('portal-1')
+        const teardownB = store.connectDeviceStore('portal-1')
 
         expect(eventSourceInstances).toBe(1) // Only one connection created
 
@@ -281,8 +303,8 @@ describe('Device store', () => {
       } as unknown as typeof EventSource
 
       try {
-        const teardownA = store.connectDeviceStore()
-        const teardownB = store.connectDeviceStore()
+        const teardownA = store.connectDeviceStore('portal-1')
+        const teardownB = store.connectDeviceStore('portal-1')
 
         teardownA()
         expect(eventSourceClosed).toBe(false) // B still connected
@@ -308,8 +330,8 @@ describe('Device store', () => {
       } as unknown as typeof EventSource
 
       try {
-        const teardownA = store.connectDeviceStore()
-        const teardownB = store.connectDeviceStore()
+        const teardownA = store.connectDeviceStore('portal-1')
+        const teardownB = store.connectDeviceStore('portal-1')
 
         teardownA()
         expect(eventSourceClosed).toBe(false)
@@ -335,8 +357,8 @@ describe('Device store', () => {
       } as unknown as typeof EventSource
 
       try {
-        const teardownA = store.connectDeviceStore()
-        const teardownB = store.connectDeviceStore()
+        const teardownA = store.connectDeviceStore('portal-1')
+        const teardownB = store.connectDeviceStore('portal-1')
 
         teardownA()
         teardownA() // Double call - should be idempotent

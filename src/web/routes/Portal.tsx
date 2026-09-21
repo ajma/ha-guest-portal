@@ -1,25 +1,45 @@
 import { useCallback, useEffect, useState, type CSSProperties, type ReactElement } from 'react'
 import type { CatalogEntry, Device, Role } from '@shared/api.js'
-import { getAllowlist, getCatalog } from '../api.js'
+import type { z } from 'zod'
+import type { PortalDetailResponse } from '@shared/api.js'
+import { getPortalAllowlist, getCatalog } from '../api.js'
+import { CreatePortalScreen } from '../components/CreatePortalScreen.js'
+import { DeploymentSettingsPanel } from '../components/DeploymentSettingsPanel.js'
 import { EntityPicker } from '../components/EntityPicker.js'
-import { SettingsPanel } from '../components/SettingsPanel.js'
+import { PortalDropdown, type PortalSummary } from '../components/PortalDropdown.js'
+import { PortalSettingsAccordion } from '../components/PortalSettingsAccordion.js'
 import { TileEditor } from '../components/TileEditor.js'
 import { useAllowlistEditor } from '../hooks/useAllowlistEditor.js'
-import { readPortalTitle } from '../portalTitle.js'
 import { connectDeviceStore, useDeviceStore } from '../store.js'
 import { activeTheme, componentsFor } from '../themes/active.js'
 import type { DEFAULT_COMPONENTS } from '../themes/default/index.js'
 
+type PortalDetail = z.infer<typeof PortalDetailResponse>
+
 type PortalProps = {
   role: Role
+  portalId: string
   onLogout: () => Promise<void>
+  /** Guest-only: their own portal's title, straight from their SessionResponse
+   * (Task 8) — a guest is never given `portals`, so the title can't be looked
+   * up the way the admin path looks it up. */
+  guestPortalTitle?: string
+  portals?: PortalSummary[]
+  onSelectPortal?: (id: string) => void
+  onAddPortal?: () => void
+  addingPortal?: boolean
+  onPortalCreated?: (portal: PortalDetail) => void
+  onCancelAddPortal?: () => void
+  onPortalUpdated?: (portal: PortalDetail) => void
+  onPortalDeleted?: () => void
 }
 
 type Components = typeof DEFAULT_COMPONENTS
 
-/** Edit and Settings are mutually exclusive by construction, not by two
- * booleans kept in step. */
-type Mode = 'normal' | 'edit' | 'settings'
+/** Edit is the only mode left — Settings is no longer mutually exclusive with
+ * it, since the per-portal accordion is always visible and the deployment
+ * panel is a plain boolean overlay. */
+type Mode = 'normal' | 'edit'
 
 // This page is themed, and the owner's chrome sits inside it — so every colour,
 // radius and font here comes from the theme's CSS variables. A literal would be
@@ -275,66 +295,57 @@ function EditableTile({
   )
 }
 
-export function Portal({ role, onLogout }: PortalProps): ReactElement {
+export function Portal({
+  role,
+  portalId,
+  onLogout,
+  guestPortalTitle,
+  portals,
+  onSelectPortal,
+  onAddPortal,
+  addingPortal,
+  onPortalCreated,
+  onCancelAddPortal,
+  onPortalUpdated,
+  onPortalDeleted,
+}: PortalProps): ReactElement {
   const [loggingOut, setLoggingOut] = useState(false)
   const [mode, setMode] = useState<Mode>('normal')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [adding, setAdding] = useState(false)
+  const [showDeploymentSettings, setShowDeploymentSettings] = useState(false)
   const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null)
   const [catalogFailed, setCatalogFailed] = useState(false)
   const [orphaned, setOrphaned] = useState<string[]>([])
   const [orphanCheckFailed, setOrphanCheckFailed] = useState(false)
 
-  // Held as state, seeded once from the attribute the server injected.
-  //
-  // The alternative — calling `readPortalTitle()` in the render body, as this
-  // did — is only correct while nothing on the page can change the title. The
-  // settings panel can, and a DOM attribute write does not re-render React, so
-  // the owner renamed the portal and watched their own header keep the old
-  // name. A callback from the panel is the smallest thing that closes it: the
-  // title is one value owned by the page that renders the header, and the
-  // panel is a child telling its parent what it saved. `PortalTitleField` also
-  // writes the attribute back, so a later remount and the browser tab agree.
-  const [title, setTitle] = useState(readPortalTitle)
-
-  // Connect to the device store on mount
+  // Connect to the device store for the current portal on mount, and
+  // reconnect whenever the admin switches to a different portal.
   useEffect(() => {
-    const teardown = connectDeviceStore()
+    const teardown = connectDeviceStore(portalId)
     return teardown
-  }, [])
+  }, [portalId])
 
   const { devices, connected } = useDeviceStore()
-  const editor = useAllowlistEditor(devices)
+  const editor = useAllowlistEditor(devices, portalId)
   const isOwner = role === 'admin'
 
-  // The theme supplies the frame and every tile; this route only decides which
-  // slot a device belongs in. Reading it per render is free — the slots are
-  // stable module-level functions, so React sees the same element types.
   const components = componentsFor(activeTheme())
   const { Shell } = components
 
-  /**
-   * Which allowlist entries have no matching entity in Home Assistant — the
-   * owner allowlisted something that has since been renamed, removed, or lost
-   * its integration. The SSE stream cannot say this: it carries the devices
-   * that exist, and an orphan is defined by an absence. So it is fetched, once
-   * per entry into edit mode, and only for the owner.
-   */
   const loadOrphaned = useCallback(async (): Promise<void> => {
     setOrphanCheckFailed(false)
     try {
-      const result = await getAllowlist()
+      const result = await getPortalAllowlist(portalId)
       if (!result.ok) {
         setOrphanCheckFailed(true)
         return
       }
       setOrphaned(result.data.orphaned)
     } catch {
-      // Nothing in the api client guards `fetch` itself — offline, aborted and
-      // DNS failures reject rather than returning `{ ok: false }`.
       setOrphanCheckFailed(true)
     }
-  }, [])
+  }, [portalId])
 
   const loadCatalog = useCallback(async (): Promise<void> => {
     setCatalogFailed(false)
@@ -357,23 +368,14 @@ export function Portal({ role, onLogout }: PortalProps): ReactElement {
 
   function show(next: Mode): void {
     setMode(next)
-    // Leaving edit mode drops whatever it had open. Without this, reopening
-    // edit mode reopens the last editor the owner closed the mode on.
     setEditingId(null)
     setAdding(false)
   }
 
-  // The row being edited is looked up fresh on every render. If another session
-  // removes the device, the incoming snapshot drops it and the editor closes
-  // rather than editing a ghost that the next mutation would resurrect.
   const editingRow =
     editingId === null ? undefined : editor.rows.find((row) => row.entityId === editingId)
 
-  // Sort devices by sortOrder
   const sortedDevices = [...devices].sort((a, b) => a.sortOrder - b.sortOrder)
-
-  // Tiles should be disabled only if disconnected
-  // Stale state is shown visually but controls remain enabled
   const tilesDisabled = !connected
 
   async function handleLogout(): Promise<void> {
@@ -387,13 +389,7 @@ export function Portal({ role, onLogout }: PortalProps): ReactElement {
         <>
           <p style={errorText}>Could not load the device list</p>
           <div>
-            <button
-              type="button"
-              style={smallButton}
-              onClick={() => {
-                void loadCatalog()
-              }}
-            >
+            <button type="button" style={smallButton} onClick={() => void loadCatalog()}>
               Retry
             </button>
           </div>
@@ -417,9 +413,6 @@ export function Portal({ role, onLogout }: PortalProps): ReactElement {
     )
   }
 
-  // Built as an array rather than as sibling JSX children: the Shell lays its
-  // children out as grid cells, so one wrapping fragment would collapse the
-  // whole grid into a single cell.
   const children: ReactElement[] =
     sortedDevices.length === 0
       ? [
@@ -454,13 +447,7 @@ export function Portal({ role, onLogout }: PortalProps): ReactElement {
             Could not check for orphaned devices — Home Assistant may be unreachable.
           </p>
           <div>
-            <button
-              type="button"
-              style={smallButton}
-              onClick={() => {
-                void loadOrphaned()
-              }}
-            >
+            <button type="button" style={smallButton} onClick={() => void loadOrphaned()}>
               Retry
             </button>
           </div>
@@ -491,23 +478,13 @@ export function Portal({ role, onLogout }: PortalProps): ReactElement {
   }
 
   if (adding) {
-    // The picker is an overlay, not an expanding grid cell. Expanded in place it
-    // inherits one column's width — half a phone screen under `tiles` — which is
-    // not enough for a search box above a scrolling list of every entity in the
-    // house. It uses the same backdrop as the other two overlays.
     children.push(
       <div key="__overlay" data-testid="picker-overlay" style={overlayBackdrop}>
         <div style={pickerInner}>
           <section style={{ ...panel, flex: '1 1 auto', minHeight: 0, overflow: 'hidden' }}>
             <div style={panelHeader}>
               <h2 style={panelHeading}>Add a device</h2>
-              <button
-                type="button"
-                style={smallButton}
-                onClick={() => {
-                  setAdding(false)
-                }}
-              >
+              <button type="button" style={smallButton} onClick={() => setAdding(false)}>
                 Close
               </button>
             </div>
@@ -516,15 +493,29 @@ export function Portal({ role, onLogout }: PortalProps): ReactElement {
         </div>
       </div>,
     )
-  } else if (mode === 'settings') {
+  } else if (showDeploymentSettings) {
     children.push(
       <div key="__overlay" data-testid="settings-overlay" style={overlayBackdrop}>
         <div style={settingsInner}>
-          <SettingsPanel
-            onClose={() => {
-              show('normal')
+          <DeploymentSettingsPanel
+            onClose={() => setShowDeploymentSettings(false)}
+            onLogout={() => {
+              void handleLogout()
             }}
-            onTitleChange={setTitle}
+            loggingOut={loggingOut}
+          />
+        </div>
+      </div>,
+    )
+  } else if (addingPortal === true) {
+    children.push(
+      <div key="__overlay" data-testid="add-portal-overlay" style={overlayBackdrop}>
+        <div style={overlayInner}>
+          <CreatePortalScreen
+            onCreated={(portal) => {
+              onPortalCreated?.(portal)
+              onCancelAddPortal?.()
+            }}
           />
         </div>
       </div>,
@@ -533,25 +524,17 @@ export function Portal({ role, onLogout }: PortalProps): ReactElement {
     children.push(
       <div key="__overlay" data-testid="editor-overlay" style={overlayBackdrop}>
         <div style={overlayInner}>
-          {/* Keyed by entity id so the name field's draft is seeded from the
-              row the owner actually opened. */}
           <TileEditor
             key={editingRow.entityId}
             row={editingRow}
             editor={editor}
-            onClose={() => {
-              setEditingId(null)
-            }}
+            onClose={() => setEditingId(null)}
           />
         </div>
       </div>,
     )
   }
 
-  // Spread rather than `headerActions={isOwner ? … : undefined}`: under
-  // `exactOptionalPropertyTypes` an optional prop is present or absent, not
-  // present-and-undefined — which is exactly the guarantee wanted here. A guest
-  // page does not hand the Shell owner controls at all.
   const ownerActions = isOwner
     ? {
         headerActions: (
@@ -559,33 +542,54 @@ export function Portal({ role, onLogout }: PortalProps): ReactElement {
             <button
               type="button"
               style={mode === 'edit' ? headerButtonOn : headerButton}
-              onClick={() => {
-                show(mode === 'edit' ? 'normal' : 'edit')
-              }}
+              onClick={() => show(mode === 'edit' ? 'normal' : 'edit')}
             >
               {mode === 'edit' ? 'Done' : 'Edit'}
             </button>
             <button
               type="button"
-              style={mode === 'settings' ? headerButtonOn : headerButton}
-              onClick={() => {
-                show(mode === 'settings' ? 'normal' : 'settings')
-              }}
+              aria-label="Settings"
+              style={headerButton}
+              onClick={() => setShowDeploymentSettings(true)}
             >
-              Settings
+              ⚙
             </button>
           </>
         ),
       }
     : {}
 
+  const titleNode: ReactElement | string =
+    isOwner && portals !== undefined && onSelectPortal !== undefined && onAddPortal !== undefined ? (
+      <PortalDropdown
+        portals={portals}
+        selectedId={portalId}
+        onSelect={onSelectPortal}
+        onAddPortal={onAddPortal}
+      />
+    ) : (
+      // Guest header keeps a plain title. There is no `portals` list to look
+      // it up in — App.tsx already has it on the guest's own SessionResponse
+      // and threads it straight through as `guestPortalTitle`.
+      (guestPortalTitle ?? '')
+    )
+
+  const belowHeader = isOwner ? (
+    <PortalSettingsAccordion
+      portalId={portalId}
+      onUpdated={(portal) => onPortalUpdated?.(portal)}
+      onDeleted={() => onPortalDeleted?.()}
+    />
+  ) : undefined
+
   return (
     <Shell
-      title={title}
+      title={titleNode}
       loggingOut={loggingOut}
       onLogout={() => {
         void handleLogout()
       }}
+      belowHeader={belowHeader}
       {...ownerActions}
     >
       {children}

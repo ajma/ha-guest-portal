@@ -1,102 +1,24 @@
 import { render, screen, waitFor, cleanup } from '@testing-library/react'
 import { userEvent } from '@testing-library/user-event'
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import * as api from '../../src/web/api.js'
+import * as store from '../../src/web/store.js'
 
-// Helper to create a URL-routed fetch mock that returns appropriate responses
-// based on the endpoint, avoiding order-dependent mockResolvedValueOnce chains
-function createFetchMock(
-  options: {
-    sessionRole?: 'admin' | 'guest'
-    sessionPortalEnabled?: boolean
-    loginResponse?: Response
-  } = {},
-) {
-  const { sessionRole = 'guest', sessionPortalEnabled = true, loginResponse } = options
-
-  return vi.fn((input: string | URL | Request) => {
-    const urlStr =
-      typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-
-    if (urlStr.includes('/api/session')) {
-      return Promise.resolve(
-        new Response(JSON.stringify({ role: sessionRole, portalEnabled: sessionPortalEnabled }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-    }
-
-    if (urlStr.includes('/api/admin/entities')) {
-      return Promise.resolve(
-        new Response(JSON.stringify({ entities: [] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-    }
-
-    if (urlStr.includes('/api/admin/allowlist')) {
-      return Promise.resolve(
-        new Response(JSON.stringify({ devices: [], orphaned: [] }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-    }
-
-    if (urlStr.includes('/api/admin/portal')) {
-      return Promise.resolve(
-        new Response(
-          JSON.stringify({
-            enabled: sessionPortalEnabled,
-            integrationToken: 'test',
-            portalId: 'test',
-            theme: 'classic',
-            title: 'Guest Portal',
-          }),
-          {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          },
-        ),
-      )
-    }
-
-    if (urlStr.includes('/api/login')) {
-      if (loginResponse) {
-        return Promise.resolve(loginResponse)
-      }
-      return Promise.resolve(
-        new Response(JSON.stringify({ role: sessionRole, portalEnabled: sessionPortalEnabled }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-    }
-
-    return Promise.reject(new Error(`Unmocked fetch to ${urlStr}`))
-  })
-}
+vi.mock('../../src/web/api.js')
 
 describe('Login component', () => {
   beforeEach(() => {
-    global.fetch = vi.fn()
+    vi.clearAllMocks()
   })
 
   afterEach(() => {
     cleanup()
-    vi.restoreAllMocks()
   })
 
   it('shows distinct message for wrong password', async () => {
     const { Login } = await import('../../src/web/themes/default/Login.js')
 
-    global.fetch = createFetchMock({
-      loginResponse: new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    })
+    vi.mocked(api.login).mockResolvedValue({ ok: false, status: 401 })
 
     const onSuccess = vi.fn()
     render(<Login onSuccess={onSuccess} />)
@@ -117,15 +39,7 @@ describe('Login component', () => {
   it('shows distinct message for rate limiting', async () => {
     const { Login } = await import('../../src/web/themes/default/Login.js')
 
-    global.fetch = createFetchMock({
-      loginResponse: new Response(JSON.stringify({ error: 'Too Many Requests' }), {
-        status: 429,
-        headers: {
-          'Content-Type': 'application/json',
-          'Retry-After': '60',
-        },
-      }),
-    })
+    vi.mocked(api.login).mockResolvedValue({ ok: false, status: 429, retryAfter: 60 })
 
     const onSuccess = vi.fn()
     render(<Login onSuccess={onSuccess} />)
@@ -144,13 +58,10 @@ describe('Login component', () => {
     expect(onSuccess).not.toHaveBeenCalled()
   })
 
-  it('calls onSuccess with role on successful login', async () => {
+  it('calls onSuccess with the whole session on successful login', async () => {
     const { Login } = await import('../../src/web/themes/default/Login.js')
 
-    global.fetch = createFetchMock({
-      sessionRole: 'admin',
-      sessionPortalEnabled: true,
-    })
+    vi.mocked(api.login).mockResolvedValue({ ok: true, data: { role: 'admin' } })
 
     const onSuccess = vi.fn()
     render(<Login onSuccess={onSuccess} />)
@@ -162,20 +73,16 @@ describe('Login component', () => {
     await userEvent.click(button)
 
     await waitFor(() => {
-      expect(onSuccess).toHaveBeenCalledWith('admin')
+      expect(onSuccess).toHaveBeenCalledWith({ role: 'admin' })
     })
   })
 })
 
 describe('App component', () => {
   beforeEach(() => {
-    global.fetch = vi.fn()
-    // Reset window.location.pathname
-    Object.defineProperty(window, 'location', {
-      value: { pathname: '/' },
-      writable: true,
-      configurable: true,
-    })
+    vi.clearAllMocks()
+    vi.mocked(api.setUnauthorizedCallback).mockImplementation(() => {})
+    vi.spyOn(store, 'connectDeviceStore').mockReturnValue(() => {})
   })
 
   afterEach(() => {
@@ -186,14 +93,7 @@ describe('App component', () => {
   it('renders Login when no session', async () => {
     const { App } = await import('../../src/web/App.js')
 
-    global.fetch = vi.fn(() =>
-      Promise.resolve(
-        new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      ),
-    ) as typeof fetch
+    vi.mocked(api.getSession).mockResolvedValue(null)
 
     render(<App />)
 
@@ -205,9 +105,12 @@ describe('App component', () => {
   it('renders guest screen with guest session', async () => {
     const { App } = await import('../../src/web/App.js')
 
-    global.fetch = createFetchMock({
-      sessionRole: 'guest',
-      sessionPortalEnabled: true,
+    vi.mocked(api.getSession).mockResolvedValue({
+      role: 'guest',
+      portalId: 'p1',
+      portalTitle: 'Guest Portal',
+      portalTheme: 'classic',
+      portalEnabled: true,
     })
 
     render(<App />)
@@ -224,9 +127,10 @@ describe('App component', () => {
     // reaches the same screen a guest does.
     const { App } = await import('../../src/web/App.js')
 
-    global.fetch = createFetchMock({
-      sessionRole: 'admin',
-      sessionPortalEnabled: true,
+    vi.mocked(api.getSession).mockResolvedValue({ role: 'admin' })
+    vi.mocked(api.getPortals).mockResolvedValue({
+      ok: true,
+      data: { portals: [{ id: 'p1', title: 'Guest Portal', theme: 'classic', enabled: true }], lastSelectedPortalId: 'p1' },
     })
 
     render(<App />)
@@ -237,13 +141,20 @@ describe('App component', () => {
   })
 
   describe('session expiry handling', () => {
-    it('returns to login when API returns 401', async () => {
+    it('returns to login when the api layer reports unauthorized', async () => {
+      // api.ts owns the real 401-detection mechanics (see web-api.test.ts);
+      // what belongs here is only that App wires the callback it registers
+      // into a switch back to the login screen. Invoking the callback
+      // directly, the same way a real 401 response would, keeps this test
+      // from re-proving api.ts's own unit coverage.
       const { App } = await import('../../src/web/App.js')
 
-      // Initial session check succeeds
-      global.fetch = createFetchMock({
-        sessionRole: 'guest',
-        sessionPortalEnabled: true,
+      vi.mocked(api.getSession).mockResolvedValue({
+        role: 'guest',
+        portalId: 'p1',
+        portalTitle: 'Guest Portal',
+        portalTheme: 'classic',
+        portalEnabled: true,
       })
 
       render(<App />)
@@ -252,18 +163,9 @@ describe('App component', () => {
         expect(screen.queryByTestId('guest-screen')).not.toBeNull()
       })
 
-      // Simulate a 401 response (triggers unauthorized callback)
-      global.fetch = vi.fn(() =>
-        Promise.resolve(
-          new Response(JSON.stringify({ error: 'Unauthorized' }), {
-            status: 401,
-            headers: { 'Content-Type': 'application/json' },
-          }),
-        ),
-      ) as typeof fetch
-
-      const { getDevices } = await import('../../src/web/api.js')
-      await getDevices()
+      const registered = vi.mocked(api.setUnauthorizedCallback).mock.calls[0]?.[0]
+      expect(registered).toBeTypeOf('function')
+      registered?.()
 
       await waitFor(() => {
         expect(screen.queryByLabelText(/password/i)).not.toBeNull()
@@ -272,26 +174,25 @@ describe('App component', () => {
 
     it('returns to login when session disappears during stream connection', async () => {
       // Mock the store to control connected state
-      const storeModule = await import('../../src/web/store.js')
-
       let mockConnected = true
-      const mockGetSnapshot = vi.fn(() => ({
+      const mockGetSnapshot = (): ReturnType<typeof store.useDeviceStore> => ({
         devices: [],
         stale: false,
         connected: mockConnected,
         portalEnabled: true,
-      }))
+      })
 
-      // Override useDeviceStore to use our mock
-      vi.spyOn(storeModule, 'useDeviceStore').mockImplementation(() => mockGetSnapshot())
-      vi.spyOn(storeModule, 'getSnapshot').mockImplementation(mockGetSnapshot)
+      vi.spyOn(store, 'useDeviceStore').mockImplementation(mockGetSnapshot)
+      vi.spyOn(store, 'getSnapshot').mockImplementation(mockGetSnapshot)
 
       const { App } = await import('../../src/web/App.js')
 
-      // Initial session check succeeds
-      global.fetch = createFetchMock({
-        sessionRole: 'guest',
-        sessionPortalEnabled: true,
+      vi.mocked(api.getSession).mockResolvedValue({
+        role: 'guest',
+        portalId: 'p1',
+        portalTitle: 'Guest Portal',
+        portalTheme: 'classic',
+        portalEnabled: true,
       })
 
       const { rerender } = render(<App />)
@@ -300,52 +201,38 @@ describe('App component', () => {
         expect(screen.queryByTestId('guest-screen')).not.toBeNull()
       })
 
-      // Simulate connection drop
+      // Simulate connection drop, and the recheck that follows finding the
+      // session gone.
       mockConnected = false
+      vi.mocked(api.getSession).mockResolvedValue(null)
 
-      // Session check now fails
-      global.fetch = vi.fn(() =>
-        Promise.resolve(
-          new Response(JSON.stringify({ error: 'Unauthorized' }), {
-            status: 401,
-            headers: { 'Content-Type': 'application/json' },
-          }),
-        ),
-      ) as typeof fetch
-
-      // Trigger re-render
       rerender(<App />)
 
       await waitFor(() => {
         expect(screen.queryByLabelText(/password/i)).not.toBeNull()
       })
-
-      // Restore
-      vi.mocked(storeModule.useDeviceStore).mockRestore()
-      vi.mocked(storeModule.getSnapshot).mockRestore()
     })
 
     it('does not log out on transient stream error with valid session', async () => {
-      // Mock the store to control connected state
-      const storeModule = await import('../../src/web/store.js')
-
       let mockConnected = true
-      const mockGetSnapshot = vi.fn(() => ({
+      const mockGetSnapshot = (): ReturnType<typeof store.useDeviceStore> => ({
         devices: [],
         stale: false,
         connected: mockConnected,
         portalEnabled: true,
-      }))
+      })
 
-      vi.spyOn(storeModule, 'useDeviceStore').mockImplementation(() => mockGetSnapshot())
-      vi.spyOn(storeModule, 'getSnapshot').mockImplementation(mockGetSnapshot)
+      vi.spyOn(store, 'useDeviceStore').mockImplementation(mockGetSnapshot)
+      vi.spyOn(store, 'getSnapshot').mockImplementation(mockGetSnapshot)
 
       const { App } = await import('../../src/web/App.js')
 
-      // Initial session check succeeds
-      global.fetch = createFetchMock({
-        sessionRole: 'guest',
-        sessionPortalEnabled: true,
+      vi.mocked(api.getSession).mockResolvedValue({
+        role: 'guest',
+        portalId: 'p1',
+        portalTitle: 'Guest Portal',
+        portalTheme: 'classic',
+        portalEnabled: true,
       })
 
       const { rerender } = render(<App />)
@@ -354,89 +241,45 @@ describe('App component', () => {
         expect(screen.queryByTestId('guest-screen')).not.toBeNull()
       })
 
-      // Simulate transient connection drop
+      // Simulate a transient connection drop; the session the recheck finds
+      // is still valid.
       mockConnected = false
 
-      // Session check still succeeds - keep using the same mock
-      // (createFetchMock returns success responses by default)
-
-      // Trigger re-render
       rerender(<App />)
 
-      // Should remain on guest screen
       await waitFor(() => {
         expect(screen.queryByTestId('guest-screen')).not.toBeNull()
       })
 
       expect(screen.queryByLabelText(/password/i)).toBeNull()
-
-      // Restore
-      vi.mocked(storeModule.useDeviceStore).mockRestore()
-      vi.mocked(storeModule.getSnapshot).mockRestore()
-    })
-  })
-
-  describe('portal disabled routing', () => {
-    it('admin with portalEnabled=false sees the portal, not the disabled screen', async () => {
-      // This test proves the guard `role === 'guest' && !portalEnabled` protects admins
-      // from ever seeing the disabled screen. If the guard were loosened to just
-      // `!portalEnabled`, this test would fail.
-      const { App } = await import('../../src/web/App.js')
-
-      global.fetch = createFetchMock({
-        sessionRole: 'admin',
-        sessionPortalEnabled: false,
-      })
-
-      render(<App />)
-
-      await waitFor(() => {
-        expect(screen.queryByTestId('guest-screen')).not.toBeNull()
-      })
-
-      // The disabled screen must not appear
-      expect(screen.queryByTestId('portal-disabled-screen')).toBeNull()
     })
   })
 
   describe('portal disabled polling', () => {
-    it('timer does not start for admin with portalEnabled=false', async () => {
-      // This test proves the guard `role !== 'guest'` prevents polling for admins.
-      // If the guard at App.tsx:91 were removed, setInterval would be called with 15000
-      // and this test would fail.
-      const { App } = await import('../../src/web/App.js')
-
-      const setIntervalSpy = vi.spyOn(global, 'setInterval')
-
-      global.fetch = createFetchMock({
-        sessionRole: 'admin',
-        sessionPortalEnabled: false,
-      })
-
-      render(<App />)
-
-      await waitFor(() => {
-        expect(screen.queryByTestId('guest-screen')).not.toBeNull()
-      })
-
-      // Check that no 15-second polling interval was created
-      const pollIntervals = setIntervalSpy.mock.calls.filter(([, delay]) => delay === 15_000)
-      expect(pollIntervals).toHaveLength(0)
-
-      setIntervalSpy.mockRestore()
-    })
+    // The admin+portalEnabled combination this describe block used to also
+    // cover ("admin with portalEnabled=false sees the portal, not the
+    // disabled screen", "timer does not start for admin with
+    // portalEnabled=false") is unrepresentable now: the admin branch of
+    // `SessionResponse` carries no `portalEnabled` field at all, and the
+    // disabled screen / poll timer are both gated on `state.kind === 'guest'`
+    // in App.tsx — a distinct branch of the state machine an admin session
+    // can never enter. TypeScript's exhaustiveness over the discriminated
+    // union enforces this structurally, so the runtime guard those tests
+    // pinned no longer exists as a case that could regress independently.
+    // Removed rather than faked, matching Task 24's precedent for tests that
+    // pin a since-removed mechanism.
 
     it('timer does not start for guest with portalEnabled=true', async () => {
-      // This test proves the guard `portalEnabled` prevents polling while enabled.
-      // If the guard at App.tsx:91 were removed, setInterval would be called with 15000
-      // and this test would fail.
       const { App } = await import('../../src/web/App.js')
 
       const setIntervalSpy = vi.spyOn(global, 'setInterval')
 
-      global.fetch = createFetchMock({
-        sessionRole: 'guest',
-        sessionPortalEnabled: true,
+      vi.mocked(api.getSession).mockResolvedValue({
+        role: 'guest',
+        portalId: 'p1',
+        portalTitle: 'Guest Portal',
+        portalTheme: 'classic',
+        portalEnabled: true,
       })
 
       render(<App />)
@@ -445,7 +288,6 @@ describe('App component', () => {
         expect(screen.queryByTestId('guest-screen')).not.toBeNull()
       })
 
-      // Check that no 15-second polling interval was created
       const pollIntervals = setIntervalSpy.mock.calls.filter(([, delay]) => delay === 15_000)
       expect(pollIntervals).toHaveLength(0)
 
@@ -456,80 +298,51 @@ describe('App component', () => {
       // This test proves the effect cleanup clears the interval when portalEnabled becomes true.
       // If the cleanup were missing, getSession would continue to be called every 15s
       // and this test would fail.
-      const storeModule = await import('../../src/web/store.js')
-      const apiModule = await import('../../src/web/api.js')
       const { App } = await import('../../src/web/App.js')
 
-      // Install fake timers before rendering so the interval is created with fake timers
       vi.useFakeTimers({ shouldAdvanceTime: true })
 
-      const getSessionSpy = vi.spyOn(apiModule, 'getSession')
-
-      // Use the router for all session checks
-      global.fetch = createFetchMock({
-        sessionRole: 'guest',
-        sessionPortalEnabled: false,
+      const getSessionSpy = vi.mocked(api.getSession)
+      getSessionSpy.mockResolvedValue({
+        role: 'guest',
+        portalId: 'p1',
+        portalTitle: 'Guest Portal',
+        portalTheme: 'classic',
+        portalEnabled: false,
       })
 
-      // Mock store to initially return portalEnabled=false
-      let portalEnabled = false
-      vi.spyOn(storeModule, 'useDeviceStore').mockImplementation(() => ({
-        devices: [],
-        connected: false,
-        portalEnabled,
-        stale: false,
-      }))
+      render(<App />)
 
-      const { rerender } = render(<App />)
-
-      // Flush initial render promises
       await vi.runOnlyPendingTimersAsync()
 
       await waitFor(() => {
         expect(screen.queryByTestId('portal-disabled-screen')).not.toBeNull()
       })
 
-      // Clear the spy call count from initial render
+      // The next poll finds the portal back on.
       getSessionSpy.mockClear()
+      getSessionSpy.mockResolvedValue({
+        role: 'guest',
+        portalId: 'p1',
+        portalTitle: 'Guest Portal',
+        portalTheme: 'classic',
+        portalEnabled: true,
+      })
 
-      // Advance time by 15 seconds - should trigger one poll
       await vi.advanceTimersByTimeAsync(15_000)
 
-      // Verify one poll happened
       expect(getSessionSpy).toHaveBeenCalledTimes(1)
-
-      getSessionSpy.mockClear()
-
-      // Now flip portalEnabled to true in the store
-      portalEnabled = true
-      vi.mocked(storeModule.useDeviceStore).mockImplementation(() => ({
-        devices: [],
-        connected: true,
-        portalEnabled: true,
-        stale: false,
-      }))
-
-      // Rerender to trigger the effect cleanup
-      rerender(<App />)
-
-      await vi.runOnlyPendingTimersAsync()
-
       await waitFor(() => {
         expect(screen.queryByTestId('guest-screen')).not.toBeNull()
       })
 
       getSessionSpy.mockClear()
 
-      // Advance time by another 15 seconds - should NOT trigger another poll
-      await vi.advanceTimersByTimeAsync(15_000)
+      // Advance time by another 20 seconds - should NOT trigger another poll
+      await vi.advanceTimersByTimeAsync(20_000)
 
-      // Wait a bit more to be absolutely sure
-      await vi.advanceTimersByTimeAsync(5_000)
-
-      // getSession should not have been called because the timer was cleared
       expect(getSessionSpy).not.toHaveBeenCalled()
 
-      vi.mocked(storeModule.useDeviceStore).mockRestore()
       vi.useRealTimers()
     })
 
@@ -537,41 +350,19 @@ describe('App component', () => {
       // This test proves the 15s polling interval actually restores the guest surface
       // when the owner re-enables the portal. Without the interval callback working,
       // this test would fail.
-      const storeModule = await import('../../src/web/store.js')
       const { App } = await import('../../src/web/App.js')
 
       vi.useFakeTimers({ shouldAdvanceTime: true })
 
-      // Mock store to initially return portalEnabled=false, then true
-      let portalEnabled = false
-      vi.spyOn(storeModule, 'useDeviceStore').mockImplementation(() => ({
-        devices: [],
-        connected: portalEnabled,
-        portalEnabled,
-        stale: false,
-      }))
+      vi.mocked(api.getSession).mockResolvedValue({
+        role: 'guest',
+        portalId: 'p1',
+        portalTitle: 'Guest Portal',
+        portalTheme: 'classic',
+        portalEnabled: false,
+      })
 
-      // Start with portalEnabled=false, then switch to true after the first poll
-      let callCount = 0
-      global.fetch = vi.fn((input: string | URL | Request) => {
-        const urlStr =
-          typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
-
-        if (urlStr.includes('/api/session')) {
-          callCount++
-          const enabled = callCount > 1
-          return Promise.resolve(
-            new Response(JSON.stringify({ role: 'guest', portalEnabled: enabled }), {
-              status: 200,
-              headers: { 'Content-Type': 'application/json' },
-            }),
-          )
-        }
-
-        return Promise.reject(new Error(`Unmocked fetch to ${urlStr}`))
-      }) as typeof fetch
-
-      const { rerender } = render(<App />)
+      render(<App />)
 
       await vi.runOnlyPendingTimersAsync()
 
@@ -579,24 +370,23 @@ describe('App component', () => {
         expect(screen.queryByTestId('portal-disabled-screen')).not.toBeNull()
       })
 
-      // Update the store state
-      portalEnabled = true
+      // The owner flips the portal back on; the next poll finds it.
+      vi.mocked(api.getSession).mockResolvedValue({
+        role: 'guest',
+        portalId: 'p1',
+        portalTitle: 'Guest Portal',
+        portalTheme: 'classic',
+        portalEnabled: true,
+      })
 
-      // Advance time by 15 seconds to trigger the poll
+      // Advance time by 15 seconds to trigger the poll that finds it back on.
       await vi.advanceTimersByTimeAsync(15_000)
 
-      // Re-render to apply the new store state
-      rerender(<App />)
-
-      await vi.runOnlyPendingTimersAsync()
-
-      // The guest screen should appear without any user interaction
       await waitFor(() => {
         expect(screen.queryByTestId('guest-screen')).not.toBeNull()
       })
       expect(screen.queryByTestId('portal-disabled-screen')).toBeNull()
 
-      vi.mocked(storeModule.useDeviceStore).mockRestore()
       vi.useRealTimers()
     })
   })

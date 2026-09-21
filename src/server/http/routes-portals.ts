@@ -22,7 +22,12 @@ export function mountPortalRoutes(app: Hono<Env>, deps: Deps): void {
   }
 
   app.get('/api/admin/portals', (c) => {
-    return c.json(PortalsListResponse.parse({ portals: portals.list() }))
+    return c.json(
+      PortalsListResponse.parse({
+        portals: portals.list(),
+        lastSelectedPortalId: settings.getLastSelectedPortalId(),
+      }),
+    )
   })
 
   app.post('/api/admin/portals', async (c) => {

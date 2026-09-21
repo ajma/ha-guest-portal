@@ -7,6 +7,7 @@ export function Shell({
   loggingOut,
   title,
   headerActions,
+  belowHeader,
 }: ShellProps): ReactElement {
   return (
     <div
@@ -28,6 +29,8 @@ export function Shell({
           </button>
         </div>
       </div>
+
+      {belowHeader}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-[var(--tileGap)] max-w-7xl">
         {children}

@@ -77,7 +77,9 @@ describe('unreachable portal', () => {
     render(<App />)
     await screen.findByTestId('portal-unreachable-screen')
 
-    let settle: (value: { role: 'guest'; portalEnabled: boolean } | null) => void = () => {}
+    let settle: (
+      value: { role: 'guest'; portalId: string; portalTitle: string; portalTheme: 'classic'; portalEnabled: boolean } | null,
+    ) => void = () => {}
     vi.mocked(api.getSession).mockReturnValue(
       new Promise((resolve) => {
         settle = resolve
@@ -112,7 +114,13 @@ describe('unreachable portal', () => {
     vi.spyOn(store, 'useDeviceStore').mockImplementation(snapshot)
     vi.spyOn(store, 'getSnapshot').mockImplementation(snapshot)
 
-    vi.mocked(api.getSession).mockResolvedValue({ role: 'guest', portalEnabled: false })
+    vi.mocked(api.getSession).mockResolvedValue({
+      role: 'guest',
+      portalId: 'p1',
+      portalTitle: 'Timothy',
+      portalTheme: 'classic',
+      portalEnabled: false,
+    })
 
     const { rerender } = render(<App />)
     await screen.findByTestId('portal-disabled-screen')
@@ -145,7 +153,13 @@ describe('unreachable portal', () => {
     vi.spyOn(store, 'useDeviceStore').mockImplementation(snapshot)
     vi.spyOn(store, 'getSnapshot').mockImplementation(snapshot)
 
-    vi.mocked(api.getSession).mockResolvedValue({ role: 'guest', portalEnabled: false })
+    vi.mocked(api.getSession).mockResolvedValue({
+      role: 'guest',
+      portalId: 'p1',
+      portalTitle: 'Timothy',
+      portalTheme: 'classic',
+      portalEnabled: false,
+    })
 
     try {
       render(<App />)

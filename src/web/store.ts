@@ -133,7 +133,7 @@ export function getSnapshot(): DeviceStoreSnapshot {
   return snapshot
 }
 
-export function connectDeviceStore(): () => void {
+export function connectDeviceStore(portalId: string): () => void {
   connectionRefCount++
 
   // Create EventSource on 0→1 transition
@@ -143,7 +143,9 @@ export function connectDeviceStore(): () => void {
       // In test environment without EventSource, just set disconnected
       setConnected(false)
     } else {
-      eventSource = new EventSource(apiUrl('/api/stream'), { withCredentials: true })
+      eventSource = new EventSource(apiUrl(`/api/stream?portalId=${encodeURIComponent(portalId)}`), {
+        withCredentials: true,
+      })
 
       eventSource.addEventListener('message', (event) => {
         try {
