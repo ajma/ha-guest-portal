@@ -1,0 +1,117 @@
+name: Publish
+
+# A `v*` tag and nothing else. Every other push is ci.yml's job; this workflow
+# exists only to turn a tag into the images the Supervisor pulls.
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  publish:
+    strategy:
+      # fail-fast off deliberately: if one architecture breaks, the other should
+      # still publish. A half-published release is visible and fixable;
+      # cancelling a good build to report a bad one wastes the good one.
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          # Native arm64 rather than QEMU. Emulating aarch64 for a Node build is
+          # minutes of CPU per run, and is the usual reason add-on pipelines are
+          # slow. GitHub provides this runner label free to public repositories;
+          # if it is ever unavailable here, the fallback is
+          # docker/setup-qemu-action plus `platforms: linux/arm64`, not a broken
+          # pipeline.
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runner }}
+
+    # Scoped to the job, not the workflow: if a second job is ever added it
+    # should have to ask for `packages: write` rather than inherit it.
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the tag matches config.yaml
+        id: version
+        # The Supervisor pulls the tag named by config.yaml's `version`. A tag of
+        # v0.3.0 against a config.yaml still reading 0.2.0 publishes images
+        # nothing will ever fetch, and the add-on silently appears not to update.
+        # Refuse before building rather than produce that.
+        run: |
+          set -euo pipefail
+          tag_version="${GITHUB_REF_NAME#v}"
+          # awk rather than grep: grep exits 1 when config.yaml has no version
+          # line, and under `pipefail` that aborts the step with no message at
+          # all. Both quote styles and a stray CR are stripped because each one
+          # was observed to fail a correct tag, and the CRLF case is the worst
+          # of them — the mismatch message prints two strings that look
+          # identical.
+          config_version="$(awk '/^version:/ { print $2; exit }' config.yaml | tr -d "\"'\r")"
+          if [ -z "$config_version" ]; then
+            echo "config.yaml has no readable 'version:' line, so there is nothing to check the tag against." >&2
+            exit 1
+          fi
+          if [ "$tag_version" != "$config_version" ]; then
+            echo "Tag is ${GITHUB_REF_NAME} (version ${tag_version}) but config.yaml says ${config_version}." >&2
+            echo "The Supervisor pulls the config.yaml version, so these must agree." >&2
+            exit 1
+          fi
+          echo "version=${config_version}" >> "$GITHUB_OUTPUT"
+
+      # The three docker/* actions below are pinned to commit SHAs, not tags.
+      # A tag like `v4` is mutable: whoever controls that org can repoint it at
+      # new code, which then runs here with a GITHUB_TOKEN that can push to the
+      # package registry. That is not hypothetical — tj-actions/changed-files
+      # was compromised exactly this way in March 2025 and leaked CI secrets.
+      # actions/* stay on major tags on purpose: subverting those means
+      # subverting GitHub, which also owns the runner, so a pin buys nothing.
+      # Dependabot (.github/dependabot.yml) bumps these SHAs, so pinning does
+      # not mean going stale.
+
+      # buildx's default `docker` driver cannot export build cache, so the
+      # `type=gha` cache below needs a real builder. Without this step the build
+      # fails on cache export rather than quietly skipping it.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: true
+          # Per-arch tags, not a multi-arch manifest: the Supervisor substitutes
+          # {arch} into config.yaml's image key and pulls that name directly.
+          tags: |
+            ghcr.io/ajma/ha-guest-portal/${{ matrix.arch }}-ha-guest-portal:${{ steps.version.outputs.version }}
+          # Attestations are out of scope for this pipeline, and the default is
+          # not free: provenance mode=min wraps a single-platform build in an
+          # image index with an extra attestation manifest. Verified locally — a
+          # plain `docker build` of this Dockerfile exports an "attestation
+          # manifest" and a "manifest list" for one architecture. Each of these
+          # tags is meant to be exactly one image.
+          provenance: false
+          # No `cache-to: type=gha` here, deliberately. A run can restore only
+          # its own ref's cache scope plus the default branch's, every release
+          # is a fresh tag ref, and nothing builds this image on the default
+          # branch — so a tag run can never read what an earlier tag wrote.
+          # The cache would not merely be useless: a mode=max cache of a full
+          # Node build counts against the repo's 10GB cache limit, where LRU
+          # eviction would push out the pnpm-store caches ci.yml does use.
+          # If an image build is ever added to the default branch, caching
+          # becomes worth revisiting — scoped per matrix.arch, since the gha
+          # backend defaults to scope=buildkit and the two legs would
+          # otherwise overwrite each other.

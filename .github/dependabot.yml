@@ -1,0 +1,13 @@
+version: 2
+
+updates:
+  # publish.yml pins its third-party actions to commit SHAs so a mutable tag
+  # cannot be repointed at code that runs with `packages: write`. That trade is
+  # only safe if something keeps the pins moving — otherwise the workflow
+  # quietly runs a frozen, eventually-unpatched action forever. This is that
+  # something: Dependabot rewrites both the SHA and the trailing version
+  # comment, so the pins stay current without being mutable.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
