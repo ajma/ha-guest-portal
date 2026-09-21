@@ -5,17 +5,22 @@ import { THEME_IDS } from './themes.js'
 
 // Role types
 export type Role = 'guest' | 'admin'
-const RoleSchema = z.enum(['guest', 'admin'])
 
 // Authentication schemas
 export const LoginRequest = z.object({
   password: z.string(),
 })
 
-export const SessionResponse = z.object({
-  role: RoleSchema,
-  portalEnabled: z.boolean(),
-})
+export const SessionResponse = z.discriminatedUnion('role', [
+  z.object({ role: z.literal('admin') }),
+  z.object({
+    role: z.literal('guest'),
+    portalId: z.string(),
+    portalTitle: z.string(),
+    portalTheme: z.enum(THEME_IDS),
+    portalEnabled: z.boolean(),
+  }),
+])
 
 // Device state and device schemas
 export type DeviceState = z.infer<typeof DeviceStateSchema>
@@ -161,30 +166,48 @@ export const SseFrameSchema = z.discriminatedUnion('type', [
   PortalFrameSchema,
 ])
 
-// Portal toggle schemas
-export const AdminPortalResponse = z.object({
-  enabled: z.boolean(),
-  integrationToken: z.string(),
-  portalId: z.string(),
-  theme: z.enum(THEME_IDS),
+// Portal management schemas
+const PortalFieldsSchema = z.object({
+  id: z.string(),
   title: z.string(),
-})
-
-export const AdminPortalPutRequest = z.object({
+  theme: z.enum(THEME_IDS),
   enabled: z.boolean(),
 })
 
-export const AdminThemePutRequest = z.object({
-  theme: z.enum(THEME_IDS),
+export const PortalSummaryResponse = PortalFieldsSchema
+export const PortalsListResponse = z.object({ portals: z.array(PortalFieldsSchema) })
+
+export const PortalDetailResponse = PortalFieldsSchema.extend({
+  password: z.string(),
 })
 
 // The length cap is enforced here rather than left to `normalizePortalTitle`'s
 // silent truncation: an owner who pastes something too long should be told, not
 // have the tail quietly removed behind their back.
-export const AdminTitlePutRequest = z.object({
+export const PortalCreateRequest = z.object({
   title: z
     .string()
     .max(MAX_PORTAL_TITLE_LENGTH, `Title must be ${MAX_PORTAL_TITLE_LENGTH} characters or fewer`),
+  password: z.string().min(8),
+})
+
+export const PortalPutRequest = z.object({
+  title: z
+    .string()
+    .max(MAX_PORTAL_TITLE_LENGTH, `Title must be ${MAX_PORTAL_TITLE_LENGTH} characters or fewer`)
+    .optional(),
+  theme: z.enum(THEME_IDS).optional(),
+  enabled: z.boolean().optional(),
+  password: z.string().min(8).optional(),
+})
+
+export const DeploymentSettingsResponse = z.object({
+  integrationToken: z.string(),
+  deploymentId: z.string(),
+})
+
+export const LastSelectedPortalPutRequest = z.object({
+  portalId: z.string(),
 })
 
 const InteractionSchema = z.object({
@@ -197,12 +220,18 @@ const InteractionSchema = z.object({
 })
 
 export const IntegrationStateResponse = z.object({
-  portalId: z.string(),
-  enabled: z.boolean(),
+  deploymentId: z.string(),
   haStale: z.boolean(),
-  deviceCount: z.number(),
   version: z.string(),
-  lastInteraction: InteractionSchema.nullable(),
+  portals: z.array(
+    z.object({
+      portalId: z.string(),
+      title: z.string(),
+      enabled: z.boolean(),
+      deviceCount: z.number(),
+      lastInteraction: InteractionSchema.nullable(),
+    }),
+  ),
 })
 
 export const IntegrationEnabledRequest = z.object({

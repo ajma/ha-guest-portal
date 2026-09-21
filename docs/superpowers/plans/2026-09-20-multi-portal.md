@@ -1597,6 +1597,7 @@ Expected: FAIL — current `login` returns the old `SessionResponse` shape, `dev
 
 ```ts
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
+import type { z } from 'zod'
 import { validateAction } from '../../shared/devices.js'
 import { DevicesResponse, LoginRequest, SessionResponse } from '../../shared/api.js'
 import type { HaClient } from '../ha/client.js'
@@ -1662,7 +1663,7 @@ const FAILURE_STATUS = {
 export function createRoutes(deps: Deps) {
   const { cfg, ha, allowlist, audit, settings, interactions, portals, sessions, limiter } = deps
 
-  function sessionResponseFor(session: SessionData): typeof SessionResponse._type {
+  function sessionResponseFor(session: SessionData): z.infer<typeof SessionResponse> {
     if (session.role === 'admin') return { role: 'admin' }
 
     const portal = portals.get(session.portalId)
@@ -2241,18 +2242,24 @@ Expected: the remaining tests still pass against the *old* file (nothing to fail
 
 - [ ] **Step 3: Trim `routes-admin.ts`**
 
+`Env['Variables']` still only has `role: Role` at this point in the plan's sequencing — it doesn't gain a real `session: SessionData` field until Task 15 rewrites `app.ts`. `routes-guest.ts` (Task 9) hit the same problem and worked around it with a local `currentSession` shim that casts `c.get('role')`; give this file the same interim shim rather than writing `c.var.session`, which will not compile until Task 15 lands:
+
 ```ts
 // src/server/http/routes-admin.ts
 import type { Hono } from 'hono'
 import type { Env } from '../app.js'
 import type { Deps } from './routes-guest.js'
+import type { SessionData } from './auth.js'
 import { CatalogResponse } from '../../shared/api.js'
 
 export function mountAdminRoutes(app: Hono<Env>, deps: Deps): void {
   const { ha } = deps
 
   app.use('/api/admin/*', async (c, next) => {
-    const session = c.var.session
+    // Interim cast: Env['Variables'] only has `role: Role` until Task 15 adds
+    // a real `session: SessionData` field. Mirrors routes-guest.ts's
+    // currentSession shim (Task 9) for the same reason; Task 15 removes both.
+    const session = c.get('role') as unknown as SessionData | undefined
 
     if (!session) {
       return c.json({ error: 'Unauthorized' }, 401)
@@ -2617,9 +2624,130 @@ git commit -m "feat: notify when a portal's enabled flag changes"
 
 - [ ] **Step 1: Write the failing test**
 
-Read both `test/integration/server-process.test.ts` and `test/integration/portal-toggle.test.ts` in full first — they exercise `/api/stream` end-to-end against a real HTTP server. Add:
+Read both `test/integration/server-process.test.ts` and `test/integration/portal-toggle.test.ts` in full first — they exercise `/api/stream` end-to-end against a real HTTP server. Neither file currently asserts anything about SSE frame *content* (snapshot-on-connect, patch-on-state-change, degraded-on-drop, fresh-snapshot-on-allowlist-change) — that coverage used to live in `test/integration/routes-guest.test.ts`'s `'SSE streaming'` describe block, which Task 9 removed because it exercised runtime.ts machinery this task is what actually rewrites. Its two helpers (`openStream`/`waitForFrame`) were deleted along with it and exist nowhere now. Add both helpers to `test/integration/portal-toggle.test.ts` (near its other top-level helpers, alongside `loginAs`):
 
 ```ts
+import type { SseFrame } from '../../src/shared/api.ts'
+
+async function openStream(baseUrl: string, cookie: string) {
+  const ctrl = new AbortController()
+  const res = await fetch(`${baseUrl}/api/stream`, {
+    headers: { Cookie: cookie },
+    signal: ctrl.signal,
+  })
+  const reader = res.body?.getReader()
+  if (!reader) throw new Error('no body')
+  const dec = new TextDecoder()
+  const frames: SseFrame[] = []
+  const pump = (async () => {
+    let buf = ''
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += dec.decode(value, { stream: true })
+        for (;;) {
+          const i = buf.indexOf('\n\n')
+          if (i === -1) break
+          const chunk = buf.slice(0, i)
+          buf = buf.slice(i + 2)
+          const line = chunk.split('\n').find((l) => l.startsWith('data: '))
+          if (line) frames.push(JSON.parse(line.slice(6)))
+        }
+      }
+    } catch {
+      // aborted
+    }
+  })()
+  return { res, frames, abort: () => ctrl.abort(), pump }
+}
+
+async function waitForFrame(frames: SseFrame[], type: string, ms = 5000): Promise<boolean> {
+  const t0 = Date.now()
+  while (Date.now() - t0 < ms) {
+    if (frames.some((f) => f.type === type)) return true
+    await new Promise((r) => setTimeout(r, 25))
+  }
+  return false
+}
+```
+
+Then add these tests, which pin the basic per-connection mechanics before the cross-portal routing tests below pin the isolation:
+
+```ts
+it('emits a snapshot immediately on connect, scoped to the guest\'s own portal', async () => {
+  const portal = portals.create({ title: 'Timothy', password: 'snapshot-connect-pass' })
+  allowlist.replace(portal.id, [
+    { entityId: 'light.porch', label: 'Porch', allowedActions: ['turn_on', 'turn_off'], sortOrder: 1 },
+  ])
+  const { cookie } = await loginAs('snapshot-connect-pass')
+
+  const stream = await openStream(baseUrl, cookie)
+  expect(stream.res.status).toBe(200)
+  expect(stream.res.headers.get('content-type')).toBe('text/event-stream')
+
+  expect(await waitForFrame(stream.frames, 'snapshot')).toBe(true)
+  const snapshot = stream.frames.find((f) => f.type === 'snapshot')
+  if (snapshot?.type !== 'snapshot') throw new Error('Expected snapshot frame')
+  expect(snapshot.devices.map((d) => d.entityId)).toEqual(['light.porch'])
+
+  stream.abort()
+  await stream.pump
+})
+
+it('emits a patch after a state change, then degraded after the connection drops', async () => {
+  const portal = portals.create({ title: 'Timothy', password: 'patch-degraded-pass' })
+  allowlist.replace(portal.id, [
+    { entityId: 'light.porch', label: 'Porch', allowedActions: ['turn_on', 'turn_off'], sortOrder: 1 },
+  ])
+  const { cookie } = await loginAs('patch-degraded-pass')
+
+  const stream = await openStream(baseUrl, cookie)
+  await waitForFrame(stream.frames, 'snapshot')
+
+  fake.setState('light.porch', 'on')
+  expect(await waitForFrame(stream.frames, 'patch')).toBe(true)
+
+  fake.drop()
+  expect(await waitForFrame(stream.frames, 'degraded')).toBe(true)
+  const degraded = stream.frames.find((f) => f.type === 'degraded')
+  expect(degraded).toMatchObject({ stale: true })
+
+  stream.abort()
+  await stream.pump
+})
+
+it('emits a fresh snapshot when that portal\'s allowlist changes', async () => {
+  const portal = portals.create({ title: 'Timothy', password: 'allowlist-snapshot-pass' })
+  allowlist.replace(portal.id, [
+    { entityId: 'light.porch', label: 'Porch', allowedActions: ['turn_on', 'turn_off'], sortOrder: 1 },
+    { entityId: 'switch.fan', label: 'Fan', allowedActions: ['turn_on', 'turn_off'], sortOrder: 2 },
+  ])
+  const { cookie } = await loginAs('allowlist-snapshot-pass')
+
+  const stream = await openStream(baseUrl, cookie)
+  await waitForFrame(stream.frames, 'snapshot')
+  const countBefore = stream.frames.filter((f) => f.type === 'snapshot').length
+
+  allowlist.replace(portal.id, [
+    { entityId: 'light.porch', label: 'Porch', allowedActions: ['turn_on', 'turn_off'], sortOrder: 1 },
+  ])
+
+  const t0 = Date.now()
+  while (Date.now() - t0 < 5000) {
+    if (stream.frames.filter((f) => f.type === 'snapshot').length > countBefore) break
+    await new Promise((r) => setTimeout(r, 25))
+  }
+  const snapshots = stream.frames.filter((f) => f.type === 'snapshot')
+  expect(snapshots.length).toBeGreaterThan(countBefore)
+  const latest = snapshots[snapshots.length - 1]
+  if (latest?.type !== 'snapshot') throw new Error('Expected snapshot frame')
+  expect(latest.devices.map((d) => d.entityId)).toEqual(['light.porch'])
+
+  stream.abort()
+  await stream.pump
+})
+
 it('only streams patches for the portal a guest is bound to', async () => {
   const timothy = portals.create({ title: 'Timothy', password: 'timothy-pass' })
   const mary = portals.create({ title: 'Mary', password: 'mary-pass' })
@@ -2978,6 +3106,55 @@ it('renders the guest\'s own portal theme when their session cookie is valid', a
   expect(html).toContain('data-theme="tiles"')
   expect(html).toContain(`data-portal-title="Timothy"`)
 })
+
+it('escapes a hostile portal title rather than emitting it raw', async () => {
+  // The title is owner-supplied text written into two HTML contexts. This
+  // is the only injection surface `renderIndexHtml` adds beyond the base
+  // href already covered above.
+  const portal = portals.create({ title: '"><script>alert(1)</script>', password: 'hostile-title-pass' })
+  const cookie = await loginAs('hostile-title-pass')
+
+  const res = await fetch(baseUrl, { headers: { cookie } })
+  const html = await res.text()
+  expect(html).not.toContain('<script>alert(1)</script>')
+  expect(html).not.toContain('data-portal-title="">')
+  // Necessary but not sufficient on their own: dropping only the quote
+  // replacement still escapes the tag while closing the attribute early —
+  // the whole expected value is what proves the attribute survived intact.
+  expect(html).toContain('data-portal-title="&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"')
+  expect(html).toContain('<title>&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;</title>')
+})
+
+it('escapes an ampersand in the portal title before the escapes it introduces itself', async () => {
+  // Ordering matters and is invisible in a title made only of tags: escape
+  // `&` last and every `&` this function emits gets re-escaped, so the
+  // header renders `&quot;` as literal text instead of a quote.
+  const portal = portals.create({ title: 'Tom & Jerry\'s "Place"', password: 'ampersand-title-pass' })
+  const cookie = await loginAs('ampersand-title-pass')
+
+  const res = await fetch(baseUrl, { headers: { cookie } })
+  const html = await res.text()
+  expect(html).toContain('data-portal-title="Tom &amp; Jerry&#39;s &quot;Place&quot;"')
+  expect(html).toContain('<title>Tom &amp; Jerry&#39;s &quot;Place&quot;</title>')
+  expect(html).not.toContain('Tom & Jerry')
+  expect(html).not.toContain('&amp;quot;')
+})
+
+it('treats $-sequences in the portal title as text, not replacement patterns', async () => {
+  // `String.prototype.replace` expands `$&` and `` $` `` inside a *string*
+  // replacement, and escaping does not defuse them: `$&` escapes to
+  // `$&amp;`, which still begins `$&`. Only a function replacer disables
+  // the expansion — without one the matched `<html` tag would land inside
+  // its own attribute value.
+  const portal = portals.create({ title: '$& $` Bay', password: 'dollar-title-pass' })
+  const cookie = await loginAs('dollar-title-pass')
+
+  const res = await fetch(baseUrl, { headers: { cookie } })
+  const html = await res.text()
+  expect(html).toContain('data-portal-title="$&amp; $` Bay"')
+  expect(html).toContain('<title>$&amp; $` Bay</title>')
+  expect(html).not.toMatch(/data-portal-title="[^"]*<(html|!DOCTYPE)/i)
+})
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -3180,6 +3357,29 @@ export function createApp(deps: Deps) {
 ```
 
 `resolvePortalId` is imported here only to keep the import list matching what `routes-guest.ts` exports for other consumers to pick up — this file itself does not call it directly (guest/admin devices routes call it internally within `routes-guest.ts`'s own handlers, Task 9). If lint flags the unused import, remove it — it is not required by this file's own logic, only mentioned above for readers tracing where the helper is used across the codebase.
+
+- [ ] **Step 3b: Remove Task 9's interim `currentSession` shim from `routes-guest.ts`**
+
+Task 9 (Phase 3) needed a session object before this file (`app.ts`) existed in its new form — at that point in the plan's sequencing, `Env['Variables']` still only had `role: Role`, not `session: SessionData`, so `routes-guest.ts` could not yet reference `c.var.session` directly. Its implementer worked around this with a local helper:
+
+```ts
+function currentSession(c: HonoContext): SessionData | undefined {
+  return c.get('role') as unknown as SessionData | undefined
+}
+```
+
+This shim has a real bug that was never reachable in Task 9's own tests (which never configure an ingress port): the ingress admin path sets a bare string, `c.set('role', 'admin')` (see the *old* `ingressMiddleware` this very step just replaced), not a `SessionData` object — so `currentSession(c)` would silently produce a broken pseudo-session (`.role` reading `undefined`, not `'admin'`) for any ingress-sourced request, until this exact step lands. Now that this step's `Env['Variables']` genuinely has `session: SessionData`, and the new `ingressMiddleware`/`requireSession` both call `c.set('session', ...)` with a real object in every code path (no more bare strings), the shim is no longer needed and its bug is moot going forward — but only if it is actually removed:
+
+1. In `src/server/http/routes-guest.ts`, delete the `currentSession` function entirely (including its doc comment).
+2. Replace every `const session = currentSession(c)` call site with `const session = c.var.session`.
+3. `src/server/http/routes-admin.ts` (Task 11) carries the same interim shim in its admin-role middleware (`const session = c.get('role') as unknown as SessionData | undefined`, with a comment pointing at this exact step) — replace it with `const session = c.var.session` too, and drop the now-unnecessary `SessionData` type-only cast import if nothing else in that file still needs it.
+4. Run `pnpm typecheck` — both files should now compile cleanly with no cast, since `c.var.session` is properly typed as `SessionData | undefined` once each file's own `Env` import resolves against the `app.ts` you just wrote.
+5. Run `pnpm vitest run test/integration/routes-guest.test.ts test/integration/routes-admin.test.ts` to confirm nothing regressed (should still be fully green — this is a pure refactor, no behavior change for the cookie-based path, and a real bug fix for the ingress path).
+
+```bash
+git add src/server/http/routes-guest.ts src/server/http/routes-admin.ts
+git commit -m "refactor: read the session context variable directly now that app.ts provides it"
+```
 
 - [ ] **Step 4: Run test to verify it passes**
 

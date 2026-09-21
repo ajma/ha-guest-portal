@@ -1,4 +1,5 @@
 import type { ContentfulStatusCode } from 'hono/utils/http-status'
+import type { z } from 'zod'
 import { validateAction } from '../../shared/devices.js'
 import { DevicesResponse, LoginRequest, SessionResponse } from '../../shared/api.js'
 import type { HaClient } from '../ha/client.js'
@@ -6,10 +7,12 @@ import type { AllowlistStore } from '../store/allowlist.js'
 import type { AuditLog } from '../store/auditlog.js'
 import type { SettingsStore } from '../store/settings.js'
 import type { InteractionStore } from '../store/interactions.js'
+import type { PortalStore } from '../store/portals.js'
 import type { Config } from '../config.js'
 import {
   SESSION_COOKIE,
   type SessionStore,
+  type SessionData,
   type LoginRateLimiter,
   classify,
   clientIp,
@@ -26,6 +29,7 @@ export type Deps = {
   audit: AuditLog
   settings: SettingsStore
   interactions: InteractionStore
+  portals: PortalStore
   sessions: SessionStore
   limiter: LoginRateLimiter
   hub: SseHub
@@ -33,12 +37,35 @@ export type Deps = {
 
 type HonoContext = Context<Env>
 
-// Helper to extract client IP from request
 function getClientIp(c: HonoContext, cfg: Config): string {
   const rawIp = c.env.incoming.socket.remoteAddress ?? '0.0.0.0'
   const forwardedFor = c.req.header('x-forwarded-for')
   const trustProxy = cfg.trustProxy
   return clientIp(rawIp, forwardedFor, trustProxy)
+}
+
+/**
+ * app.ts's session middleware stores the authenticated session under the
+ * `role` context key and won't be renamed to `session` until it's rewritten
+ * (a later task, alongside the `Role` -> `SessionData` context-variable type
+ * update). At runtime the value stored there is already the full
+ * `SessionData` object `SessionStore.get()` returns - only the context's
+ * declared type still lags. This reads that same key under the name this
+ * file actually needs, without depending on the rename.
+ */
+function currentSession(c: HonoContext): SessionData | undefined {
+  return c.get('role') as unknown as SessionData | undefined
+}
+
+/**
+ * A guest's portal is fixed by their session. An admin session carries no
+ * portal of its own — they act on whichever portal `?portalId=` names, since
+ * one admin identity reaches every portal.
+ */
+export function resolvePortalId(c: HonoContext, session: SessionData): string | null {
+  if (session.role === 'guest') return session.portalId
+  const fromQuery = c.req.query('portalId')
+  return fromQuery ?? null
 }
 
 const FAILURE_STATUS = {
@@ -49,58 +76,81 @@ const FAILURE_STATUS = {
 } as const satisfies Record<string, ContentfulStatusCode>
 
 export function createRoutes(deps: Deps) {
-  const { cfg, ha, allowlist, audit, settings, interactions, sessions, limiter } = deps
+  const { cfg, ha, allowlist, audit, interactions, portals, sessions, limiter } = deps
+
+  function sessionResponseFor(session: SessionData): z.infer<typeof SessionResponse> {
+    if (session.role === 'admin') return { role: 'admin' }
+
+    const portal = portals.get(session.portalId)
+    // The portal was deleted out from under an active guest session. Report
+    // disabled rather than throwing: the client's existing "disabled" screen
+    // is the correct outcome, and a delete-while-logged-in race is the only
+    // way to reach this.
+    if (portal === null) {
+      return {
+        role: 'guest',
+        portalId: session.portalId,
+        portalTitle: '',
+        portalTheme: 'classic',
+        portalEnabled: false,
+      }
+    }
+
+    return {
+      role: 'guest',
+      portalId: portal.id,
+      portalTitle: portal.title,
+      portalTheme: portal.theme,
+      portalEnabled: portal.enabled,
+    }
+  }
 
   return {
     // POST /api/login
     async login(c: HonoContext) {
       const ip = getClientIp(c, cfg)
 
-      // Check rate limit
       const rateLimitResult = limiter.check(ip)
       if (!rateLimitResult.allowed) {
         return c.json(
           { error: 'Too many failed login attempts' },
-          {
-            status: 429,
-            headers: {
-              'Retry-After': String(rateLimitResult.retryAfterSec),
-            },
-          },
+          { status: 429, headers: { 'Retry-After': String(rateLimitResult.retryAfterSec) } },
         )
       }
 
-      // Parse request body
       const parseResult = LoginRequest.safeParse(await c.req.json())
       if (!parseResult.success) {
         return c.json({ error: 'Invalid request' }, 400)
       }
 
       const { password } = parseResult.data
+      const resolved = classify(password, cfg, portals)
 
-      // Classify password
-      const role = classify(password, cfg)
-
-      if (role === null) {
-        // Record failure
+      if (resolved === null) {
         limiter.recordFailure(ip)
         return c.json({ error: 'Invalid credentials' }, 401)
       }
 
-      // Portal disabled: block guests, leave admins alone.
-      // Deliberately does NOT call limiter.recordFailure() — the password was
-      // correct, and counting it would let a disabled portal lock out a guest
-      // who keeps retrying, leaving them locked out after re-enabling.
-      if (settings.blocksGuest(role)) {
-        return c.json({ error: 'portal_disabled' }, 403)
-      }
+      if (resolved.role === 'guest') {
+        const portal = portals.get(resolved.portalId)
+        // Cannot be null here in practice — classify() just found this portal
+        // by password — but the type is nullable, so this is a defensive exit.
+        if (portal === null) {
+          limiter.recordFailure(ip)
+          return c.json({ error: 'Invalid credentials' }, 401)
+        }
 
-      // Record success
-      limiter.recordSuccess(ip)
+        if (!portal.enabled) {
+          // Deliberately does NOT call limiter.recordFailure() — the password
+          // was correct, and counting it would let a disabled portal lock out
+          // a guest who keeps retrying, leaving them locked out after
+          // re-enabling.
+          return c.json({ error: 'portal_disabled' }, 403)
+        }
 
-      // Record guest interaction
-      if (role === 'guest') {
+        limiter.recordSuccess(ip)
         interactions.record({
+          portalId: portal.id,
           ts: Date.now(),
           kind: 'login',
           entityId: null,
@@ -108,12 +158,15 @@ export function createRoutes(deps: Deps) {
           action: null,
           ok: true,
         })
+      } else {
+        limiter.recordSuccess(ip)
       }
 
-      // Create session
-      const sessionId = sessions.create(role)
+      const sessionId = sessions.create(resolved)
+      const session = sessions.get(sessionId)
+      // Just created it; always present.
+      if (session === undefined) throw new Error('Session vanished immediately after creation')
 
-      // Set cookie
       // httpOnly: prevent XSS
       // SameSite=Lax: prevent CSRF
       // Path=/: session is valid for all routes
@@ -121,10 +174,8 @@ export function createRoutes(deps: Deps) {
       //            browsers to silently drop the cookie, breaking login
       const cookieValue = `${SESSION_COOKIE}=${sessionId}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000`
 
-      return c.json(SessionResponse.parse({ role, portalEnabled: settings.getPortalEnabled() }), {
-        headers: {
-          'Set-Cookie': cookieValue,
-        },
+      return c.json(SessionResponse.parse(sessionResponseFor(session)), {
+        headers: { 'Set-Cookie': cookieValue },
       })
     },
 
@@ -135,7 +186,6 @@ export function createRoutes(deps: Deps) {
         return c.json({ error: 'Unauthorized' }, 401)
       }
 
-      // Parse session cookie
       const match = new RegExp(`${SESSION_COOKIE}=([^;]+)`).exec(cookie)
       if (match) {
         const sessionId = match[1]
@@ -144,41 +194,41 @@ export function createRoutes(deps: Deps) {
         }
       }
 
-      // Clear cookie
       const cookieValue = `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`
 
-      return c.json(
-        { ok: true },
-        {
-          headers: {
-            'Set-Cookie': cookieValue,
-          },
-        },
-      )
+      return c.json({ ok: true }, { headers: { 'Set-Cookie': cookieValue } })
     },
 
     // GET /api/session
     async session(c: HonoContext) {
-      const role = c.var.role
-      if (!role) {
+      const session = currentSession(c)
+      if (!session) {
         return c.json({ error: 'Unauthorized' }, 401)
       }
 
-      return c.json(SessionResponse.parse({ role, portalEnabled: settings.getPortalEnabled() }))
+      return c.json(SessionResponse.parse(sessionResponseFor(session)))
     },
 
     // GET /api/devices
     async devices(c: HonoContext) {
-      const role = c.var.role
-      if (!role) {
+      const session = currentSession(c)
+      if (!session) {
         return c.json({ error: 'Unauthorized' }, 401)
       }
 
-      if (settings.blocksGuest(role)) {
-        return c.json({ error: 'portal_disabled' }, 403)
+      const portalId = resolvePortalId(c, session)
+      if (portalId === null) {
+        return c.json({ error: 'Missing portalId' }, 400)
       }
 
-      const allowlistRows = allowlist.list()
+      if (session.role === 'guest') {
+        const portal = portals.get(portalId)
+        if (portal === null || !portal.enabled) {
+          return c.json({ error: 'portal_disabled' }, 403)
+        }
+      }
+
+      const allowlistRows = allowlist.list(portalId)
       const states = ha.getStates()
       const stale = ha.stale
 
@@ -189,13 +239,21 @@ export function createRoutes(deps: Deps) {
 
     // POST /api/devices/:entityId/:action
     async callAction(c: HonoContext) {
-      const role = c.var.role
-      if (!role) {
+      const session = currentSession(c)
+      if (!session) {
         return c.json({ error: 'Unauthorized' }, 401)
       }
 
-      if (settings.blocksGuest(role)) {
-        return c.json({ error: 'portal_disabled' }, 403)
+      const portalId = resolvePortalId(c, session)
+      if (portalId === null) {
+        return c.json({ error: 'Missing portalId' }, 400)
+      }
+
+      if (session.role === 'guest') {
+        const portal = portals.get(portalId)
+        if (portal === null || !portal.enabled) {
+          return c.json({ error: 'portal_disabled' }, 403)
+        }
       }
 
       const entityId = c.req.param('entityId')
@@ -205,28 +263,20 @@ export function createRoutes(deps: Deps) {
         return c.json({ error: 'Missing parameters' }, 400)
       }
 
-      // Validate action
-      const validation = validateAction(entityId, action, allowlist.asMap())
+      const validation = validateAction(entityId, action, allowlist.asMap(portalId))
 
       const ts = Date.now()
 
       if (!validation.ok) {
-        // Record audit log for failed attempt
-        audit.record({
-          ts,
-          entityId,
-          action,
-          role,
-          ok: false,
-        })
+        audit.record({ portalId, ts, entityId, action, role: session.role, ok: false })
 
-        // Record guest interaction
-        if (role === 'guest') {
+        if (session.role === 'guest') {
           interactions.record({
+            portalId,
             ts,
             kind: 'action',
             entityId,
-            label: allowlist.list().find((d) => d.entityId === entityId)?.label ?? null,
+            label: allowlist.list(portalId).find((d) => d.entityId === entityId)?.label ?? null,
             action,
             ok: false,
           })
@@ -241,34 +291,24 @@ export function createRoutes(deps: Deps) {
         )
       }
 
-      // Call Home Assistant
       const result = await ha.callAction(validation.domain, validation.service, entityId)
 
-      // Record audit log
-      audit.record({
-        ts,
-        entityId,
-        action,
-        role,
-        ok: result.ok,
-      })
+      audit.record({ portalId, ts, entityId, action, role: session.role, ok: result.ok })
 
-      // Record guest interaction
-      if (role === 'guest') {
+      if (session.role === 'guest') {
         interactions.record({
+          portalId,
           ts,
           kind: 'action',
           entityId,
-          label: allowlist.list().find((d) => d.entityId === entityId)?.label ?? null,
+          label: allowlist.list(portalId).find((d) => d.entityId === entityId)?.label ?? null,
           action,
           ok: result.ok,
         })
       }
 
       if (!result.ok) {
-        // Log the detailed error server-side
         console.error(`HA action failed for ${entityId}/${action}:`, result.message)
-        // Return a generic error to the client
         return c.json({ error: 'Service unavailable' }, 503)
       }
 

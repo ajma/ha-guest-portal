@@ -1,37 +1,65 @@
+// This harness builds its own minimal Hono app around mountAdminRoutes
+// instead of going through createApp/createRuntime. app.ts/runtime.ts are
+// still on the pre-multi-portal API (SettingsStore lost its title/theme/
+// portal-enabled methods, Config lost `guestPassword`, login now resolves
+// guests through PortalStore) and won't be rewritten until Task 15. Sessions
+// are created directly via SessionStore, bypassing the password/portal login
+// flow entirely, since this file only needs to exercise the admin-role gate
+// and the entity catalog route — neither of which involves login.
+// test/integration/routes-portals.test.ts (Task 10) established the bare-Hono
+// -app half of this pattern; it still drives real /api/login for its own
+// tests since portal creation is what it's actually testing.
 import type { Server } from 'node:http'
+import { getRequestListener } from '@hono/node-server'
+import { createServer } from 'node:http'
+import { Hono, type MiddlewareHandler } from 'hono'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { HaClient } from '../../src/server/ha/client.ts'
-import { type LoginRateLimiter, SessionStore } from '../../src/server/http/auth.ts'
+import type { Env } from '../../src/server/app.ts'
+import { mountAdminRoutes } from '../../src/server/http/routes-admin.ts'
+import type { Deps } from '../../src/server/http/routes-guest.ts'
+import { LoginRateLimiter, SESSION_COOKIE, SessionStore } from '../../src/server/http/auth.ts'
 import { SseHub } from '../../src/server/http/sse.ts'
 import { AllowlistStore } from '../../src/server/store/allowlist.ts'
 import { AuditLog } from '../../src/server/store/auditlog.ts'
 import { SettingsStore } from '../../src/server/store/settings.ts'
 import { InteractionStore } from '../../src/server/store/interactions.ts'
+import { PortalStore } from '../../src/server/store/portals.ts'
 import { openDb } from '../../src/server/store/db.ts'
 import type { Config } from '../../src/server/config.ts'
-import { createRuntime, type Runtime } from '../../src/server/runtime.ts'
 import { FakeHomeAssistant } from '../fake-ha.ts'
+
+function buildApp(deps: Deps) {
+  const app = new Hono<Env>()
+
+  const attachSession: MiddlewareHandler<Env> = async (c, next) => {
+    const cookie = c.req.header('cookie')
+    const match = cookie ? new RegExp(`${SESSION_COOKIE}=([^;]+)`).exec(cookie) : null
+    const sessionId = match?.[1]
+    const session = sessionId ? deps.sessions.get(sessionId) : undefined
+    if (session) {
+      c.set('role', session as unknown as Env['Variables']['role'])
+    }
+    await next()
+  }
+
+  app.use('/api/admin/*', attachSession)
+  mountAdminRoutes(app, deps)
+
+  return app
+}
 
 describe('Admin API routes', () => {
   let fake: FakeHomeAssistant
-  let runtime: Runtime
   let server: Server
   let baseUrl: string
   let db: import('node:sqlite').DatabaseSync
   let haClient: HaClient
-  let allowlist: AllowlistStore
-  let audit: AuditLog
-  let settings: SettingsStore
-  let interactions: InteractionStore
   let sessions: SessionStore
-  let limiter: LoginRateLimiter
-  let hub: SseHub
-  let cfg: Config
-  let guestCookie: string
   let adminCookie: string
+  let guestCookie: string
 
   beforeEach(async () => {
-    // Start fake HA
     fake = await FakeHomeAssistant.start({ token: 'test-ha-token' })
     fake.seed(
       [
@@ -48,42 +76,13 @@ describe('Admin API routes', () => {
       ],
     )
 
-    // Open in-memory DB
     db = openDb(':memory:')
-
-    // Seed allowlist
-    allowlist = new AllowlistStore(db)
-    allowlist.replace([
-      {
-        entityId: 'light.porch',
-        label: 'Porch',
-        allowedActions: ['turn_on', 'turn_off', 'toggle'],
-        sortOrder: 1,
-      },
-      {
-        entityId: 'lock.front',
-        label: 'Front Door',
-        allowedActions: ['unlock'],
-        sortOrder: 2,
-      },
-    ])
-
-    audit = new AuditLog(db)
-    settings = new SettingsStore(db)
-    interactions = new InteractionStore(db)
     sessions = new SessionStore()
 
-    // Create rate limiter with test-friendly params
-    const RateLimiterClass = (await import('../../src/server/http/auth.ts')).LoginRateLimiter
-    limiter = new RateLimiterClass({ perIpMax: 10, windowMs: 60_000 })
-
-    hub = new SseHub()
-
-    cfg = {
+    const cfg: Config = {
       haBaseUrl: fake.baseUrl,
       haWsUrl: undefined,
       haToken: fake.token,
-      guestPassword: 'guest-pass-12345678',
       adminPassword: 'admin-pass-87654321',
       port: 8080,
       ingressPort: undefined,
@@ -91,35 +90,27 @@ describe('Admin API routes', () => {
       trustProxy: undefined,
     }
 
-    // Create HA client
-    haClient = HaClient.create({
-      haBaseUrl: fake.baseUrl,
-      haToken: fake.token,
-    })
+    haClient = HaClient.create({ haBaseUrl: fake.baseUrl, haToken: fake.token })
     haClient.start()
 
     // Wait for HA client to connect
     await new Promise((resolve) => setTimeout(resolve, 100))
 
-    // Set watched entities
-    await haClient.setWatchedEntities(allowlist.entityIds())
-
-    // Create runtime - this wires all the event handlers
-    runtime = createRuntime({
+    const deps: Deps = {
       cfg,
       ha: haClient,
-      allowlist,
-      audit,
-      settings,
-      interactions,
+      allowlist: new AllowlistStore(db),
+      audit: new AuditLog(db),
+      settings: new SettingsStore(db),
+      interactions: new InteractionStore(db),
+      portals: new PortalStore(db),
       sessions,
-      limiter,
-      hub,
-    })
+      limiter: new LoginRateLimiter({ perIpMax: 10, windowMs: 60_000 }),
+      hub: new SseHub(),
+    }
 
-    const directServer = runtime.servers[0]
-    if (!directServer) throw new Error('No server created')
-    server = directServer
+    const app = buildApp(deps)
+    server = createServer(getRequestListener(app.fetch))
 
     // Start listening
     await new Promise<void>((resolve) => {
@@ -132,31 +123,19 @@ describe('Admin API routes', () => {
       })
     })
 
-    // Login as guest
-    const guestRes = await fetch(`${baseUrl}/api/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: 'guest-pass-12345678' }),
-    })
-    guestCookie = guestRes.headers.get('set-cookie') ?? ''
-
-    // Login as admin
-    const adminRes = await fetch(`${baseUrl}/api/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: 'admin-pass-87654321' }),
-    })
-    adminCookie = adminRes.headers.get('set-cookie') ?? ''
+    adminCookie = `${SESSION_COOKIE}=${sessions.create({ role: 'admin' })}`
+    guestCookie = `${SESSION_COOKIE}=${sessions.create({ role: 'guest', portalId: 'test-portal' })}`
   })
 
   afterEach(async () => {
-    // Use runtime.close() which handles everything
-    await runtime.close()
+    await haClient.stop()
 
-    // Stop fake
+    await new Promise<void>((resolve) => {
+      server.close(() => resolve())
+    })
+
     await fake.stop()
 
-    // Close DB
     db.close()
   })
 
@@ -213,522 +192,6 @@ describe('Admin API routes', () => {
       )
       expect(climate).toBeDefined()
       expect(climate.supported).toBe(false)
-    })
-  })
-
-  describe('GET /api/admin/allowlist', () => {
-    it('returns 401 when no session', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/allowlist`)
-      expect(res.status).toBe(401)
-    })
-
-    it('returns 403 when guest session', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/allowlist`, {
-        headers: { Cookie: guestCookie },
-      })
-      expect(res.status).toBe(403)
-    })
-
-    it('returns 200 with allowlist when admin session', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/allowlist`, {
-        headers: { Cookie: adminCookie },
-      })
-
-      expect(res.status).toBe(200)
-
-      const body = await res.json()
-      expect(body).toHaveProperty('devices')
-      expect(body).toHaveProperty('orphaned')
-      expect(Array.isArray(body.devices)).toBe(true)
-      expect(Array.isArray(body.orphaned)).toBe(true)
-    })
-
-    it('orphaned is empty when all allowlisted entities exist', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/allowlist`, {
-        headers: { Cookie: adminCookie },
-      })
-
-      expect(res.status).toBe(200)
-
-      const body = await res.json()
-      expect(body.orphaned).toEqual([])
-    })
-
-    it('orphaned lists entity IDs not in catalog', async () => {
-      // Add an allowlist entry for a non-existent entity
-      allowlist.replace([
-        {
-          entityId: 'light.porch',
-          label: 'Porch',
-          allowedActions: ['turn_on', 'turn_off'],
-          sortOrder: 1,
-        },
-        {
-          entityId: 'light.deleted',
-          label: 'Deleted Light',
-          allowedActions: ['turn_on', 'turn_off'],
-          sortOrder: 2,
-        },
-      ])
-
-      const res = await fetch(`${baseUrl}/api/admin/allowlist`, {
-        headers: { Cookie: adminCookie },
-      })
-
-      expect(res.status).toBe(200)
-
-      const body = await res.json()
-      expect(body.orphaned).toContain('light.deleted')
-      expect(body.orphaned).not.toContain('light.porch')
-    })
-  })
-
-  describe('PUT /api/admin/allowlist', () => {
-    it('returns 401 when no session', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/allowlist`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ devices: [] }),
-      })
-      expect(res.status).toBe(401)
-    })
-
-    it('returns 403 when guest session', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/allowlist`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Cookie: guestCookie,
-        },
-        body: JSON.stringify({ devices: [] }),
-      })
-      expect(res.status).toBe(403)
-    })
-
-    it('persists allowlist and returns 200', async () => {
-      const newAllowlist = {
-        devices: [
-          {
-            entityId: 'light.kitchen',
-            label: 'Kitchen',
-            allowedActions: ['turn_on', 'turn_off'],
-            sortOrder: 1,
-          },
-        ],
-      }
-
-      const putRes = await fetch(`${baseUrl}/api/admin/allowlist`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Cookie: adminCookie,
-        },
-        body: JSON.stringify(newAllowlist),
-      })
-
-      expect(putRes.status).toBe(200)
-
-      // Verify it round-trips
-      const getRes = await fetch(`${baseUrl}/api/admin/allowlist`, {
-        headers: { Cookie: adminCookie },
-      })
-
-      expect(getRes.status).toBe(200)
-
-      const body = await getRes.json()
-      expect(body.devices).toHaveLength(1)
-      expect(body.devices[0]?.entityId).toBe('light.kitchen')
-      expect(body.devices[0]?.label).toBe('Kitchen')
-    })
-
-    it('returns 400 for climate.* entity', async () => {
-      const payload = {
-        devices: [
-          {
-            entityId: 'climate.living',
-            label: 'Living Room',
-            allowedActions: ['turn_on'],
-            sortOrder: 1,
-          },
-        ],
-      }
-
-      const res = await fetch(`${baseUrl}/api/admin/allowlist`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Cookie: adminCookie,
-        },
-        body: JSON.stringify(payload),
-      })
-
-      expect(res.status).toBe(400)
-    })
-
-    it('returns 400 for duplicate entity ID', async () => {
-      const payload = {
-        devices: [
-          {
-            entityId: 'light.porch',
-            label: 'First',
-            allowedActions: ['turn_on'],
-            sortOrder: 1,
-          },
-          {
-            entityId: 'light.porch',
-            label: 'Second',
-            allowedActions: ['turn_off'],
-            sortOrder: 2,
-          },
-        ],
-      }
-
-      const res = await fetch(`${baseUrl}/api/admin/allowlist`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Cookie: adminCookie,
-        },
-        body: JSON.stringify(payload),
-      })
-
-      expect(res.status).toBe(400)
-    })
-
-    it('returns 400 for illegal action for domain', async () => {
-      const payload = {
-        devices: [
-          {
-            entityId: 'light.porch',
-            label: 'Porch',
-            allowedActions: ['unlock'],
-            sortOrder: 1,
-          },
-        ],
-      }
-
-      const res = await fetch(`${baseUrl}/api/admin/allowlist`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Cookie: adminCookie,
-        },
-        body: JSON.stringify(payload),
-      })
-
-      expect(res.status).toBe(400)
-    })
-
-    it('returns 400 for empty label', async () => {
-      const payload = {
-        devices: [
-          {
-            entityId: 'light.porch',
-            label: '',
-            allowedActions: ['turn_on'],
-            sortOrder: 1,
-          },
-        ],
-      }
-
-      const res = await fetch(`${baseUrl}/api/admin/allowlist`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Cookie: adminCookie,
-        },
-        body: JSON.stringify(payload),
-      })
-
-      expect(res.status).toBe(400)
-    })
-
-    it('returns 400 for whitespace-only label', async () => {
-      const payload = {
-        devices: [
-          {
-            entityId: 'light.porch',
-            label: '   ',
-            allowedActions: ['turn_on'],
-            sortOrder: 1,
-          },
-        ],
-      }
-
-      const res = await fetch(`${baseUrl}/api/admin/allowlist`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Cookie: adminCookie,
-        },
-        body: JSON.stringify(payload),
-      })
-
-      expect(res.status).toBe(400)
-    })
-
-    it('triggers resubscribe and fake.subscribedEntityIds reflects new set', async () => {
-      const newAllowlist = {
-        devices: [
-          {
-            entityId: 'light.kitchen',
-            label: 'Kitchen',
-            allowedActions: ['turn_on', 'turn_off'],
-            sortOrder: 1,
-          },
-          {
-            entityId: 'switch.fan',
-            label: 'Fan',
-            allowedActions: ['turn_on', 'turn_off'],
-            sortOrder: 2,
-          },
-        ],
-      }
-
-      const res = await fetch(`${baseUrl}/api/admin/allowlist`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Cookie: adminCookie,
-        },
-        body: JSON.stringify(newAllowlist),
-      })
-
-      expect(res.status).toBe(200)
-
-      // Wait for resubscribe to complete
-      await new Promise((resolve) => setTimeout(resolve, 200))
-
-      const subscribed = fake.subscribedEntityIds()
-      expect(subscribed).toBeDefined()
-      expect(subscribed).toContain('light.kitchen')
-      expect(subscribed).toContain('switch.fan')
-      expect(subscribed).not.toContain('light.porch')
-      expect(subscribed).not.toContain('lock.front')
-    })
-  })
-
-  describe('portal toggle routes', () => {
-    it('returns portal state, token, and id to an admin', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/portal`, {
-        headers: { cookie: adminCookie },
-      })
-
-      expect(res.status).toBe(200)
-      const body = await res.json()
-      expect(body.enabled).toBe(true)
-      expect(body.integrationToken).toMatch(/^[0-9a-f]{64}$/)
-      expect(body.portalId).toMatch(/^[0-9a-f-]{36}$/)
-      expect(body.theme).toBe('classic')
-    })
-
-    it('refuses a guest', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/portal`, {
-        headers: { cookie: guestCookie },
-      })
-      expect(res.status).toBe(403)
-    })
-
-    it('refuses an anonymous request', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/portal`)
-      expect(res.status).toBe(401)
-    })
-
-    it('disables the portal', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/portal`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
-        body: JSON.stringify({ enabled: false }),
-      })
-
-      expect(res.status).toBe(200)
-      expect(await res.json()).toEqual({ enabled: false })
-      expect(settings.getPortalEnabled()).toBe(false)
-    })
-
-    it('rejects a non-boolean enabled', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/portal`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
-        body: JSON.stringify({ enabled: 'nope' }),
-      })
-
-      expect(res.status).toBe(400)
-      const body = await res.json()
-      expect(body.error).toBe('Invalid input: expected boolean, received string')
-      expect(settings.getPortalEnabled()).toBe(true)
-    })
-
-    it('rejects malformed JSON', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/portal`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
-        body: 'not json',
-      })
-
-      expect(res.status).toBe(400)
-      expect(settings.getPortalEnabled()).toBe(true)
-    })
-  })
-
-  describe('theme routes', () => {
-    it('reports the current theme on the portal route', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/portal`, { headers: { cookie: adminCookie } })
-      expect((await res.json()).theme).toBe('classic')
-    })
-
-    it('sets a theme', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/theme`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
-        body: JSON.stringify({ theme: 'tiles' }),
-      })
-
-      expect(res.status).toBe(200)
-      expect(await res.json()).toEqual({ theme: 'tiles' })
-      expect(settings.getTheme()).toBe('tiles')
-    })
-
-    it('rejects an unknown theme and leaves the stored value alone', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/theme`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
-        body: JSON.stringify({ theme: 'bogus' }),
-      })
-
-      expect(res.status).toBe(400)
-      expect(settings.getTheme()).toBe('classic')
-    })
-
-    it('refuses a guest', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/theme`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', cookie: guestCookie },
-        body: JSON.stringify({ theme: 'tiles' }),
-      })
-      expect(res.status).toBe(403)
-    })
-
-    it('refuses an anonymous request', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/theme`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme: 'tiles' }),
-      })
-      expect(res.status).toBe(401)
-    })
-  })
-
-  describe('title routes', () => {
-    it('GET /api/admin/portal includes the current title', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/portal`, {
-        headers: { Cookie: adminCookie },
-      })
-
-      expect(res.status).toBe(200)
-      const body = (await res.json()) as { title: string }
-      expect(body.title).toBe('Guest Portal')
-    })
-
-    it('GET /api/admin/portal reports a title that was set, not a constant', async () => {
-      settings.setTitle('Beach House')
-
-      const res = await fetch(`${baseUrl}/api/admin/portal`, {
-        headers: { Cookie: adminCookie },
-      })
-
-      expect(res.status).toBe(200)
-      const body = (await res.json()) as { title: string }
-      expect(body.title).toBe('Beach House')
-    })
-
-    it('PUT /api/admin/title stores a new title', async () => {
-      const res = await fetch(`${baseUrl}/api/admin/title`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
-        body: JSON.stringify({ title: 'Beach House' }),
-      })
-
-      expect(res.status).toBe(200)
-      expect(await res.json()).toEqual({ title: 'Beach House' })
-      expect(settings.getTitle()).toBe('Beach House')
-    })
-
-    it('PUT /api/admin/title answers with the normalised stored title, not the submission', async () => {
-      // Clearing the field must visibly snap back to the default rather than
-      // look like a blank name was saved, so the response echoes the store.
-      const res = await fetch(`${baseUrl}/api/admin/title`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
-        body: JSON.stringify({ title: '   ' }),
-      })
-
-      expect(res.status).toBe(200)
-      expect(await res.json()).toEqual({ title: 'Guest Portal' })
-      expect(settings.getTitle()).toBe('Guest Portal')
-    })
-
-    it('PUT /api/admin/title rejects an over-long title and leaves the stored one alone', async () => {
-      settings.setTitle('Beach House')
-
-      const res = await fetch(`${baseUrl}/api/admin/title`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
-        body: JSON.stringify({ title: 'x'.repeat(200) }),
-      })
-
-      expect(res.status).toBe(400)
-      // The point of the test: a rejected write must not have taken effect.
-      expect(settings.getTitle()).toBe('Beach House')
-    })
-
-    it('PUT /api/admin/title rejects a non-string title and leaves the stored one alone', async () => {
-      settings.setTitle('Beach House')
-
-      const res = await fetch(`${baseUrl}/api/admin/title`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
-        body: JSON.stringify({ title: 42 }),
-      })
-
-      expect(res.status).toBe(400)
-      const body = (await res.json()) as { error: string }
-      expect(body.error).toBe('Invalid input: expected string, received number')
-      expect(settings.getTitle()).toBe('Beach House')
-    })
-
-    it('PUT /api/admin/title rejects malformed JSON', async () => {
-      settings.setTitle('Beach House')
-
-      const res = await fetch(`${baseUrl}/api/admin/title`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Cookie: adminCookie },
-        body: '{ not json',
-      })
-
-      expect(res.status).toBe(400)
-      expect(await res.json()).toEqual({ error: 'Invalid JSON' })
-      expect(settings.getTitle()).toBe('Beach House')
-    })
-
-    it('PUT /api/admin/title requires an admin session', async () => {
-      const anon = await fetch(`${baseUrl}/api/admin/title`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'Beach House' }),
-      })
-      expect(anon.status).toBe(401)
-
-      const asGuest = await fetch(`${baseUrl}/api/admin/title`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Cookie: guestCookie },
-        body: JSON.stringify({ title: 'Beach House' }),
-      })
-      expect(asGuest.status).toBe(403)
-
-      // A guard that answered 401/403 but ran the handler anyway would still
-      // have renamed the portal.
-      expect(settings.getTitle()).toBe('Guest Portal')
     })
   })
 })

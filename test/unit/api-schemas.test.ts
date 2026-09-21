@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
-  AdminPortalPutRequest,
-  AdminPortalResponse,
-  AdminThemePutRequest,
   AllowlistPutRequest,
   AllowlistResponse,
   CatalogResponse,
   DevicesResponse,
   IntegrationStateResponse,
   LoginRequest,
+  PortalCreateRequest,
+  PortalDetailResponse,
+  PortalPutRequest,
+  PortalSummaryResponse,
   SessionResponse,
   type SseFrame,
   SseFrameSchema,
@@ -27,18 +28,24 @@ describe('LoginRequest', () => {
 })
 
 describe('SessionResponse', () => {
-  it('accepts guest role', () => {
-    const result = SessionResponse.safeParse({ role: 'guest', portalEnabled: true })
+  it('accepts an admin session with no portal fields', () => {
+    const result = SessionResponse.safeParse({ role: 'admin' })
     expect(result.success).toBe(true)
   })
 
-  it('accepts admin role', () => {
-    const result = SessionResponse.safeParse({ role: 'admin', portalEnabled: false })
+  it('accepts a guest session carrying its portal', () => {
+    const result = SessionResponse.safeParse({
+      role: 'guest',
+      portalId: 'p1',
+      portalTitle: "Timothy's Portal",
+      portalTheme: 'classic',
+      portalEnabled: true,
+    })
     expect(result.success).toBe(true)
   })
 
-  it('rejects invalid role', () => {
-    const result = SessionResponse.safeParse({ role: 'superuser', portalEnabled: true })
+  it('rejects a guest session missing portal fields', () => {
+    const result = SessionResponse.safeParse({ role: 'guest' })
     expect(result.success).toBe(false)
   })
 })
@@ -119,6 +126,47 @@ describe('AllowlistResponse', () => {
   it('accepts empty orphaned array', () => {
     const payload = { devices: [], orphaned: [] }
     const result = AllowlistResponse.safeParse(payload)
+    expect(result.success).toBe(true)
+  })
+})
+
+describe('PortalSummarySchema / PortalDetailSchema', () => {
+  it('summary excludes the password', () => {
+    const result = PortalSummaryResponse.safeParse({
+      id: 'p1',
+      title: 'Timothy',
+      theme: 'classic',
+      enabled: true,
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it('detail requires the password', () => {
+    const result = PortalDetailResponse.safeParse({
+      id: 'p1',
+      title: 'Timothy',
+      theme: 'classic',
+      enabled: true,
+    })
+    expect(result.success).toBe(false)
+  })
+})
+
+describe('PortalCreateRequest', () => {
+  it('accepts title and password', () => {
+    const result = PortalCreateRequest.safeParse({ title: 'Timothy', password: 'a-secret-1' })
+    expect(result.success).toBe(true)
+  })
+})
+
+describe('PortalPutRequest', () => {
+  it('accepts a partial update', () => {
+    const result = PortalPutRequest.safeParse({ enabled: false })
+    expect(result.success).toBe(true)
+  })
+
+  it('accepts an empty object (no-op update)', () => {
+    const result = PortalPutRequest.safeParse({})
     expect(result.success).toBe(true)
   })
 })
@@ -330,15 +378,27 @@ describe('SseFrameSchema', () => {
   })
 })
 
-describe('portal toggle schemas', () => {
-  it('requires portalEnabled on SessionResponse', () => {
-    expect(SessionResponse.safeParse({ role: 'guest' }).success).toBe(false)
-    expect(SessionResponse.parse({ role: 'guest', portalEnabled: false })).toEqual({
-      role: 'guest',
-      portalEnabled: false,
+describe('IntegrationStateResponse', () => {
+  it('accepts a list of portals', () => {
+    const result = IntegrationStateResponse.safeParse({
+      deploymentId: 'd1',
+      haStale: false,
+      version: '2.0.0',
+      portals: [
+        {
+          portalId: 'p1',
+          title: 'Timothy',
+          enabled: true,
+          deviceCount: 3,
+          lastInteraction: null,
+        },
+      ],
     })
+    expect(result.success).toBe(true)
   })
+})
 
+describe('portal SSE frames', () => {
   it('accepts a portal SSE frame', () => {
     expect(SseFrameSchema.parse({ type: 'portal', enabled: false })).toEqual({
       type: 'portal',
@@ -348,76 +408,5 @@ describe('portal toggle schemas', () => {
 
   it('rejects a portal frame without enabled', () => {
     expect(SseFrameSchema.safeParse({ type: 'portal' }).success).toBe(false)
-  })
-
-  it('parses an admin portal response', () => {
-    expect(
-      AdminPortalResponse.parse({
-        enabled: true,
-        integrationToken: 'a'.repeat(64),
-        portalId: '11111111-1111-1111-1111-111111111111',
-        theme: 'classic',
-        title: 'Guest Portal',
-      }).enabled,
-    ).toBe(true)
-  })
-
-  it('rejects a non-boolean enabled on the put request', () => {
-    expect(AdminPortalPutRequest.safeParse({ enabled: 'yes' }).success).toBe(false)
-  })
-
-  it('parses an integration state response with a null interaction', () => {
-    const parsed = IntegrationStateResponse.parse({
-      portalId: '11111111-1111-1111-1111-111111111111',
-      enabled: true,
-      haStale: false,
-      deviceCount: 3,
-      version: '0.2.0',
-      lastInteraction: null,
-    })
-    expect(parsed.lastInteraction).toBeNull()
-  })
-
-  it('parses an integration state response with an action interaction', () => {
-    const parsed = IntegrationStateResponse.parse({
-      portalId: '11111111-1111-1111-1111-111111111111',
-      enabled: false,
-      haStale: true,
-      deviceCount: 0,
-      version: '0.2.0',
-      lastInteraction: {
-        ts: 1,
-        kind: 'action',
-        entityId: 'lock.front',
-        label: 'Front Door',
-        action: 'unlock',
-        ok: true,
-      },
-    })
-    expect(parsed.lastInteraction?.kind).toBe('action')
-  })
-})
-
-describe('theme schemas', () => {
-  it('requires theme on the admin portal response', () => {
-    expect(
-      AdminPortalResponse.safeParse({
-        enabled: true,
-        integrationToken: 'a'.repeat(64),
-        portalId: '11111111-1111-1111-1111-111111111111',
-        // Everything but `theme`, so this still fails for the reason it names.
-        title: 'Guest Portal',
-      }).success,
-    ).toBe(false)
-  })
-
-  it('rejects an unknown theme id', () => {
-    expect(AdminThemePutRequest.safeParse({ theme: 'bogus' }).success).toBe(false)
-  })
-
-  it('accepts each known theme id', () => {
-    for (const id of ['tiles', 'cards', 'classic']) {
-      expect(AdminThemePutRequest.parse({ theme: id }).theme).toBe(id)
-    }
   })
 })
