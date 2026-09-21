@@ -1,16 +1,17 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { Config } from '../config.js'
-import type { Role } from '../../shared/api.js'
+import type { PortalStore } from '../store/portals.js'
 
 export const SESSION_COOKIE = 'hagp_session'
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000
 
-type SessionData = {
-  role: Role
-  expiresAt: number
-}
+export type SessionData =
+  | { role: 'admin'; expiresAt: number }
+  | { role: 'guest'; portalId: string; expiresAt: number }
+
+export type NewSession = { role: 'admin' } | { role: 'guest'; portalId: string }
 
 export class SessionStore {
   private readonly sessions = new Map<string, SessionData>()
@@ -28,17 +29,20 @@ export class SessionStore {
     return this.sessions.size
   }
 
-  create(role: Role): string {
+  create(session: NewSession): string {
     this.sweepIfNeeded()
     const id = randomBytes(32).toString('base64url')
-    this.sessions.set(id, {
-      role,
-      expiresAt: this.now() + this.ttlMs,
-    })
+    const expiresAt = this.now() + this.ttlMs
+    this.sessions.set(
+      id,
+      session.role === 'admin'
+        ? { role: 'admin', expiresAt }
+        : { role: 'guest', portalId: session.portalId, expiresAt },
+    )
     return id
   }
 
-  get(id: string): Role | undefined {
+  get(id: string): SessionData | undefined {
     this.sweepIfNeeded()
     const session = this.sessions.get(id)
     if (!session) return undefined
@@ -50,7 +54,7 @@ export class SessionStore {
 
     // Refresh expiry (sliding window)
     session.expiresAt = this.now() + this.ttlMs
-    return session.role
+    return session
   }
 
   destroy(id: string): void {
@@ -90,13 +94,25 @@ export function verifyPassword(supplied: string, expected: string): boolean {
   }
 }
 
-export function classify(supplied: string, cfg: Config): Role | null {
-  // Check both passwords unconditionally to avoid timing leaks
-  const isAdmin = verifyPassword(supplied, cfg.adminPassword)
-  const isGuest = verifyPassword(supplied, cfg.guestPassword)
+export function classify(
+  supplied: string,
+  cfg: Config,
+  portals: PortalStore,
+): NewSession | null {
+  // Every portal password is checked unconditionally, and the admin password
+  // (if set) too, so a login attempt's timing does not reveal how many
+  // portals exist or which one almost matched.
+  const isAdmin = cfg.adminPassword !== undefined && verifyPassword(supplied, cfg.adminPassword)
 
-  if (isAdmin) return 'admin'
-  if (isGuest) return 'guest'
+  let matchedPortalId: string | null = null
+  for (const portal of portals.list()) {
+    if (verifyPassword(supplied, portal.password)) {
+      matchedPortalId = portal.id
+    }
+  }
+
+  if (isAdmin) return { role: 'admin' }
+  if (matchedPortalId !== null) return { role: 'guest', portalId: matchedPortalId }
   return null
 }
 

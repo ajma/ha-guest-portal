@@ -1,17 +1,10 @@
-// src/server/store/settings.ts
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { z } from 'zod'
-import { DEFAULT_PORTAL_TITLE, normalizePortalTitle } from '../../shared/portalTitle.js'
-import { DEFAULT_THEME_ID, isThemeId, type ThemeId } from '../../shared/themes.js'
 
-export type PortalEnabledListener = (enabled: boolean) => void
-
-const KEY_PORTAL_ENABLED = 'portal_enabled'
 const KEY_INTEGRATION_TOKEN = 'integration_token'
-const KEY_PORTAL_ID = 'portal_id'
-const KEY_PORTAL_THEME = 'portal_theme'
-const KEY_PORTAL_TITLE = 'portal_title'
+const KEY_DEPLOYMENT_ID = 'deployment_id'
+const KEY_LAST_SELECTED_PORTAL_ID = 'last_selected_portal_id'
 
 const SettingRowSchema = z.object({
   value: z.string(),
@@ -19,7 +12,6 @@ const SettingRowSchema = z.object({
 
 export class SettingsStore {
   private db: DatabaseSync
-  private listeners: Set<PortalEnabledListener> = new Set()
 
   constructor(db: DatabaseSync) {
     this.db = db
@@ -43,7 +35,7 @@ export class SettingsStore {
 
   /**
    * Read a value, generating and persisting one on first access.
-   * Used for the integration token and portal id, which must be stable
+   * Used for the integration token and deployment id, which must be stable
    * for the life of the database but are never configured by hand.
    */
   private readOrCreate(key: string, generate: () => string): string {
@@ -55,66 +47,23 @@ export class SettingsStore {
     return created
   }
 
-  getPortalEnabled(): boolean {
-    // Absent means enabled: an existing installation that upgrades into this
-    // feature must not have its guest portal silently switched off.
-    return this.read(KEY_PORTAL_ENABLED) !== '0'
-  }
-
-  setPortalEnabled(enabled: boolean): void {
-    if (this.getPortalEnabled() === enabled) return
-
-    this.write(KEY_PORTAL_ENABLED, enabled ? '1' : '0')
-
-    for (const listener of this.listeners) {
-      listener(enabled)
-    }
-  }
-
-  getTheme(): ThemeId {
-    // An absent or unrecognised value reads back as the default rather than
-    // throwing: a row naming a theme that has since been deleted must degrade,
-    // not take the portal down.
-    const stored = this.read(KEY_PORTAL_THEME)
-    return isThemeId(stored) ? stored : DEFAULT_THEME_ID
-  }
-
-  setTheme(id: ThemeId): void {
-    this.write(KEY_PORTAL_THEME, id)
-  }
-
-  getTitle(): string {
-    // Normalising on read as well as write is deliberate: a row written by an
-    // older build, or edited in the database by hand, still yields something
-    // renderable.
-    const stored = this.read(KEY_PORTAL_TITLE)
-    return stored === null ? DEFAULT_PORTAL_TITLE : normalizePortalTitle(stored)
-  }
-
-  setTitle(title: string): void {
-    this.write(KEY_PORTAL_TITLE, normalizePortalTitle(title))
-  }
-
-  /**
-   * Whether the portal is currently blocking access for the given role.
-   * Guests are blocked when the portal is disabled; admins are never blocked.
-   */
-  blocksGuest(role: string): boolean {
-    return role === 'guest' && !this.getPortalEnabled()
-  }
-
-  onPortalEnabledChange(fn: PortalEnabledListener): () => void {
-    this.listeners.add(fn)
-    return () => {
-      this.listeners.delete(fn)
-    }
-  }
-
   getIntegrationToken(): string {
     return this.readOrCreate(KEY_INTEGRATION_TOKEN, () => randomBytes(32).toString('hex'))
   }
 
-  getPortalId(): string {
-    return this.readOrCreate(KEY_PORTAL_ID, () => randomUUID())
+  /**
+   * Identifies this *deployment* for Supervisor discovery and the HA device
+   * registry — distinct from any individual portal's own id (`Portal.id`).
+   */
+  getDeploymentId(): string {
+    return this.readOrCreate(KEY_DEPLOYMENT_ID, () => randomUUID())
+  }
+
+  getLastSelectedPortalId(): string | null {
+    return this.read(KEY_LAST_SELECTED_PORTAL_ID)
+  }
+
+  setLastSelectedPortalId(id: string): void {
+    this.write(KEY_LAST_SELECTED_PORTAL_ID, id)
   }
 }

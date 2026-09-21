@@ -4,8 +4,6 @@ import { loadConfig } from '../../src/server/config.ts'
 const valid = {
   HA_BASE_URL: 'http://192.168.1.100:8123',
   HA_TOKEN: 'tok',
-  GUEST_PASSWORD: 'guest-pw',
-  ADMIN_PASSWORD: 'admin-pw',
 }
 
 describe('loadConfig', () => {
@@ -28,7 +26,7 @@ describe('loadConfig', () => {
     )
   })
 
-  it.each(['HA_BASE_URL', 'HA_TOKEN', 'GUEST_PASSWORD', 'ADMIN_PASSWORD'])(
+  it.each(['HA_BASE_URL', 'HA_TOKEN'])(
     'throws when %s is missing',
     (key) => {
       const env: Record<string, string> = { ...valid }
@@ -37,12 +35,31 @@ describe('loadConfig', () => {
     },
   )
 
-  it('rejects identical guest and admin passwords', () => {
-    expect(() => loadConfig({ ...valid, ADMIN_PASSWORD: 'guest-pw' })).toThrow(/must differ/i)
+  it('loads with no ADMIN_PASSWORD set', () => {
+    const cfg = loadConfig({
+      HA_BASE_URL: 'http://192.168.1.10:8123',
+      HA_TOKEN: 'token',
+    } as NodeJS.ProcessEnv)
+    expect(cfg.adminPassword).toBeUndefined()
   })
 
-  it('rejects a password shorter than 8 characters', () => {
-    expect(() => loadConfig({ ...valid, GUEST_PASSWORD: 'short' })).toThrow()
+  it('loads with ADMIN_PASSWORD set', () => {
+    const cfg = loadConfig({
+      HA_BASE_URL: 'http://192.168.1.10:8123',
+      HA_TOKEN: 'token',
+      ADMIN_PASSWORD: 'at-least-8-chars',
+    } as NodeJS.ProcessEnv)
+    expect(cfg.adminPassword).toBe('at-least-8-chars')
+  })
+
+  it('still rejects a too-short ADMIN_PASSWORD when one is supplied', () => {
+    expect(() =>
+      loadConfig({
+        HA_BASE_URL: 'http://192.168.1.10:8123',
+        HA_TOKEN: 'token',
+        ADMIN_PASSWORD: 'short',
+      } as NodeJS.ProcessEnv),
+    ).toThrow()
   })
 
   it('rejects a non-numeric PORT', () => {
@@ -50,13 +67,12 @@ describe('loadConfig', () => {
   })
 
   it('does not leak password values in error messages', () => {
-    const secretPassword = 'secret123'
+    const secretPassword = 'short'
     try {
-      loadConfig({ ...valid, GUEST_PASSWORD: 'short', ADMIN_PASSWORD: secretPassword })
+      loadConfig({ ...valid, ADMIN_PASSWORD: secretPassword })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       expect(msg).not.toContain(secretPassword)
-      expect(msg).not.toContain('short')
     }
   })
 })

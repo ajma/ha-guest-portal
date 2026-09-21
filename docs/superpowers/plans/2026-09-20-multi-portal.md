@@ -1445,6 +1445,9 @@ export const PortalDetailResponse = PortalFieldsSchema.extend({
   password: z.string(),
 })
 
+// The length cap is enforced here rather than left to `normalizePortalTitle`'s
+// silent truncation: an owner who pastes something too long should be told, not
+// have the tail quietly removed behind their back.
 export const PortalCreateRequest = z.object({
   title: z
     .string()

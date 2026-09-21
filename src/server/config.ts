@@ -5,15 +5,11 @@ const schema = z
     HA_BASE_URL: z.url().transform((s) => s.replace(/\/+$/, '')),
     HA_WS_URL: z.url().optional(),
     HA_TOKEN: z.string().min(1),
-    GUEST_PASSWORD: z.string().min(8),
-    ADMIN_PASSWORD: z.string().min(8),
+    ADMIN_PASSWORD: z.string().min(8).optional(),
     PORT: z.coerce.number().int().positive().default(9123),
     INGRESS_PORT: z.coerce.number().int().positive().optional(),
     DB_PATH: z.string().default('/data/portal.db'),
     TRUST_PROXY: z.string().optional(),
-  })
-  .refine((v) => v.GUEST_PASSWORD !== v.ADMIN_PASSWORD, {
-    message: 'GUEST_PASSWORD and ADMIN_PASSWORD must differ',
   })
   .refine(
     (v) => {
@@ -30,8 +26,7 @@ export type Config = {
   haBaseUrl: string
   haWsUrl: string | undefined
   haToken: string
-  guestPassword: string
-  adminPassword: string
+  adminPassword: string | undefined
   port: number
   ingressPort: number | undefined
   dbPath: string
@@ -55,7 +50,6 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     haBaseUrl: v.HA_BASE_URL,
     haWsUrl: v.HA_WS_URL,
     haToken: v.HA_TOKEN,
-    guestPassword: v.GUEST_PASSWORD,
     adminPassword: v.ADMIN_PASSWORD,
     port: v.PORT,
     ingressPort: v.INGRESS_PORT,

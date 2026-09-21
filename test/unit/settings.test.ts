@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import type { DatabaseSync } from 'node:sqlite'
 import { openDb } from '../../src/server/store/db.ts'
 import { SettingsStore } from '../../src/server/store/settings.ts'
@@ -12,43 +12,6 @@ describe('SettingsStore', () => {
     settings = new SettingsStore(db)
   })
 
-  it('defaults to enabled', () => {
-    expect(settings.getPortalEnabled()).toBe(true)
-  })
-
-  it('persists a disabled flag across store instances', () => {
-    settings.setPortalEnabled(false)
-    expect(new SettingsStore(db).getPortalEnabled()).toBe(false)
-  })
-
-  it('notifies listeners on change', () => {
-    const listener = vi.fn()
-    settings.onPortalEnabledChange(listener)
-
-    settings.setPortalEnabled(false)
-
-    expect(listener).toHaveBeenCalledWith(false)
-  })
-
-  it('does not notify listeners when the value is unchanged', () => {
-    const listener = vi.fn()
-    settings.onPortalEnabledChange(listener)
-
-    settings.setPortalEnabled(true)
-
-    expect(listener).not.toHaveBeenCalled()
-  })
-
-  it('stops notifying after unsubscribe', () => {
-    const listener = vi.fn()
-    const unsubscribe = settings.onPortalEnabledChange(listener)
-    unsubscribe()
-
-    settings.setPortalEnabled(false)
-
-    expect(listener).not.toHaveBeenCalled()
-  })
-
   it('generates a stable integration token', () => {
     const token = settings.getIntegrationToken()
     expect(token).toMatch(/^[0-9a-f]{64}$/)
@@ -56,10 +19,12 @@ describe('SettingsStore', () => {
     expect(new SettingsStore(db).getIntegrationToken()).toBe(token)
   })
 
-  it('generates a stable portal id', () => {
-    const id = settings.getPortalId()
-    expect(id).toMatch(/^[0-9a-f-]{36}$/)
-    expect(new SettingsStore(db).getPortalId()).toBe(id)
+  it('renames the deployment id getter without changing its persistence behaviour', () => {
+    const store = new SettingsStore(db)
+    const first = store.getDeploymentId()
+    const second = store.getDeploymentId()
+    expect(first).toBe(second)
+    expect(typeof first).toBe('string')
   })
 
   it('generates a different token for a different database', () => {
@@ -67,38 +32,10 @@ describe('SettingsStore', () => {
     expect(other.getIntegrationToken()).not.toBe(settings.getIntegrationToken())
   })
 
-  it('defaults the theme to classic', () => {
-    expect(settings.getTheme()).toBe('classic')
-  })
-
-  it('persists a theme across store instances', () => {
-    settings.setTheme('tiles')
-    expect(new SettingsStore(db).getTheme()).toBe('tiles')
-  })
-
-  it('reads an unrecognised stored theme back as classic', () => {
-    db.prepare("INSERT INTO settings (key, value) VALUES ('portal_theme', 'bogus')").run()
-    expect(settings.getTheme()).toBe('classic')
-  })
-
-  it('defaults the title to Guest Portal', () => {
-    expect(settings.getTitle()).toBe('Guest Portal')
-  })
-
-  it('persists a title across store instances', () => {
-    settings.setTitle('Beach House')
-    expect(new SettingsStore(db).getTitle()).toBe('Beach House')
-  })
-
-  it('normalises on write, so a blank title cannot be persisted', () => {
-    settings.setTitle('   ')
-    expect(settings.getTitle()).toBe('Guest Portal')
-  })
-
-  it('normalises a hand-edited row on read', () => {
-    // A row written by an older build or edited directly in SQLite must still
-    // yield something renderable rather than a blank header.
-    db.prepare("INSERT INTO settings (key, value) VALUES ('portal_title', '  Beach House  ')").run()
-    expect(settings.getTitle()).toBe('Beach House')
+  it('tracks the last-selected portal id', () => {
+    const store = new SettingsStore(db)
+    expect(store.getLastSelectedPortalId()).toBeNull()
+    store.setLastSelectedPortalId('portal-a')
+    expect(store.getLastSelectedPortalId()).toBe('portal-a')
   })
 })

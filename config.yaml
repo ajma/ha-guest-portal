@@ -23,8 +23,6 @@ ingress_port: 8099
 ports:
   9123/tcp: 9123
 options:
-  guest_password: ""
   admin_password: ""
 schema:
-  guest_password: password
-  admin_password: password
+  admin_password: "password?"

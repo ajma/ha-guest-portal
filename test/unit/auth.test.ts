@@ -8,18 +8,8 @@ import {
   classify,
   clientIp,
 } from '../../src/server/http/auth.ts'
-
-const mockConfig: Config = {
-  haBaseUrl: 'http://192.168.1.100:8123',
-  haWsUrl: undefined,
-  haToken: 'test-token',
-  guestPassword: 'guest-pw',
-  adminPassword: 'admin-pw',
-  port: 8080,
-  ingressPort: undefined,
-  dbPath: '/data/portal.db',
-  trustProxy: undefined,
-}
+import { PortalStore } from '../../src/server/store/portals.js'
+import { openDb } from '../../src/server/store/db.js'
 
 describe('SESSION_COOKIE', () => {
   it('exports the session cookie name', () => {
@@ -30,11 +20,13 @@ describe('SESSION_COOKIE', () => {
 describe('SessionStore', () => {
   it('creates a session and retrieves it', () => {
     const store = new SessionStore()
-    const sessionId = store.create('guest')
+    const sessionId = store.create({ role: 'guest', portalId: 'portal-123' })
     expect(sessionId).toBeDefined()
     expect(typeof sessionId).toBe('string')
     expect(sessionId.length).toBeGreaterThan(0)
-    expect(store.get(sessionId)).toBe('guest')
+    const session = store.get(sessionId)
+    expect(session).toBeDefined()
+    expect(session).toMatchObject({ role: 'guest', portalId: 'portal-123' })
   })
 
   it('returns undefined for non-existent session', () => {
@@ -48,8 +40,9 @@ describe('SessionStore', () => {
     const ttlMs = 60000 // 1 minute
     const store = new SessionStore({ ttlMs, now: clock })
 
-    const sessionId = store.create('admin')
-    expect(store.get(sessionId)).toBe('admin')
+    const sessionId = store.create({ role: 'admin' })
+    const session = store.get(sessionId)
+    expect(session).toMatchObject({ role: 'admin' })
 
     // Advance time past TTL
     now = 1000 + ttlMs + 1
@@ -62,18 +55,20 @@ describe('SessionStore', () => {
     const ttlMs = 60000 // 1 minute
     const store = new SessionStore({ ttlMs, now: clock })
 
-    const sessionId = store.create('guest')
+    const sessionId = store.create({ role: 'guest', portalId: 'p1' })
     // Created at t=1000, expires at t=61000
 
     // Access at halfway point - this refreshes expiry
     now = 1000 + ttlMs / 2 // t=31000
-    expect(store.get(sessionId)).toBe('guest')
+    let session = store.get(sessionId)
+    expect(session).toMatchObject({ role: 'guest', portalId: 'p1' })
     // Now expires at t=91000 (31000 + 60000)
 
     // Advance to what would have been past original expiry
     now = 1000 + ttlMs + 1 // t=61001
     // Should still be valid because TTL was refreshed to 91000
-    expect(store.get(sessionId)).toBe('guest')
+    session = store.get(sessionId)
+    expect(session).toMatchObject({ role: 'guest', portalId: 'p1' })
 
     // Now advance past the most recent refresh
     now = 61001 + ttlMs + 1 // t=121002
@@ -82,8 +77,9 @@ describe('SessionStore', () => {
 
   it('destroys a session', () => {
     const store = new SessionStore()
-    const sessionId = store.create('admin')
-    expect(store.get(sessionId)).toBe('admin')
+    const sessionId = store.create({ role: 'admin' })
+    const session = store.get(sessionId)
+    expect(session).toMatchObject({ role: 'admin' })
     store.destroy(sessionId)
     expect(store.get(sessionId)).toBeUndefined()
   })
@@ -93,7 +89,7 @@ describe('SessionStore', () => {
     const ids = new Set<string>()
 
     for (let i = 0; i < 1000; i++) {
-      const id = store.create('guest')
+      const id = store.create({ role: 'guest', portalId: 'p1' })
       expect(ids.has(id)).toBe(false)
       ids.add(id)
       // 32 bytes = 256 bits, base64url encoded is ~43 chars
@@ -107,24 +103,26 @@ describe('SessionStore', () => {
     const ttlMs = 60000
     const store = new SessionStore({ ttlMs, now: clock })
 
-    const id1 = store.create('guest')
-    const id2 = store.create('admin')
+    const id1 = store.create({ role: 'guest', portalId: 'p1' })
+    const id2 = store.create({ role: 'admin' })
 
     // Advance time to expire id1
     now = 1000 + ttlMs + 1
-    const id3 = store.create('guest')
+    const id3 = store.create({ role: 'guest', portalId: 'p2' })
 
     // Before sweep, id1 should be expired but still in memory
     expect(store.get(id1)).toBeUndefined()
     expect(store.get(id2)).toBeUndefined()
-    expect(store.get(id3)).toBe('guest')
+    let session = store.get(id3)
+    expect(session).toMatchObject({ role: 'guest', portalId: 'p2' })
 
     store.sweep()
 
     // After sweep, expired sessions should be gone
     expect(store.get(id1)).toBeUndefined()
     expect(store.get(id2)).toBeUndefined()
-    expect(store.get(id3)).toBe('guest')
+    session = store.get(id3)
+    expect(session).toMatchObject({ role: 'guest', portalId: 'p2' })
   })
 
   it('automatically reclaims expired sessions without explicit sweep', () => {
@@ -135,7 +133,7 @@ describe('SessionStore', () => {
 
     // Create 5000 sessions
     for (let i = 0; i < 5000; i++) {
-      store.create('guest')
+      store.create({ role: 'guest', portalId: 'p1' })
     }
     expect(store.size).toBe(5000)
 
@@ -143,7 +141,7 @@ describe('SessionStore', () => {
     now = 1000 + ttlMs + 1
 
     // Perform one ordinary operation (create)
-    store.create('admin')
+    store.create({ role: 'admin' })
 
     // Map should have shrunk automatically (amortized sweep)
     // Should only have the new session left
@@ -158,24 +156,26 @@ describe('SessionStore', () => {
 
     // Create some sessions
     for (let i = 0; i < 100; i++) {
-      store.create('guest')
+      store.create({ role: 'guest', portalId: 'p1' })
     }
 
     // Advance time but not past TTL
     now = 1000 + ttlMs / 2
 
     // Create a live session
-    const liveId = store.create('admin')
+    const liveId = store.create({ role: 'admin' })
 
     // Advance past the original TTL but access the live session
     now = 1000 + ttlMs + 1
-    expect(store.get(liveId)).toBe('admin')
+    let session = store.get(liveId)
+    expect(session).toMatchObject({ role: 'admin' })
 
     // Create another session to trigger sweep
-    store.create('guest')
+    store.create({ role: 'guest', portalId: 'p1' })
 
     // Live session should still be valid
-    expect(store.get(liveId)).toBe('admin')
+    session = store.get(liveId)
+    expect(session).toMatchObject({ role: 'admin' })
   })
 })
 
@@ -208,24 +208,64 @@ describe('verifyPassword', () => {
 })
 
 describe('classify', () => {
-  it('returns admin for admin password', () => {
-    expect(classify('admin-pw', mockConfig)).toBe('admin')
+  const cfg = { adminPassword: 'admin-secret' } as Config
+
+  it('resolves the admin password to an admin role', () => {
+    const portals = new PortalStore(openDb(':memory:'))
+    expect(classify('admin-secret', cfg, portals)).toEqual({ role: 'admin' })
   })
 
-  it('returns guest for guest password', () => {
-    expect(classify('guest-pw', mockConfig)).toBe('guest')
+  it('resolves a portal password to a guest role scoped to that portal', () => {
+    const db = openDb(':memory:')
+    const portals = new PortalStore(db)
+    const portal = portals.create({ title: 'Timothy', password: 'timothy-pass' })
+
+    expect(classify('timothy-pass', cfg, portals)).toEqual({ role: 'guest', portalId: portal.id })
   })
 
-  it('returns null for incorrect password', () => {
-    expect(classify('wrong', mockConfig)).toBe(null)
-    expect(classify('', mockConfig)).toBe(null)
-    expect(classify('admin', mockConfig)).toBe(null)
-    expect(classify('guest', mockConfig)).toBe(null)
+  it('rejects a password matching nothing', () => {
+    const portals = new PortalStore(openDb(':memory:'))
+    expect(classify('nope', cfg, portals)).toBeNull()
   })
 
-  it('returns null for prefixes of valid passwords', () => {
-    expect(classify('admin-p', mockConfig)).toBe(null)
-    expect(classify('guest-p', mockConfig)).toBe(null)
+  it('rejects everything when ADMIN_PASSWORD is unset and no portal matches', () => {
+    const noAdminCfg = { adminPassword: undefined } as Config
+    const portals = new PortalStore(openDb(':memory:'))
+    expect(classify('anything', noAdminCfg, portals)).toBeNull()
+  })
+
+  it('finds portal password match in second portal (no early return)', () => {
+    const db = openDb(':memory:')
+    const portals = new PortalStore(db)
+    portals.create({ title: 'First', password: 'first-pass' })
+    const portal2 = portals.create({ title: 'Second', password: 'second-pass' })
+
+    // Verify the loop doesn't stop at first portal
+    expect(classify('second-pass', cfg, portals)).toEqual({ role: 'guest', portalId: portal2.id })
+  })
+
+  it('admin password takes precedence over portal password match', () => {
+    const db = openDb(':memory:')
+    const portals = new PortalStore(db)
+    // Create a portal with a different password than admin
+    portals.create({ title: 'Guest Portal', password: 'guest-pass' })
+
+    // Even though loop checks portal passwords, admin password match should win
+    expect(classify('admin-secret', cfg, portals)).toEqual({ role: 'admin' })
+  })
+})
+
+describe('SessionStore (portal-scoped)', () => {
+  it('creates and retrieves a guest session carrying its portal id', () => {
+    const sessions = new SessionStore()
+    const id = sessions.create({ role: 'guest', portalId: 'portal-123' })
+    expect(sessions.get(id)).toMatchObject({ role: 'guest', portalId: 'portal-123' })
+  })
+
+  it('creates and retrieves an admin session with no portal id', () => {
+    const sessions = new SessionStore()
+    const id = sessions.create({ role: 'admin' })
+    expect(sessions.get(id)).toMatchObject({ role: 'admin' })
   })
 })
 
