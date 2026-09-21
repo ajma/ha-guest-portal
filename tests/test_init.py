@@ -9,27 +9,34 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ha_guest_portal.api import (
+    DeploymentState,
     Interaction,
     PortalAuthError,
     PortalConnectionError,
-    PortalState,
+    PortalSummary,
 )
 from custom_components.ha_guest_portal.const import CONF_TOKEN, DOMAIN
 
-STATE = PortalState(
-    portal_id="11111111-1111-1111-1111-111111111111",
-    enabled=True,
+STATE = DeploymentState(
+    deployment_id="11111111-1111-1111-1111-111111111111",
     ha_stale=False,
-    device_count=3,
-    version="1.0.0",
-    last_interaction=Interaction(
-        ts=1700000000000,
-        kind="action",
-        entity_id="lock.front",
-        label="Front Door",
-        action="unlock",
-        ok=True,
-    ),
+    version="2.0.0",
+    portals=[
+        PortalSummary(
+            portal_id="portal-1",
+            title="Guest Portal",
+            enabled=True,
+            device_count=3,
+            last_interaction=Interaction(
+                ts=1700000000000,
+                kind="action",
+                entity_id="lock.front",
+                label="Front Door",
+                action="unlock",
+                ok=True,
+            ),
+        ),
+    ],
 )
 
 

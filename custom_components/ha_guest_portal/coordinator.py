@@ -9,7 +9,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import PortalApi, PortalAuthError, PortalConnectionError, PortalState
+from .api import DeploymentState, PortalApi, PortalAuthError, PortalConnectionError
 from .const import DOMAIN, SCAN_INTERVAL
 
 if TYPE_CHECKING:
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
-class GuestPortalCoordinator(DataUpdateCoordinator[PortalState]):
+class GuestPortalCoordinator(DataUpdateCoordinator[DeploymentState]):
     """Polls the portal for its enablement and latest interaction."""
 
     def __init__(
@@ -37,7 +37,7 @@ class GuestPortalCoordinator(DataUpdateCoordinator[PortalState]):
         )
         self.api = api
 
-    async def _async_update_data(self) -> PortalState:
+    async def _async_update_data(self) -> DeploymentState:
         """Fetch the portal's state, translating errors for Home Assistant."""
         try:
             return await self.api.async_get_state()

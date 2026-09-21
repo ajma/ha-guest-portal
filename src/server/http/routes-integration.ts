@@ -9,7 +9,7 @@ import { IntegrationEnabledRequest, IntegrationStateResponse } from '../../share
  * against an add-on too old to speak its protocol, rather than failing on a
  * missing field. Bump when the shape of /api/integration/state changes.
  */
-export const INTEGRATION_API_VERSION = '1.0.0'
+export const INTEGRATION_API_VERSION = '2.0.0'
 
 function tokenMatches(supplied: string, expected: string): boolean {
   // Hash both sides so timingSafeEqual always sees equal-length buffers.
@@ -27,12 +27,12 @@ function tokenMatches(supplied: string, expected: string): boolean {
  * Bearer-token routes for the Home Assistant integration.
  *
  * Deliberately no cookie or session path: this is a machine client. The token
- * opens exactly these two routes — it cannot read or write the allowlist, read
+ * opens exactly these routes — it cannot read or write the allowlist, read
  * the audit log, or log in. It is served on the LAN-facing port because the
  * plain Docker deployment has no Supervisor network available.
  */
 export function mountIntegrationRoutes(app: Hono<Env>, deps: Deps): void {
-  const { allowlist, ha, settings, interactions } = deps
+  const { allowlist, ha, settings, interactions, portals } = deps
 
   const requireToken: MiddlewareHandler<Env> = async (c, next) => {
     const header = c.req.header('authorization')
@@ -55,17 +55,26 @@ export function mountIntegrationRoutes(app: Hono<Env>, deps: Deps): void {
   app.get('/api/integration/state', (c) => {
     return c.json(
       IntegrationStateResponse.parse({
-        portalId: settings.getPortalId(),
-        enabled: settings.getPortalEnabled(),
+        deploymentId: settings.getDeploymentId(),
         haStale: ha.stale,
-        deviceCount: allowlist.list().length,
         version: INTEGRATION_API_VERSION,
-        lastInteraction: interactions.latest(),
+        portals: portals.list().map((portal) => ({
+          portalId: portal.id,
+          title: portal.title,
+          enabled: portal.enabled,
+          deviceCount: allowlist.list(portal.id).length,
+          lastInteraction: interactions.latest(portal.id),
+        })),
       }),
     )
   })
 
-  app.post('/api/integration/enabled', async (c) => {
+  app.post('/api/integration/portals/:portalId/enabled', async (c) => {
+    const portalId = c.req.param('portalId')
+    if (portals.get(portalId) === null) {
+      return c.json({ error: 'Not found' }, 404)
+    }
+
     let body: unknown
     try {
       body = await c.req.json()
@@ -78,7 +87,7 @@ export function mountIntegrationRoutes(app: Hono<Env>, deps: Deps): void {
       return c.json({ error: 'Invalid request' }, 400)
     }
 
-    settings.setPortalEnabled(parseResult.data.enabled)
+    portals.update(portalId, { enabled: parseResult.data.enabled })
 
     return c.json({ enabled: parseResult.data.enabled })
   })

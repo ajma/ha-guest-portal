@@ -1,12 +1,13 @@
 import type { Server } from 'node:http'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { HaClient } from '../../src/server/ha/client.ts'
-import { type LoginRateLimiter, SessionStore } from '../../src/server/http/auth.ts'
+import { LoginRateLimiter, SessionStore } from '../../src/server/http/auth.ts'
 import { SseHub } from '../../src/server/http/sse.ts'
 import { AllowlistStore } from '../../src/server/store/allowlist.ts'
 import { AuditLog } from '../../src/server/store/auditlog.ts'
 import { SettingsStore } from '../../src/server/store/settings.ts'
 import { InteractionStore } from '../../src/server/store/interactions.ts'
+import { PortalStore } from '../../src/server/store/portals.ts'
 import { openDb } from '../../src/server/store/db.ts'
 import type { Config } from '../../src/server/config.ts'
 import { createRuntime, type Runtime } from '../../src/server/runtime.ts'
@@ -23,10 +24,12 @@ describe('Integration routes', () => {
   let audit: AuditLog
   let settings: SettingsStore
   let interactions: InteractionStore
+  let portals: PortalStore
   let sessions: SessionStore
   let limiter: LoginRateLimiter
   let hub: SseHub
   let cfg: Config
+  let token: string
 
   beforeEach(async () => {
     // Start fake HA
@@ -42,39 +45,19 @@ describe('Integration routes', () => {
     // Open in-memory DB
     db = openDb(':memory:')
 
-    // Seed allowlist
+    portals = new PortalStore(db)
     allowlist = new AllowlistStore(db)
-    allowlist.replace([
-      {
-        entityId: 'light.porch',
-        label: 'Porch',
-        allowedActions: ['turn_on', 'turn_off', 'toggle'],
-        sortOrder: 1,
-      },
-      {
-        entityId: 'lock.front',
-        label: 'Front Door',
-        allowedActions: ['unlock'],
-        sortOrder: 2,
-      },
-    ])
-
     audit = new AuditLog(db)
     settings = new SettingsStore(db)
     interactions = new InteractionStore(db)
     sessions = new SessionStore()
-
-    // Create rate limiter with test-friendly params
-    const RateLimiterClass = (await import('../../src/server/http/auth.ts')).LoginRateLimiter
-    limiter = new RateLimiterClass({ perIpMax: 10, windowMs: 60_000 })
-
+    limiter = new LoginRateLimiter({ perIpMax: 10, windowMs: 60_000 })
     hub = new SseHub()
 
     cfg = {
       haBaseUrl: fake.baseUrl,
       haWsUrl: undefined,
       haToken: fake.token,
-      guestPassword: 'guest-password',
       adminPassword: 'admin-password',
       port: 8080,
       ingressPort: undefined,
@@ -92,8 +75,7 @@ describe('Integration routes', () => {
     // Wait for HA client to connect
     await new Promise((resolve) => setTimeout(resolve, 100))
 
-    // Set watched entities
-    await haClient.setWatchedEntities(allowlist.entityIds())
+    token = settings.getIntegrationToken()
 
     // Create runtime - this wires all the event handlers
     runtime = createRuntime({
@@ -103,6 +85,7 @@ describe('Integration routes', () => {
       audit,
       settings,
       interactions,
+      portals,
       sessions,
       limiter,
       hub,
@@ -135,22 +118,43 @@ describe('Integration routes', () => {
     db.close()
   })
 
-  function auth(token: string): Record<string, string> {
-    return { Authorization: `Bearer ${token}` }
+  function auth(t: string): Record<string, string> {
+    return { Authorization: `Bearer ${t}` }
   }
 
-  it('returns state to a valid token', async () => {
+  it('reports every portal in the deployment', async () => {
+    const timothy = portals.create({ title: 'Timothy', password: 'timothy-pass' })
+    allowlist.replace(timothy.id, [
+      { entityId: 'light.a', label: 'A', allowedActions: ['turn_on'], sortOrder: 0 },
+    ])
+
     const res = await fetch(`${baseUrl}/api/integration/state`, {
-      headers: auth(settings.getIntegrationToken()),
+      headers: { authorization: `Bearer ${token}` },
+    })
+    const body = await res.json()
+
+    expect(body.portals).toHaveLength(1)
+    expect(body.portals[0]).toMatchObject({
+      portalId: timothy.id,
+      title: 'Timothy',
+      enabled: true,
+      deviceCount: 1,
+    })
+    expect(typeof body.deploymentId).toBe('string')
+    expect(body.version).toBe('2.0.0')
+  })
+
+  it('enables and disables a specific portal by id', async () => {
+    const timothy = portals.create({ title: 'Timothy', password: 'timothy-pass-2' })
+
+    const res = await fetch(`${baseUrl}/api/integration/portals/${timothy.id}/enabled`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ enabled: false }),
     })
 
     expect(res.status).toBe(200)
-    const body = await res.json()
-    expect(body.enabled).toBe(true)
-    expect(body.portalId).toBe(settings.getPortalId())
-    expect(body.lastInteraction).toBeNull()
-    expect(body.version).toBe('1.0.0')
-    expect(typeof body.deviceCount).toBe('number')
+    expect(portals.get(timothy.id)?.enabled).toBe(false)
   })
 
   it('rejects a missing Authorization header', async () => {
@@ -160,7 +164,7 @@ describe('Integration routes', () => {
 
   it('rejects a malformed Authorization header', async () => {
     const res = await fetch(`${baseUrl}/api/integration/state`, {
-      headers: { Authorization: settings.getIntegrationToken() },
+      headers: { Authorization: token },
     })
     expect(res.status).toBe(401)
   })
@@ -188,67 +192,58 @@ describe('Integration routes', () => {
     expect(res.status).toBe(401)
   })
 
-  it('disables the portal', async () => {
-    const res = await fetch(`${baseUrl}/api/integration/enabled`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...auth(settings.getIntegrationToken()) },
-      body: JSON.stringify({ enabled: false }),
-    })
+  it('rejects POST .../enabled with no Authorization header', async () => {
+    const timothy = portals.create({ title: 'Timothy', password: 'timothy-pass-3' })
 
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ enabled: false })
-    expect(settings.getPortalEnabled()).toBe(false)
-  })
-
-  it('rejects POST /enabled with no Authorization header', async () => {
-    const initialState = settings.getPortalEnabled()
-
-    const res = await fetch(`${baseUrl}/api/integration/enabled`, {
+    const res = await fetch(`${baseUrl}/api/integration/portals/${timothy.id}/enabled`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enabled: false }),
     })
 
     expect(res.status).toBe(401)
-    expect(settings.getPortalEnabled()).toBe(initialState)
+    expect(portals.get(timothy.id)?.enabled).toBe(true)
   })
 
-  it('rejects POST /enabled with a wrong token', async () => {
-    const initialState = settings.getPortalEnabled()
+  it('rejects POST .../enabled with a wrong token', async () => {
+    const timothy = portals.create({ title: 'Timothy', password: 'timothy-pass-4' })
 
-    const res = await fetch(`${baseUrl}/api/integration/enabled`, {
+    const res = await fetch(`${baseUrl}/api/integration/portals/${timothy.id}/enabled`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...auth('c'.repeat(64)) },
       body: JSON.stringify({ enabled: false }),
     })
 
     expect(res.status).toBe(401)
-    expect(settings.getPortalEnabled()).toBe(initialState)
+    expect(portals.get(timothy.id)?.enabled).toBe(true)
   })
 
-  it('remains reachable while the portal is disabled', async () => {
-    settings.setPortalEnabled(false)
-
-    const res = await fetch(`${baseUrl}/api/integration/state`, {
-      headers: auth(settings.getIntegrationToken()),
+  it('404s enabling a portal that does not exist', async () => {
+    const res = await fetch(`${baseUrl}/api/integration/portals/does-not-exist/enabled`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...auth(token) },
+      body: JSON.stringify({ enabled: false }),
     })
 
-    expect(res.status).toBe(200)
-    expect((await res.json()).enabled).toBe(false)
+    expect(res.status).toBe(404)
   })
 
   it('rejects a non-boolean enabled', async () => {
-    const res = await fetch(`${baseUrl}/api/integration/enabled`, {
+    const timothy = portals.create({ title: 'Timothy', password: 'timothy-pass-5' })
+
+    const res = await fetch(`${baseUrl}/api/integration/portals/${timothy.id}/enabled`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...auth(settings.getIntegrationToken()) },
+      headers: { 'Content-Type': 'application/json', ...auth(token) },
       body: JSON.stringify({ enabled: 1 }),
     })
 
     expect(res.status).toBe(400)
   })
 
-  it('reports the latest interaction', async () => {
+  it('reports the latest interaction for the right portal', async () => {
+    const timothy = portals.create({ title: 'Timothy', password: 'timothy-pass-6' })
     interactions.record({
+      portalId: timothy.id,
       ts: 1_700_000_000_000,
       kind: 'action',
       entityId: 'lock.front',
@@ -258,10 +253,12 @@ describe('Integration routes', () => {
     })
 
     const res = await fetch(`${baseUrl}/api/integration/state`, {
-      headers: auth(settings.getIntegrationToken()),
+      headers: auth(token),
     })
+    const body = await res.json()
+    const reported = body.portals.find((p: { portalId: string }) => p.portalId === timothy.id)
 
-    expect((await res.json()).lastInteraction).toEqual({
+    expect(reported.lastInteraction).toEqual({
       ts: 1_700_000_000_000,
       kind: 'action',
       entityId: 'lock.front',
@@ -271,15 +268,32 @@ describe('Integration routes', () => {
     })
   })
 
+  it('reports a disabled portal as disabled rather than omitting it', async () => {
+    const timothy = portals.create({ title: 'Timothy', password: 'timothy-pass-7' })
+    portals.update(timothy.id, { enabled: false })
+
+    const res = await fetch(`${baseUrl}/api/integration/state`, {
+      headers: auth(token),
+    })
+    const body = await res.json()
+    const reported = body.portals.find((p: { portalId: string }) => p.portalId === timothy.id)
+
+    expect(reported.enabled).toBe(false)
+  })
+
   it('cannot reach the allowlist with an integration token', async () => {
-    const res = await fetch(`${baseUrl}/api/admin/allowlist`, {
-      headers: auth(settings.getIntegrationToken()),
+    const timothy = portals.create({ title: 'Timothy', password: 'timothy-pass-8' })
+
+    const res = await fetch(`${baseUrl}/api/admin/portals/${timothy.id}/allowlist`, {
+      headers: auth(token),
     })
 
     expect(res.status).toBe(401)
   })
 
   it('allows admin session to reach allowlist (positive control)', async () => {
+    const timothy = portals.create({ title: 'Timothy', password: 'timothy-pass-9' })
+
     const login = await fetch(`${baseUrl}/api/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -287,7 +301,7 @@ describe('Integration routes', () => {
     })
     const cookie = login.headers.get('set-cookie') ?? ''
 
-    const res = await fetch(`${baseUrl}/api/admin/allowlist`, {
+    const res = await fetch(`${baseUrl}/api/admin/portals/${timothy.id}/allowlist`, {
       headers: { cookie },
     })
 
@@ -295,15 +309,17 @@ describe('Integration routes', () => {
   })
 
   it('rejects guest session + integration token for allowlist', async () => {
+    const timothy = portals.create({ title: 'Timothy', password: 'timothy-pass-10' })
+
     const login = await fetch(`${baseUrl}/api/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: 'guest-password' }),
+      body: JSON.stringify({ password: 'timothy-pass-10' }),
     })
     const cookie = login.headers.get('set-cookie') ?? ''
 
-    const res = await fetch(`${baseUrl}/api/admin/allowlist`, {
-      headers: { cookie, ...auth(settings.getIntegrationToken()) },
+    const res = await fetch(`${baseUrl}/api/admin/portals/${timothy.id}/allowlist`, {
+      headers: { cookie, ...auth(token) },
     })
 
     expect(res.status).toBe(403)

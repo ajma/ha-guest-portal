@@ -6645,7 +6645,8 @@ git commit -m "feat: one switch per portal, added and removed as portals change"
 
 **Files:**
 - Modify: `custom_components/ha_guest_portal/sensor.py` (full current contents 67 lines)
-- Test: `tests/test_sensor.py` (existing — update it substantially, mirroring Task 30's test restructuring)
+- Fix: `tests/test_sensor.py` (existing — update it substantially, mirroring Task 30's test restructuring)
+- Fix: `tests/test_init.py` (see Step 3b — no other task in this plan touches it, and this task's own Step 5 claims "run pytest, expect clean," which is false until this file is fixed)
 
 **Interfaces:**
 - Produces: `async_setup_entry` creates one `GuestPortalLastInteraction` per portal, with the same add/remove-on-poll pattern as `switch.py` (Task 30) — this is the same dynamic-entity-set logic duplicated for one platform, not shared into a helper function in this plan; if the reviewer of this task considers that duplication worth collapsing into a shared helper (e.g. in `entity.py`), that is a reasonable follow-up but is not required for this task's tests to pass, and should be raised as a suggestion rather than silently done, since Home Assistant's own platform-setup convention keeps each platform file self-contained.
@@ -6766,6 +6767,48 @@ class GuestPortalLastInteraction(GuestPortalEntity, SensorEntity):
 
 Run: `pytest tests/test_sensor.py`
 Expected: PASS
+
+- [ ] **Step 3b: Fix `tests/test_init.py`'s `PortalState` fixture**
+
+No task in this plan names this file, but it directly constructs the now-removed `PortalState` (Task 27 replaced it with `DeploymentState`/`PortalSummary`) and has been failing to collect since Task 27 landed — `tests/test_sensor.py`/`tests/test_switch.py` were also affected only transitively (via `from tests.test_init import STATE`), which Tasks 27/30 already worked around locally, but `test_init.py` itself was never fixed. `custom_components/ha_guest_portal/__init__.py`'s own production code needs no changes — it only reads `coordinator.data.version`, a field `DeploymentState` already has under the same name — this is a test-fixture-only fix.
+
+Change:
+```python
+STATE = PortalState(
+    portal_id="11111111-1111-1111-1111-111111111111",
+    enabled=True,
+    ha_stale=False,
+    device_count=3,
+    version="1.0.0",
+    last_interaction=Interaction(...),
+)
+```
+to:
+```python
+STATE = DeploymentState(
+    deployment_id="11111111-1111-1111-1111-111111111111",
+    ha_stale=False,
+    version="1.0.0",
+    portals=[
+        PortalSummary(
+            portal_id="portal-1",
+            title="Guest Portal",
+            enabled=True,
+            device_count=3,
+            last_interaction=Interaction(...),
+        ),
+    ],
+)
+```
+(keep the same `Interaction(...)` call already in the file), and change the import line from `PortalState` to `DeploymentState, PortalSummary`. Every test in this file uses `STATE`/`replace(STATE, version=...)` only to control `coordinator.data.version` for the repair-issue checks, or compares `entry.runtime_data.data == STATE` wholesale — neither depends on the single-portal fields (`enabled`, `device_count`, `last_interaction`) being at the top level, so no test bodies need to change, only the fixture's own construction and the import.
+
+Run: `pytest tests/test_init.py`
+Expected: PASS (9/9)
+
+```bash
+git add tests/test_init.py
+git commit -m "fix: migrate test_init.py's STATE fixture from PortalState to DeploymentState"
+```
 
 - [ ] **Step 5: Run the entire Python suite**
 

@@ -11,21 +11,34 @@ from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.ha_guest_portal.api import (
+    DeploymentState,
     PortalAuthError,
     PortalConnectionError,
-    PortalState,
+    PortalSummary,
 )
 from custom_components.ha_guest_portal.const import CONF_TOKEN, DOMAIN
 
-PORTAL_ID = "11111111-1111-1111-1111-111111111111"
+# The deployment's own identity, as returned by /api/integration/state and
+# used as the config entry's unique id.
+DEPLOYMENT_ID = "11111111-1111-1111-1111-111111111111"
 
-STATE = PortalState(
-    portal_id=PORTAL_ID,
-    enabled=True,
+# The Supervisor discovery payload's "portalId" key, which is a separate,
+# unrelated identity from the deployment's — see config_flow.py.
+PORTAL_ID = "22222222-2222-2222-2222-222222222222"
+
+STATE = DeploymentState(
+    deployment_id=DEPLOYMENT_ID,
     ha_stale=False,
-    device_count=3,
-    version="1.0.0",
-    last_interaction=None,
+    version="2.0.0",
+    portals=[
+        PortalSummary(
+            portal_id="p1",
+            title="Guest Portal",
+            enabled=True,
+            device_count=3,
+            last_interaction=None,
+        )
+    ],
 )
 
 USER_INPUT = {CONF_HOST: "192.168.1.50", CONF_PORT: 8080, CONF_TOKEN: "good-token"}
@@ -69,7 +82,7 @@ async def test_user_flow_creates_an_entry(hass: HomeAssistant, mock_state):
     result = await hass.config_entries.flow.async_configure(result["flow_id"], USER_INPUT)
 
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["result"].unique_id == PORTAL_ID
+    assert result["result"].unique_id == DEPLOYMENT_ID
     assert result["data"] == USER_INPUT
 
 
@@ -102,7 +115,7 @@ async def test_user_flow_reports_an_unreachable_portal(hass: HomeAssistant):
 
 
 async def test_user_flow_rejects_a_duplicate_portal(hass: HomeAssistant, mock_state):
-    MockConfigEntry(domain=DOMAIN, unique_id=PORTAL_ID, data=USER_INPUT).add_to_hass(hass)
+    MockConfigEntry(domain=DOMAIN, unique_id=DEPLOYMENT_ID, data=USER_INPUT).add_to_hass(hass)
 
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}

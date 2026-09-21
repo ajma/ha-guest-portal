@@ -39,7 +39,7 @@ class GuestPortalConfigFlow(ConfigFlow, domain=DOMAIN):
         self._error: str = "cannot_connect"
 
     async def _async_probe(self, host: str, port: int, token: str) -> str | None:
-        """Return the portal id, or None if the portal could not be reached.
+        """Return the deployment id, or None if the portal could not be reached.
 
         Sets self._error to the string key the form should display.
         """
@@ -54,7 +54,7 @@ class GuestPortalConfigFlow(ConfigFlow, domain=DOMAIN):
             self._error = "cannot_connect"
             return None
 
-        return state.portal_id
+        return state.deployment_id
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Handle a manually initiated setup."""
@@ -62,14 +62,14 @@ class GuestPortalConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             self._error = "cannot_connect"
-            portal_id = await self._async_probe(
+            deployment_id = await self._async_probe(
                 user_input[CONF_HOST], user_input[CONF_PORT], user_input[CONF_TOKEN]
             )
 
-            if portal_id is not None:
-                # The portal's own id, so a manual entry and a discovered one
+            if deployment_id is not None:
+                # The deployment's own id, so a manual entry and a discovered one
                 # collapse to the same config entry rather than duplicating.
-                await self.async_set_unique_id(portal_id)
+                await self.async_set_unique_id(deployment_id)
                 self._abort_if_unique_id_configured()
 
                 return self.async_create_entry(
@@ -136,11 +136,11 @@ class GuestPortalConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             self._error = "cannot_connect"
-            portal_id = await self._async_probe(
+            deployment_id = await self._async_probe(
                 entry.data[CONF_HOST], entry.data[CONF_PORT], user_input[CONF_TOKEN]
             )
 
-            if portal_id is not None:
+            if deployment_id is not None:
                 return self.async_update_reload_and_abort(
                     entry, data_updates={CONF_TOKEN: user_input[CONF_TOKEN]}
                 )

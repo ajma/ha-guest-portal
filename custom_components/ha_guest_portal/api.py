@@ -36,15 +36,24 @@ class Interaction:
 
 
 @dataclass(frozen=True)
-class PortalState:
-    """A snapshot of the portal, as returned by /api/integration/state."""
+class PortalSummary:
+    """One portal's state, as reported inside /api/integration/state's list."""
 
     portal_id: str
+    title: str
     enabled: bool
-    ha_stale: bool
     device_count: int
-    version: str
     last_interaction: Interaction | None
+
+
+@dataclass(frozen=True)
+class DeploymentState:
+    """A snapshot of the whole deployment, as returned by /api/integration/state."""
+
+    deployment_id: str
+    ha_stale: bool
+    version: str
+    portals: list[PortalSummary]
 
 
 def _parse_interaction(raw: Any) -> Interaction | None:
@@ -61,25 +70,33 @@ def _parse_interaction(raw: Any) -> Interaction | None:
     )
 
 
-def _parse_state(raw: Any) -> PortalState:
+def _parse_portal_summary(raw: Any) -> PortalSummary:
+    return PortalSummary(
+        portal_id=str(raw["portalId"]),
+        title=str(raw["title"]),
+        enabled=bool(raw["enabled"]),
+        device_count=int(raw["deviceCount"]),
+        last_interaction=_parse_interaction(raw["lastInteraction"]),
+    )
+
+
+def _parse_deployment_state(raw: Any) -> DeploymentState:
     # Missing or invalid version is treated as 0.0.0, which will fail the
     # minimum-version check and raise a repair issue rather than retrying forever.
     version = raw.get("version", "0.0.0")
     if not isinstance(version, str):
         version = "0.0.0"
 
-    return PortalState(
-        portal_id=str(raw["portalId"]),
-        enabled=bool(raw["enabled"]),
+    return DeploymentState(
+        deployment_id=str(raw["deploymentId"]),
         ha_stale=bool(raw["haStale"]),
-        device_count=int(raw["deviceCount"]),
         version=version,
-        last_interaction=_parse_interaction(raw["lastInteraction"]),
+        portals=[_parse_portal_summary(p) for p in raw["portals"]],
     )
 
 
 class PortalApi:
-    """Talks to the two bearer-authenticated routes the portal exposes."""
+    """Talks to the bearer-authenticated routes the portal exposes."""
 
     def __init__(self, session: ClientSession, host: str, port: int, token: str) -> None:
         """Store the connection details. No I/O happens here."""
@@ -113,16 +130,18 @@ class PortalApi:
         except (TimeoutError, aiohttp.ClientError, ValueError) as err:
             raise PortalConnectionError(f"Could not reach the portal: {err}") from err
 
-    async def async_get_state(self) -> PortalState:
-        """Fetch the portal's current state."""
+    async def async_get_state(self) -> DeploymentState:
+        """Fetch every portal's current state."""
         raw = await self._request("GET", "/api/integration/state")
 
         try:
-            return _parse_state(raw)
+            return _parse_deployment_state(raw)
         except (KeyError, TypeError, ValueError) as err:
             # An add-on too old to speak this protocol looks exactly like this.
             raise PortalConnectionError(f"Unexpected response from the portal: {err}") from err
 
-    async def async_set_enabled(self, enabled: bool) -> None:
-        """Enable or disable the guest portal."""
-        await self._request("POST", "/api/integration/enabled", json={"enabled": enabled})
+    async def async_set_enabled(self, portal_id: str, enabled: bool) -> None:
+        """Enable or disable one portal."""
+        await self._request(
+            "POST", f"/api/integration/portals/{portal_id}/enabled", json={"enabled": enabled}
+        )
