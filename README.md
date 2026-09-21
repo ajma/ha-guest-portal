@@ -235,6 +235,59 @@ on purpose — what they guard is a low-saturation tint, and a looser threshold
 was measured to let a green-to-purple repaint of a lock tile's icon through
 undetected.
 
+## Publishing a Release (maintainers)
+
+`.github/workflows/publish.yml` builds and pushes per-architecture images to
+ghcr.io whenever a `v*` tag is pushed, and `.github/workflows/ci.yml` runs
+lint, typecheck, unit and end-to-end tests on every push. Neither workflow
+touches `config.yaml`'s `image:` key — that key does not exist yet, and it is
+added by hand, in the last step below, only after a real pull has succeeded.
+
+**Do this in order.** Steps 4 and 6 are the two a skim will miss, and skipping
+either produces a release that looks green and installs for nobody:
+
+1. Bump `version:` in `config.yaml` (currently `0.2.0`).
+2. Commit the bump, then tag the commit `v<version>`, matching `config.yaml`
+   exactly:
+   ```bash
+   git commit -am "chore: bump version to 0.3.0"
+   git tag v0.3.0
+   ```
+   `publish.yml` checks the tag against `config.yaml` and refuses to build on
+   a mismatch.
+3. Push the tag **by name** and wait for **both** matrix legs — `amd64` and
+   `aarch64` — to go green in the Actions tab. A half-published release is
+   one architecture short, not broken-looking: nothing about it says the
+   other image is missing.
+   ```bash
+   git push origin v0.3.0
+   ```
+   Push the one tag, not `git push --tags`. This repository carries local
+   housekeeping tags (`pre-trailer-rewrite`) that point at pre-rewrite
+   history; `--tags` would publish that history alongside the release, and
+   republishing it is not something a later commit can undo.
+4. **Make the ghcr package public.** A package first pushed by `GITHUB_TOKEN`
+   is **private by default, even from a public repository.** Until this is
+   done once, by hand, in the repository's package settings, every pull
+   — including the Supervisor's — fails with an authentication error that
+   looks nothing like the cause. This is the most common way this kind of
+   pipeline looks green and ships something nobody can install. Do not skip
+   it.
+5. Confirm it worked, from a machine that is not the runner:
+   ```bash
+   docker pull ghcr.io/ajma/ha-guest-portal/amd64-ha-guest-portal:0.3.0
+   docker pull ghcr.io/ajma/ha-guest-portal/aarch64-ha-guest-portal:0.3.0
+   ```
+6. **Only after both pulls succeed**, add to `config.yaml`:
+   ```yaml
+   image: ghcr.io/ajma/ha-guest-portal/{arch}-ha-guest-portal
+   ```
+   `{arch}` is literal — the Supervisor substitutes it at pull time. The
+   moment this key exists, the Supervisor stops building the add-on locally
+   and only pulls; adding it before a real pull has succeeded turns a failed
+   publish from an inconvenience into an uninstallable add-on with a manifest
+   error the user can do nothing about.
+
 ## Environment Variables
 
 | Variable | Required | Default | Description |

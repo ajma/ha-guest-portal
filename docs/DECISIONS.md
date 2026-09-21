@@ -352,6 +352,44 @@ correct control for changing the host port. Reversal cost: restoring the option 
 either templating the port mapping (not supported by the Supervisor) or accepting the
 silent-failure mode again.
 
+## CI and publishing
+
+**CI runs the end-to-end suite inside the Playwright container.** Three of
+those tests are pixel comparisons tight enough to catch a tile's state colour
+changing, and a baseline generated on one font stack and compared on another
+is a coin toss. The cost is that updating a preview means
+`pnpm previews:update:ci` rather than a bare `--update-snapshots`.
+
+**Third-party actions in `publish.yml` are pinned to commit SHAs; `actions/*`
+are not.** That job hands a `GITHUB_TOKEN` with `packages: write` to three
+`docker/*` actions, and a major tag like `v4` is mutable — whoever controls
+that org can repoint it at new code, which then runs with that token. That is
+not hypothetical: tj-actions/changed-files was compromised exactly this way in
+March 2025 and leaked CI secrets. `actions/*` stay on majors on purpose —
+subverting those means subverting GitHub, which already owns the runner, so
+pinning them buys nothing. `.github/dependabot.yml` bumps the SHA pins weekly
+so pinning does not mean going stale.
+
+**Images are published per-architecture, on native runners.** The Supervisor
+substitutes `{arch}` and pulls that name, so a multi-arch manifest is not what
+it wants; and emulating aarch64 under QEMU for a Node build is minutes of CPU
+per release.
+
+**`publish.yml` carries no build cache.** A run can restore only its own
+ref's cache scope plus the default branch's; every release is a fresh tag ref
+and nothing builds this image on the default branch, so a cache could never
+be hit. It would not be a harmless no-op either: a `mode=max` cache of a full
+Node build counts against the repo's 10GB cache limit, where LRU eviction
+would push out the pnpm-store caches `ci.yml` does use.
+
+**The publish job refuses a tag that disagrees with `config.yaml`.** The
+Supervisor pulls the version named in `config.yaml`, so a mismatch publishes
+images nothing will ever fetch and the add-on silently appears not to update.
+
+**The `image:` key is added by hand, after a real pull succeeds.** It
+converts a failed publish from an inconvenience into an uninstallable add-on,
+so it is not something a pipeline should be able to enable on its own.
+
 ## Dependencies
 
 **`@types/node` is pinned to the `^24` line rather than latest.** The runtime target is
@@ -471,3 +509,15 @@ because a native module needs musl prebuilds or a full toolchain in Alpine.
   truncation — worth recording, because "the icon is 179 bytes" otherwise reads as a bug
   in the generator. This is content, not code: drop real artwork in at `brand/icon.png`
   and re-run `scripts/generate-icons.sh` to regenerate all three.
+- **Known gap — the ghcr package must be made public manually.** `GITHUB_TOKEN`
+  cannot do it, and until it is done every pull — including the Supervisor's —
+  fails with an authentication error that does not resemble the cause.
+- **Known gap — nothing runs these workflows yet.** The repository has never
+  been pushed to.
+- **Known gap — the first `ci.yml` run may fail the three `preview:` tests.**
+  The committed baselines were generated on a developer machine, not inside
+  the Playwright container the workflow runs tests in. The fix is
+  `pnpm previews:update:ci` and committing the three regenerated PNGs — not
+  loosening `maxDiffPixelRatio`, which is deliberately tight: at the old
+  default of 0.02 a full green-to-purple repaint of a lock icon, covering
+  roughly 0.6% of the frame, still passed undetected.
