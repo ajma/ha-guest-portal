@@ -359,6 +359,58 @@ describe('App', () => {
     expect(store.connectDeviceStore).not.toHaveBeenCalledWith('deleted-portal')
   })
 
+  it('leaves a logged-out owner on the login screen when a delete lands after a 401', async () => {
+    // The delete is awaited, so `onPortalDeleted` runs from the closure of a
+    // render where the app was still `admin`. A 401 inside that window has
+    // already put the owner on the login screen, and reloading the portal list
+    // from there walks them back into a portal the server will not serve.
+    vi.mocked(api.getSession).mockResolvedValue({ role: 'admin' })
+    vi.mocked(api.getPortals).mockResolvedValue({
+      ok: true,
+      data: {
+        portals: [{ id: 'p1', title: 'Timothy', theme: 'classic', enabled: true }],
+        lastSelectedPortalId: 'p1',
+      },
+    })
+    vi.mocked(api.getCatalog).mockResolvedValue({ ok: true, data: [] })
+    vi.mocked(api.getPortalAllowlist).mockResolvedValue({ ok: true, data: { devices: [], orphaned: [] } })
+    vi.mocked(api.getPortal).mockResolvedValue({
+      ok: true,
+      data: { id: 'p1', title: 'Timothy', theme: 'classic', enabled: true, password: 'orig-pass' },
+    })
+
+    let resolveDelete!: (result: Awaited<ReturnType<typeof api.deletePortal>>) => void
+    const deletion = new Promise<Awaited<ReturnType<typeof api.deletePortal>>>((r) => {
+      resolveDelete = r
+    })
+    vi.mocked(api.deletePortal).mockReturnValue(deletion)
+
+    const user = userEvent.setup()
+    render(<App />)
+
+    await user.click(await screen.findByRole('button', { name: /portal settings/i }))
+    await user.click(await screen.findByRole('button', { name: /^delete portal$/i }))
+    await user.click(await screen.findByRole('button', { name: /confirm delete/i }))
+    await waitFor(() => expect(api.deletePortal).toHaveBeenCalledWith('p1'))
+
+    const onUnauthorized = vi.mocked(api.setUnauthorizedCallback).mock.calls[0]?.[0]
+    expect(onUnauthorized).toBeTruthy()
+    const portalFetches = vi.mocked(api.getPortals).mock.calls.length
+
+    act(() => {
+      onUnauthorized?.()
+    })
+    expect(await screen.findByRole('button', { name: /log in/i })).toBeTruthy()
+
+    await act(async () => {
+      resolveDelete({ ok: true, data: undefined })
+      await deletion
+    })
+
+    expect(vi.mocked(api.getPortals).mock.calls.length).toBe(portalFetches)
+    expect(screen.getByRole('button', { name: /log in/i })).toBeTruthy()
+  })
+
   it('shows the unreachable screen when the portal list cannot be fetched', async () => {
     // `loadAdminPortals` is detached with `void` from outside checkSession's
     // catch, so a rejecting fetch or an unparseable body used to leave the

@@ -450,6 +450,45 @@ describe('Portal page', () => {
     })
   })
 
+  describe('Switching to another portal', () => {
+    // Kills: edit state kept across a portal switch. The page is not remounted
+    // — App re-renders it with a new `portalId` — so an editor left open goes
+    // on showing the previous portal's device under the new portal's heading,
+    // and the next save writes it into the new portal's list.
+    it('closes the open editor and leaves edit mode', async () => {
+      const user = userEvent.setup()
+      seed()
+      const { rerender } = render(
+        <Portal role={ADMIN} portalId="portal-1" onLogout={async () => {}} />,
+      )
+      await enterEditMode(user)
+      await user.click(screen.getByRole('button', { name: 'Porch' }))
+      expect(screen.getByRole('heading', { name: 'Porch' })).toBeTruthy()
+
+      rerender(<Portal role={ADMIN} portalId="portal-2" onLogout={async () => {}} />)
+
+      expect(screen.queryByRole('heading', { name: 'Porch' })).toBeNull()
+      expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy()
+    })
+
+    // The picker is pushed outside the edit-mode block, so it outlives a mode
+    // reset on its own.
+    it('closes the add-device picker', async () => {
+      const user = userEvent.setup()
+      seed()
+      const { rerender } = render(
+        <Portal role={ADMIN} portalId="portal-1" onLogout={async () => {}} />,
+      )
+      await enterEditMode(user)
+      await user.click(screen.getByRole('button', { name: /add device/i }))
+      expect(screen.getByTestId('picker-overlay')).toBeTruthy()
+
+      rerender(<Portal role={ADMIN} portalId="portal-2" onLogout={async () => {}} />)
+
+      expect(screen.queryByTestId('picker-overlay')).toBeNull()
+    })
+  })
+
   describe('The deployment settings overlay', () => {
     // Kills: a gear button that never mounts the panel, or mounts something
     // else. The panel owns its own testid, so this pins the wiring rather than

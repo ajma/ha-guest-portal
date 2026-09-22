@@ -195,6 +195,51 @@ async def test_get_state_reads_a_1_x_payload_as_an_empty_deployment(aiohttp_serv
     assert state.portals == []
 
 
+async def test_get_state_reads_a_payload_with_no_version_as_too_old(aiohttp_server):
+    async def handle(_request: web.Request) -> web.Response:
+        payload = {key: value for key, value in STATE.items() if key != "version"}
+        return web.json_response(payload)
+
+    app = web.Application()
+    app.router.add_get("/api/integration/state", handle)
+    server = await aiohttp_server(app)
+
+    async with ClientSession() as session:
+        api = PortalApi(session, "127.0.0.1", server.port, "good-token")
+        state = await api.async_get_state()
+
+    assert state.version == "0.0.0"
+    assert state.portals == []
+
+
+async def test_get_state_rejects_a_non_string_version_rather_than_calling_it_old(aiohttp_server):
+    async def handle(_request: web.Request) -> web.Response:
+        return web.json_response({**STATE, "version": 2.0})
+
+    app = web.Application()
+    app.router.add_get("/api/integration/state", handle)
+    server = await aiohttp_server(app)
+
+    async with ClientSession() as session:
+        api = PortalApi(session, "127.0.0.1", server.port, "good-token")
+        with pytest.raises(PortalConnectionError):
+            await api.async_get_state()
+
+
+async def test_get_state_rejects_an_unparseable_version_rather_than_calling_it_old(aiohttp_server):
+    async def handle(_request: web.Request) -> web.Response:
+        return web.json_response({**STATE, "version": "banana"})
+
+    app = web.Application()
+    app.router.add_get("/api/integration/state", handle)
+    server = await aiohttp_server(app)
+
+    async with ClientSession() as session:
+        api = PortalApi(session, "127.0.0.1", server.port, "good-token")
+        with pytest.raises(PortalConnectionError):
+            await api.async_get_state()
+
+
 async def test_get_state_raises_connection_error_on_malformed_json(aiohttp_server):
     async def handle(_request: web.Request) -> web.Response:
         return web.Response(text="{malformed", content_type="application/json")

@@ -81,16 +81,18 @@ function allowlistKey(rows: AllowlistRow[]): string {
  * reorder the list underneath, and an index would then hit the wrong device.
  *
  * `base` is the list a save is computed from, and null means "not known yet".
- * That distinction is the point of it: an empty stream is indistinguishable
- * from a portal with no devices, and a whole-list PUT computed from the wrong
- * one erases the allowlist. `editing` gates the fetch that fills it — the
- * endpoint is admin-only, and a guest reaching it takes a 401, which the api
- * client turns into a logout.
+ * That distinction is the point of it: an empty stream on its own is
+ * indistinguishable from a portal with no devices, and a whole-list PUT
+ * computed from the wrong one erases the allowlist. `connected` is what tells
+ * the two apart — see the stream effect. `editing` gates the fetch that fills
+ * `base` — the endpoint is admin-only, and a guest reaching it takes a 401,
+ * which the api client turns into a logout.
  */
 export function useAllowlistEditor(
   devices: Device[],
   portalId: string,
   editing: boolean,
+  connected: boolean,
 ): AllowlistEditor {
   const [optimistic, setOptimistic] = useState<AllowlistRow[] | null>(null)
   const [pending, setPending] = useState(false)
@@ -128,10 +130,15 @@ export function useAllowlistEditor(
     lastStreamKey.current = streamKey
     setOptimistic(null)
     // A delivered list is the server's own answer and the freshest base there
-    // is. An empty one is not: the store empties its snapshot when the stream
-    // is torn down, so this frame arrives on every disconnect.
-    if (streamRows.length > 0) setBase(streamRows)
-  }, [streamKey, streamRows])
+    // is. An empty one is only an answer while the stream is up: the store
+    // empties its snapshot when the stream is torn down, so the same frame
+    // arrives on every disconnect saying nothing at all. `connected` separates
+    // them — the store clears `devices` and `connected` in one snapshot
+    // (`store.ts`), so a teardown is never seen as a live empty list. Refusing
+    // a live one instead would leave an allowlist another session emptied
+    // un-lowerable until the next fetch, and put every deleted device back.
+    if (streamRows.length > 0 || connected) setBase(streamRows)
+  }, [streamKey, streamRows, connected])
 
   // One token per portal this hook has been pointed at, abandoned when it moves
   // on or unmounts — the same guard PortalSettingsAccordion uses, and needed
@@ -146,6 +153,14 @@ export function useAllowlistEditor(
     }
   }, [portalId])
 
+  // Read after the response, so a ref rather than a dependency of `load`: that
+  // callback is keyed to the portal, and rebuilding it per stream frame would
+  // refetch the allowlist on every frame.
+  const latestStreamRows = useRef(streamRows)
+  useEffect(() => {
+    latestStreamRows.current = streamRows
+  }, [streamRows])
+
   const load = useCallback(async (): Promise<void> => {
     const target = loadTarget.current
     const abandoned = (): boolean => target.abandoned || target.portalId !== portalId
@@ -158,9 +173,14 @@ export function useAllowlistEditor(
       }
       setLoadFailed(false)
       setOrphaned(result.data.orphaned)
-      // Only as a fallback. The stream is the source of truth everywhere else
-      // in this hook, and it can be ahead of this response.
-      setBase((current) => current ?? result.data.devices)
+      // Behind the stream while it is delivering, since it can be ahead of this
+      // response — but authoritative when it is not. Left as a pure fallback,
+      // nothing could ever lower the base: an allowlist emptied in another
+      // session arrives as the empty snapshot this hook refuses to adopt, and
+      // the next save would put every deleted device back.
+      setBase((current) =>
+        current === null || latestStreamRows.current.length === 0 ? result.data.devices : current,
+      )
     } catch {
       if (!abandoned()) setLoadFailed(true)
     }

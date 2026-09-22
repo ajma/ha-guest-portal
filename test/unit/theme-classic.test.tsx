@@ -1,11 +1,19 @@
 import { readFileSync, readdirSync } from 'node:fs'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render as renderBare, screen } from '@testing-library/react'
 import type { ReactElement } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Device } from '@shared/api.js'
 import type { SupportedDomain } from '@shared/devices.js'
+import { PortalIdProvider } from '../../src/web/portalContext.ts'
 import classic from '../../src/web/themes/classic/index.ts'
 import type { Theme } from '../../src/web/themes/types.ts'
+
+// A tile reads the portal it acts on from context, the way the page supplies
+// it. Rendering one without a provider is the no-portal render `usePortalId`
+// exists to refuse, not a shorthand for it.
+function render(ui: ReactElement): ReturnType<typeof renderBare> {
+  return renderBare(<PortalIdProvider value="portal-1">{ui}</PortalIdProvider>)
+}
 
 // The hooks call performAction; the auto-mock stubs it to return undefined,
 // which would throw if any test path actually invoked it. No test below clicks

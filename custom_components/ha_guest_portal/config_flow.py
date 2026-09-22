@@ -150,6 +150,12 @@ class GuestPortalConfigFlow(ConfigFlow, domain=DOMAIN):
             )
 
             if deployment_id is not None:
+                # A token that opens a different deployment is not this entry's
+                # token: accepting it would reload the entry straight into the
+                # coordinator's deployment-mismatch error.
+                await self.async_set_unique_id(deployment_id)
+                self._abort_if_unique_id_mismatch()
+
                 return self.async_update_reload_and_abort(
                     entry, data_updates={CONF_TOKEN: user_input[CONF_TOKEN]}
                 )

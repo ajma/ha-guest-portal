@@ -55,6 +55,11 @@ export function App(): ReactElement {
   const [showDeploymentSettings, setShowDeploymentSettings] = useState(false)
   const { connected, portalEnabled } = useDeviceStore()
   const prevConnectedRef = useRef<boolean>(false)
+  const stateKindRef = useRef<AppState['kind']>(state.kind)
+
+  useEffect(() => {
+    stateKindRef.current = state.kind
+  }, [state.kind])
 
   useEffect(() => {
     setUnauthorizedCallback(() => {
@@ -234,7 +239,13 @@ export function App(): ReactElement {
     )
   }
 
+  // The only one of these that cannot guard inside an updater: it starts a
+  // fetch, not a transition, and StrictMode would run it twice in there. It
+  // needs the guard all the same — the delete is awaited, so a 401 can land
+  // between the click and this callback, and reloading the portal list from
+  // the login screen puts the owner back on a portal the server just refused.
   function handlePortalDeleted(): void {
+    if (stateKindRef.current !== 'admin') return
     void loadAdminPortals()
   }
 

@@ -183,7 +183,7 @@ export function CreatePortalScreen({ onCreated, onCancel }: CreatePortalScreenPr
           type="button"
           style={submitButton}
           disabled={
-            submitting || title.trim() === '' || password.length < MIN_PORTAL_PASSWORD_LENGTH
+            submitting || title.trim() === '' || password.trim().length < MIN_PORTAL_PASSWORD_LENGTH
           }
           onClick={() => {
             void handleSubmit()

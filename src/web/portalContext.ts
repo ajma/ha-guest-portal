@@ -14,6 +14,19 @@ const PortalIdContext = createContext<string | undefined>(undefined)
 
 export const PortalIdProvider = PortalIdContext.Provider
 
-export function usePortalId(): string | undefined {
-  return useContext(PortalIdContext)
+/**
+ * Throws rather than returning the default, so the return type is `string`.
+ *
+ * A required `portalId` parameter on `performAction` catches a dropped
+ * argument, but not a dropped provider: with a `string | undefined` here, a
+ * tile rendered outside the portal — a new theme with its own root, a second
+ * route reusing `DeviceTile` — sends every admin action with no portal id and
+ * takes a 400 on each one, behind a green typecheck and a green suite.
+ */
+export function usePortalId(): string {
+  const portalId = useContext(PortalIdContext)
+  if (portalId === undefined) {
+    throw new Error('usePortalId: no PortalIdProvider — a tile must render inside a portal')
+  }
+  return portalId
 }

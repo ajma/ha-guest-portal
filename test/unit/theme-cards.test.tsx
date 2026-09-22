@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render as renderBare, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -7,6 +7,7 @@ import type { Device } from '@shared/api.js'
 import type { SupportedDomain } from '@shared/devices.js'
 import * as api from '../../src/web/api.ts'
 import { GLYPHS } from '../../src/web/themes/cards/glyphs.ts'
+import { PortalIdProvider } from '../../src/web/portalContext.ts'
 import cards from '../../src/web/themes/cards/index.ts'
 import { TOKEN_NAMES } from '../../src/web/themes/tokens.ts'
 import type { Theme } from '../../src/web/themes/types.ts'
@@ -16,6 +17,13 @@ import type { Theme } from '../../src/web/themes/types.ts'
 // confirmation intercepts it — so the auto-mock's undefined return is never
 // awaited.
 vi.mock('../../src/web/api.ts')
+
+// A tile reads the portal it acts on from context, the way the page supplies
+// it. Rendering one without a provider is the no-portal render `usePortalId`
+// exists to refuse, not a shorthand for it.
+function render(ui: ReactElement): ReturnType<typeof renderBare> {
+  return renderBare(<PortalIdProvider value="portal-1">{ui}</PortalIdProvider>)
+}
 
 beforeEach(() => {
   vi.clearAllMocks()

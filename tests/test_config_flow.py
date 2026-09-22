@@ -193,8 +193,31 @@ async def test_hassio_discovery_aborts_for_a_malformed_payload(hass: HomeAssista
     assert result["reason"] == "cannot_connect"
 
 
-async def test_reauth_updates_the_token(hass: HomeAssistant, mock_state):
+async def test_reauth_refuses_a_token_for_a_different_deployment(hass: HomeAssistant):
     entry = MockConfigEntry(domain=DOMAIN, unique_id=DISCOVERED_DEPLOYMENT_ID, data=USER_INPUT)
+    entry.add_to_hass(hass)
+
+    result = await entry.start_reauth_flow(hass)
+
+    # The add-on's database was replaced while the token was being renewed, so
+    # the address this entry points at now serves a different deployment.
+    with patch(
+        "custom_components.ha_guest_portal.config_flow.PortalApi.async_get_state",
+        AsyncMock(return_value=STATE),
+    ):
+        result = await hass.config_entries.flow.async_configure(
+            result["flow_id"], {CONF_TOKEN: "fresh-token"}
+        )
+
+    assert result["type"] is FlowResultType.ABORT
+    assert result["reason"] == "unique_id_mismatch"
+    assert entry.data[CONF_TOKEN] == "good-token"
+
+
+async def test_reauth_updates_the_token(hass: HomeAssistant, mock_state):
+    # Keyed on the deployment the probe reports: reauth is for a new token on
+    # the same deployment, not for a different one.
+    entry = MockConfigEntry(domain=DOMAIN, unique_id=DEPLOYMENT_ID, data=USER_INPUT)
     entry.add_to_hass(hass)
 
     result = await entry.start_reauth_flow(hass)

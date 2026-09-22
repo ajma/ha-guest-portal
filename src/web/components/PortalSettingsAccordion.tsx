@@ -191,7 +191,10 @@ export function PortalSettingsAccordion({
       setPasswordDraft(null)
       return
     }
-    if (passwordDraft.length < MIN_PORTAL_PASSWORD_LENGTH) {
+    // Trimmed, like the create screen's guard: the two doors reach the same
+    // stored password, so a rule enforced on one of them is not enforced at
+    // all. The draft itself is sent untrimmed — the characters are the owner's.
+    if (passwordDraft.trim().length < MIN_PORTAL_PASSWORD_LENGTH) {
       setError(`Could not save — a password must be at least ${MIN_PORTAL_PASSWORD_LENGTH} characters`)
       return
     }

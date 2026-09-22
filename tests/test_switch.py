@@ -4,7 +4,8 @@ from dataclasses import replace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON, STATE_UNAVAILABLE
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -293,7 +294,7 @@ async def test_removes_the_device_when_its_portal_is_deleted(
     ) is not None
 
 
-async def test_a_deployment_replaced_while_running_is_not_adopted(
+async def test_a_deployment_replaced_while_running_fails_the_entry_with_an_explanation(
     hass: HomeAssistant, mock_config_entry_with_one_portal
 ):
     entry, get_state, _set_enabled = mock_config_entry_with_one_portal
@@ -306,11 +307,15 @@ async def test_a_deployment_replaced_while_running_is_not_adopted(
     await entry.runtime_data.async_refresh()
     await hass.async_block_till_done()
 
+    # Setup is the only place Home Assistant surfaces a ConfigEntryError, so
+    # the entry has to go back through it for the user to be told anything.
+    assert entry.state is ConfigEntryState.SETUP_ERROR
+    assert "Delete this entry" in entry.reason
+
     assert registry.async_get_entity_id("switch", DOMAIN, "dep-2_brandnew_portal") is None
     assert registry.async_get_entity_id("switch", DOMAIN, f"{DEPLOYMENT_ID}_timothy_portal") == (
         timothy_id
     )
-    assert hass.states.get(timothy_id).state == STATE_UNAVAILABLE
 
 
 async def test_available_is_false_once_the_portal_is_gone(mock_config_entry_with_one_portal):

@@ -60,6 +60,48 @@ describe('CreatePortalScreen', () => {
     expect(api.createPortal).not.toHaveBeenCalled()
   })
 
+  it('will not send a password that is only whitespace', async () => {
+    // The length rule exists so a portal is not trivially guessable, and the
+    // guard next to it already trims the title. Counting untrimmed characters
+    // here makes eight spaces a password the owner can neither see nor retype.
+    const user = userEvent.setup()
+    render(<CreatePortalScreen onCreated={vi.fn()} />)
+
+    await user.type(screen.getByLabelText(/portal name/i), 'Timothy')
+    await user.type(screen.getByLabelText(/^password$/i), '        ')
+
+    expect((screen.getByRole('button', { name: /create portal/i }) as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+
+    await user.click(screen.getByRole('button', { name: /create portal/i }))
+    expect(api.createPortal).not.toHaveBeenCalled()
+  })
+
+  it('creates a portal with a padded password exactly as typed', async () => {
+    // The mirror of the guard above, and of the same pair in the settings
+    // accordion: the length rule is trimmed, the value is not. The title beside
+    // it IS trimmed on the way out, so nothing but this test says the password
+    // must not be — and a password silently trimmed here is one the owner can
+    // never type back in.
+    const user = userEvent.setup()
+    const padded = '  spaced-out  '
+    vi.mocked(api.createPortal).mockResolvedValue({
+      ok: true,
+      data: { id: 'p1', title: 'Timothy', theme: 'classic' as const, enabled: true, password: padded },
+    })
+
+    render(<CreatePortalScreen onCreated={vi.fn()} />)
+
+    await user.type(screen.getByLabelText(/portal name/i), 'Timothy')
+    await user.type(screen.getByLabelText(/^password$/i), padded)
+    await user.click(screen.getByRole('button', { name: /create portal/i }))
+
+    await waitFor(() =>
+      expect(api.createPortal).toHaveBeenCalledWith({ title: 'Timothy', password: padded }),
+    )
+  })
+
   it('distinguishes a rejected name or password from a fault', async () => {
     const user = userEvent.setup()
     vi.mocked(api.createPortal).mockResolvedValue({ ok: false, status: 400 })

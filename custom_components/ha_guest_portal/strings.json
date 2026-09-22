@@ -30,7 +30,8 @@
     "abort": {
       "already_configured": "This Guest Portal is already set up.",
       "cannot_connect": "Could not reach the Guest Portal at that address.",
-      "reauth_successful": "Reconnected to the Guest Portal."
+      "reauth_successful": "Reconnected to the Guest Portal.",
+      "unique_id_mismatch": "That token belongs to a different Guest Portal deployment. If the add-on's database was replaced, delete this entry and set the Guest Portal up again."
     }
   },
   "entity": {

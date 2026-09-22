@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryError
 from homeassistant.helpers import issue_registry as ir
@@ -70,6 +71,15 @@ class GuestPortalCoordinator(DataUpdateCoordinator[DeploymentState]):
 
         unique_id = self.config_entry.unique_id
         if unique_id is not None and state.deployment_id != unique_id:
+            if self.config_entry.state is ConfigEntryState.LOADED:
+                # Home Assistant only re-raises ConfigEntryError out of a
+                # coordinator refresh that setup is waiting on, so raising it
+                # here on a poll would log a line and leave the entry loaded
+                # with dead entities. Reloading sends the entry back through
+                # setup, whose own first refresh hits this same check and does
+                # reach the user with the message below.
+                self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
+
             # The add-on's database was replaced, so the deployment this entry
             # was configured against no longer exists. Adopting the new one's
             # portals would strand every existing entity under the old

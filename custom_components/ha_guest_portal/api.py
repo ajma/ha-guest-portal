@@ -95,15 +95,35 @@ def portal_version_too_old(version: str) -> bool:
         return True
 
 
+def _parse_version(raw: dict[str, Any]) -> str:
+    """Read the add-on's reported version, as a version we can compare.
+
+    An absent key is an add-on that predates the field, so 0.0.0 is the truth
+    and the caller goes on to raise the "update the add-on" repair issue. A
+    version that is present but unusable is a different fault: it comes from
+    something claiming to be current, so telling that user to update sends
+    them after an upgrade that does not exist. That is reported as a malformed
+    payload instead.
+    """
+    if "version" not in raw:
+        return "0.0.0"
+
+    version = raw["version"]
+
+    if not isinstance(version, str):
+        raise TypeError(f"version must be a string, got {type(version).__name__}")
+
+    if not AwesomeVersion(version).valid:
+        raise ValueError(f"version {version!r} is not a version number")
+
+    return version
+
+
 def _parse_deployment_state(raw: Any) -> DeploymentState:
     if not isinstance(raw, dict):
         raise TypeError(f"expected an object, got {type(raw).__name__}")
 
-    # Missing or invalid version is treated as 0.0.0, which will fail the
-    # minimum-version check and raise a repair issue rather than retrying forever.
-    version = raw.get("version", "0.0.0")
-    if not isinstance(version, str):
-        version = "0.0.0"
+    version = _parse_version(raw)
 
     if portal_version_too_old(version):
         # An add-on this old has neither a portal list nor a deployment id in

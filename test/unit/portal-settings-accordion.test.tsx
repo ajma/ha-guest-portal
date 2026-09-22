@@ -185,6 +185,44 @@ describe('PortalSettingsAccordion', () => {
     expect((passwordField as HTMLInputElement).value).toBe('guest')
   })
 
+  it('refuses a rotation to a password of nothing but spaces', async () => {
+    // The create screen already refuses this. Accepting it here reaches the
+    // same end state — a portal whose password is eight spaces — by the other
+    // door, and an owner who rotates into it gets no explanation, because the
+    // create screen taught them the rule exists.
+    const user = userEvent.setup()
+
+    render(<PortalSettingsAccordion portalId="p1" onUpdated={vi.fn()} onDeleted={vi.fn()} />)
+    await user.click(screen.getByRole('button', { name: /portal settings/i }))
+
+    const passwordField = await screen.findByLabelText(/^password$/i)
+    await user.clear(passwordField)
+    await user.type(passwordField, '        ')
+    await user.tab()
+
+    expect((await screen.findByRole('alert')).textContent).toMatch(/at least 8 characters/i)
+    expect(api.updatePortal).not.toHaveBeenCalled()
+  })
+
+  it('saves a padded password exactly as typed', async () => {
+    // The guard is trimmed; the value is not. A password's characters belong
+    // to the owner, and one silently trimmed on the way out is one they can
+    // never type back in.
+    const user = userEvent.setup()
+    const padded = '  spaced-out  '
+    vi.mocked(api.updatePortal).mockResolvedValue({ ok: true, data: { ...PORTAL, password: padded } })
+
+    render(<PortalSettingsAccordion portalId="p1" onUpdated={vi.fn()} onDeleted={vi.fn()} />)
+    await user.click(screen.getByRole('button', { name: /portal settings/i }))
+
+    const passwordField = await screen.findByLabelText(/^password$/i)
+    await user.clear(passwordField)
+    await user.type(passwordField, padded)
+    await user.tab()
+
+    await waitFor(() => expect(api.updatePortal).toHaveBeenCalledWith('p1', { password: padded }))
+  })
+
   it('distinguishes a rejected value from a fault', async () => {
     const user = userEvent.setup()
     vi.mocked(api.updatePortal).mockResolvedValue({ ok: false, status: 400 })

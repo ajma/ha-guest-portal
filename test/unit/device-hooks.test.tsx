@@ -52,9 +52,20 @@ describe('useToggleDevice', () => {
 
   it('reports off state', async () => {
     const dev = toggleDevice()
-    const { result } = renderHook(() => useToggleDevice(dev, false))
+    const { result } = renderHook(() => useToggleDevice(dev, false), { wrapper })
     expect(result.current.isOn).toBe(false)
     expect(result.current.stateText).toBe('Off')
+  })
+
+  // Kills a context that answers `undefined` when there is no provider. The
+  // portal id is a required parameter of performAction, which catches a dropped
+  // argument but not a dropped provider: a tile rendered outside a portal — a
+  // theme with its own root, a second route reusing the tiles — would send
+  // every action without one and take a 400 on each, with the typecheck and
+  // this suite both green. Nine tests in this file used to render exactly that.
+  it('refuses to run outside a portal', () => {
+    const dev = toggleDevice()
+    expect(() => renderHook(() => useToggleDevice(dev, false))).toThrow(/PortalIdProvider/)
   })
 
   it('calls turn_on when off', async () => {
@@ -96,7 +107,7 @@ describe('useToggleDevice', () => {
     const deferred = defer<Awaited<ReturnType<typeof api.performAction>>>()
     vi.spyOn(api, 'performAction').mockReturnValue(deferred.promise)
     const dev = toggleDevice()
-    const { result } = renderHook(() => useToggleDevice(dev, false))
+    const { result } = renderHook(() => useToggleDevice(dev, false), { wrapper })
 
     act(() => {
       void result.current.activate()
@@ -116,7 +127,7 @@ describe('useToggleDevice', () => {
   it('reverts the optimistic state when the call fails', async () => {
     vi.spyOn(api, 'performAction').mockResolvedValue({ ok: false, status: 503 })
     const dev = toggleDevice()
-    const { result } = renderHook(() => useToggleDevice(dev, false))
+    const { result } = renderHook(() => useToggleDevice(dev, false), { wrapper })
     await act(async () => {
       await result.current.activate()
     })
@@ -134,6 +145,7 @@ describe('useToggleDevice', () => {
     const dev = toggleDevice()
     const { result, rerender } = renderHook(({ off }) => useToggleDevice(dev, off), {
       initialProps: { off: false },
+      wrapper,
     })
 
     act(() => {
@@ -154,13 +166,13 @@ describe('useToggleDevice', () => {
 
   it('reports canActivate false when no action applies', async () => {
     const d = toggleDevice({ allowedActions: [] })
-    const { result } = renderHook(() => useToggleDevice(d, false))
+    const { result } = renderHook(() => useToggleDevice(d, false), { wrapper })
     expect(result.current.canActivate).toBe(false)
   })
 
   it('shows Unknown when stale', async () => {
     const d = toggleDevice({ state: { state: 'on', attributes: {}, stale: true } })
-    const { result } = renderHook(() => useToggleDevice(d, false))
+    const { result } = renderHook(() => useToggleDevice(d, false), { wrapper })
     expect(result.current.stateText).toBe('Unknown')
   })
 })
@@ -192,7 +204,7 @@ describe('useLockDevice', () => {
       .spyOn(api, 'performAction')
       .mockResolvedValue({ ok: true, data: undefined })
     const dev = lockDevice()
-    const { result } = renderHook(() => useLockDevice(dev, false))
+    const { result } = renderHook(() => useLockDevice(dev, false), { wrapper })
     await act(async () => {
       await result.current.requestUnlock()
     })
@@ -243,7 +255,7 @@ describe('useCoverDevice', () => {
 
   it('reports closed state', async () => {
     const dev = coverDevice()
-    const { result } = renderHook(() => useCoverDevice(dev, false))
+    const { result } = renderHook(() => useCoverDevice(dev, false), { wrapper })
     expect(result.current.stateText).toBe('Closed')
   })
 
@@ -294,7 +306,7 @@ describe('useCoverDevice', () => {
     const deferred = defer<Awaited<ReturnType<typeof api.performAction>>>()
     vi.spyOn(api, 'performAction').mockReturnValue(deferred.promise)
     const dev = coverDevice()
-    const { result } = renderHook(() => useCoverDevice(dev, false))
+    const { result } = renderHook(() => useCoverDevice(dev, false), { wrapper })
 
     expect(result.current.pending).toBe(false)
     act(() => {
@@ -311,14 +323,14 @@ describe('useCoverDevice', () => {
 
   it('reports canOpen false when action is not allowed', async () => {
     const d = coverDevice({ allowedActions: ['close_cover'] })
-    const { result } = renderHook(() => useCoverDevice(d, false))
+    const { result } = renderHook(() => useCoverDevice(d, false), { wrapper })
     expect(result.current.canOpen).toBe(false)
     expect(result.current.canClose).toBe(true)
   })
 
   it('shows Unknown when stale', async () => {
     const d = coverDevice({ state: { state: 'open', attributes: {}, stale: true } })
-    const { result } = renderHook(() => useCoverDevice(d, false))
+    const { result } = renderHook(() => useCoverDevice(d, false), { wrapper })
     expect(result.current.stateText).toBe('Unknown')
   })
 })

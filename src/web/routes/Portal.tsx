@@ -317,6 +317,22 @@ export function Portal({
   const [showDeploymentSettings, setShowDeploymentSettings] = useState(false)
   const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null)
   const [catalogFailed, setCatalogFailed] = useState(false)
+  const [shownPortalId, setShownPortalId] = useState(portalId)
+
+  // Same render-phase reset as the allowlist editor, for the same reason: App
+  // re-renders this page with a new `portalId` rather than remounting it, so
+  // every piece of edit state survives the switch. Dropping them in an effect
+  // instead would commit one render in which the open editor shows the
+  // previous portal's device under the new portal's heading.
+  //
+  // Which is why this is a comment and not a test: React Testing Library
+  // flushes effects before anything can assert, so the tests below pass either
+  // way and the single bad commit is invisible to them. Moving this into a
+  // `useEffect` will look safe and green. It is not.
+  if (shownPortalId !== portalId) {
+    setShownPortalId(portalId)
+    show('normal')
+  }
 
   // Connect to the device store for the current portal on mount, and
   // reconnect whenever the admin switches to a different portal.
@@ -329,7 +345,9 @@ export function Portal({
   const isOwner = role === 'admin'
   // The allowlist fetch lives in the editor: it needs the same response, both
   // for the orphan flags and as the list its whole-list PUTs are computed from.
-  const editor = useAllowlistEditor(devices, portalId, isOwner && mode === 'edit')
+  // `connected` goes with `devices` because an empty list means opposite things
+  // with the stream up and down.
+  const editor = useAllowlistEditor(devices, portalId, isOwner && mode === 'edit', connected)
 
   const components = componentsFor(activeTheme())
   const { Shell } = components
@@ -348,6 +366,8 @@ export function Portal({
     }
   }, [])
 
+  // Also called during render by the portal-switch reset above, so it must stay
+  // state-only — a side effect here would run twice under StrictMode.
   function show(next: Mode): void {
     setMode(next)
     setEditingId(null)
