@@ -165,9 +165,9 @@ async def test_hassio_discovery_creates_an_entry(hass: HomeAssistant, mock_state
 
 
 async def test_hassio_discovery_aborts_for_a_manually_added_portal(hass: HomeAssistant):
-    MockConfigEntry(
-        domain=DOMAIN, unique_id=DISCOVERED_DEPLOYMENT_ID, data=USER_INPUT
-    ).add_to_hass(hass)
+    MockConfigEntry(domain=DOMAIN, unique_id=DISCOVERED_DEPLOYMENT_ID, data=USER_INPUT).add_to_hass(
+        hass
+    )
 
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_HASSIO}, data=DISCOVERY

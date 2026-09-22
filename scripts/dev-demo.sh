@@ -38,7 +38,13 @@ if [ "$HA_MODE" = "real" ]; then
     echo "[dev] HA_MODE=real needs a .env with HA_BASE_URL, HA_TOKEN, ADMIN_PASSWORD" >&2
     exit 1
   fi
-  set -a; . ./.env; set +a
+  # Split across lines, not `set -a; . ./.env; set +a`, so the directive below
+  # binds to the `.` command rather than to `set -a`. Behaviour is identical.
+  set -a
+  # .env is gitignored and absent at lint time; silences SC1091 here only.
+  # shellcheck source=/dev/null
+  . ./.env
+  set +a
   : "${HA_BASE_URL:?missing in .env}"
   : "${HA_TOKEN:?missing in .env}"
   : "${ADMIN_PASSWORD:?missing in .env}"

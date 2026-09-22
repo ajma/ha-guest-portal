@@ -15,6 +15,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="$REPO_ROOT/scripts/.env.deploy"
+# The file is gitignored and absent at lint time, so shellcheck cannot follow
+# it; the directive silences SC1090 for this line only.
+# shellcheck source=/dev/null
 [ -f "$ENV_FILE" ] && source "$ENV_FILE"
 
 : "${HA_SMB_HOST:?Set HA_SMB_HOST (HA host/IP)}"

@@ -277,21 +277,24 @@ async def test_removes_the_device_when_its_portal_is_deleted(
 ):
     entry, get_state, _set_enabled = mock_config_entry_with_two_portals
     devices = dr.async_get(hass)
-    assert devices.async_get_device_by_identifier(
-        (DOMAIN, f"{DEPLOYMENT_ID}_timothy"), entry.entry_id
-    ) is not None
+    assert (
+        devices.async_get_device_by_identifier((DOMAIN, f"{DEPLOYMENT_ID}_timothy"), entry.entry_id)
+        is not None
+    )
 
     get_state.return_value = STATE_ONE_PORTAL_REMAINING
     coordinator = entry.runtime_data
     await coordinator.async_request_refresh()
     await hass.async_block_till_done()
 
-    assert devices.async_get_device_by_identifier(
-        (DOMAIN, f"{DEPLOYMENT_ID}_timothy"), entry.entry_id
-    ) is None
-    assert devices.async_get_device_by_identifier(
-        (DOMAIN, f"{DEPLOYMENT_ID}_mary"), entry.entry_id
-    ) is not None
+    assert (
+        devices.async_get_device_by_identifier((DOMAIN, f"{DEPLOYMENT_ID}_timothy"), entry.entry_id)
+        is None
+    )
+    assert (
+        devices.async_get_device_by_identifier((DOMAIN, f"{DEPLOYMENT_ID}_mary"), entry.entry_id)
+        is not None
+    )
 
 
 async def test_a_deployment_replaced_while_running_fails_the_entry_with_an_explanation(

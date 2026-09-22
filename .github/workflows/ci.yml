@@ -98,3 +98,79 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
+
+  python:
+    runs-on: ubuntu-24.04
+
+    # A plain runner, not the Playwright container above: that image exists
+    # for its pinned Node/browser/font stack, none of which this job touches,
+    # and mixing a second language's toolchain into it would only make that
+    # job slower to fail for reasons unrelated to TypeScript.
+    steps:
+      - uses: actions/checkout@v7
+
+      # uv manages its own Python interpreter, so this needs no separate
+      # actions/setup-python. Both inputs are pinned rather than left to
+      # "latest": pyproject.toml requires python>=3.14.2, and 0.12.17 /
+      # 3.14.6 are the versions this job was verified against locally.
+      - uses: astral-sh/setup-uv@v10
+        with:
+          version: '0.12.17'
+          python-version: '3.14.6'
+
+      # --locked on every uv invocation, mirroring `pnpm install
+      # --frozen-lockfile` in the check job. Bare `uv run` silently re-resolves
+      # and rewrites uv.lock when pyproject.toml has drifted, so CI would pass
+      # against a dependency set nobody committed. --locked asserts uv.lock is
+      # already up to date with pyproject.toml and fails otherwise.
+      #
+      # Note --locked, not --frozen: --frozen only skips the re-lock, it does
+      # not verify anything. Confirmed against uv 0.12.17 by bumping a pin in
+      # pyproject.toml without regenerating the lockfile — `uv run --frozen`
+      # exited 0 using the stale lock, `uv run --locked` exited 1 with "The
+      # lockfile at `uv.lock` needs to be updated".
+      - name: Python tests
+        run: uv run --locked pytest
+
+      - name: Ruff check
+        run: uv run --locked ruff check
+
+      - name: Ruff format check
+        run: uv run --locked ruff format --check
+
+      # No marketplace action here: the common ones bundle their own
+      # shellcheck build, which drifts from "current stable" silently. This
+      # installs the same v0.11.0 release the scripts were checked against
+      # locally.
+      #
+      # The asset name hardcodes linux.x86_64, which is correct for the
+      # `runs-on: ubuntu-24.04` above and silently wrong on any ARM runner —
+      # GitHub would serve a 404 HTML body and this step would fail at `tar`,
+      # several steps removed from the cause. If the runner ever changes,
+      # change this URL and the checksum below with it.
+      #
+      # The tag alone is not an integrity guarantee: a release asset can be
+      # replaced under an existing tag. The digest was computed by downloading
+      # this exact asset and running sha256sum over it.
+      - name: Install shellcheck
+        run: |
+          curl -fsSL -o shellcheck.tar.xz "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  shellcheck.tar.xz" | sha256sum -c -
+          tar -xf shellcheck.tar.xz
+          sudo mv shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
+          shellcheck --version
+
+      # Every tracked *.sh, not a hardcoded list, so a script added later is
+      # gated without anyone remembering to edit this file. git ls-files keeps
+      # node_modules/ and dist/ out for free — they are untracked, so the
+      # glob cannot reach them. xargs -0r leaves shellcheck unrun (rather than
+      # reading stdin) if the set is ever empty, and xargs propagates a
+      # non-zero exit from any batch.
+      #
+      # The two scripts that source a gitignored env file carry an in-file
+      # `# shellcheck source=/dev/null` directive rather than this command
+      # passing `-e SC1090,SC1091`: the suppression belongs on the line that
+      # needs it, and a blanket -e here would also hide those codes in a
+      # future script that sources something real.
+      - name: Shellcheck
+        run: git ls-files -z '*.sh' | xargs -0r shellcheck

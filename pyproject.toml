@@ -17,6 +17,10 @@ asyncio_mode = "auto"
 [tool.ruff]
 target-version = "py314"
 line-length = 100
+# Ruff's default `include` picks up *.md to format Python fences embedded in
+# docs. This repo's markdown is planning/spec transcripts and review notes,
+# not source under this project's style — not something CI should gate on.
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
