@@ -6,7 +6,7 @@ import type { Server } from 'node:http'
 import { getRequestListener } from '@hono/node-server'
 import { createServer } from 'node:http'
 import { Hono, type MiddlewareHandler } from 'hono'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { HaClient } from '../../src/server/ha/client.ts'
 import type { Env } from '../../src/server/app.ts'
 import { createRoutes, type Deps } from '../../src/server/http/routes-guest.ts'
@@ -230,6 +230,69 @@ describe('portal management routes', () => {
     })
     expect(res.status).toBe(200)
     expect(settings.getLastSelectedPortalId()).toBe(created.id)
+  })
+
+  describe('password rotation', () => {
+    async function loginAsGuest(password: string): Promise<{ cookie: string; sessionId: string }> {
+      const res = await fetch(`${baseUrl}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      })
+      const cookie = res.headers.get('set-cookie')
+      if (!cookie) throw new Error('guest login did not set a cookie')
+      const sessionId = new RegExp(`${SESSION_COOKIE}=([^;]+)`).exec(cookie)?.[1]
+      if (!sessionId) throw new Error('no session id in cookie')
+      return { cookie, sessionId }
+    }
+
+    it("evicts that portal's guest sessions and drops their streams", async () => {
+      const adminCookie = await loginAsAdmin()
+      const portal = portals.create({ title: 'Timothy', password: 'rotate-me-pass' })
+      const guest = await loginAsGuest('rotate-me-pass')
+      expect(sessions.get(guest.sessionId)).toBeDefined()
+
+      const closeSpy = vi.spyOn(hub, 'closePortalGuests')
+
+      const res = await fetch(`${baseUrl}/api/admin/portals/${portal.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({ password: 'rotated-new-pass' }),
+      })
+
+      expect(res.status).toBe(200)
+      expect(sessions.get(guest.sessionId)).toBeUndefined()
+      expect(closeSpy).toHaveBeenCalledWith(portal.id)
+    })
+
+    it('leaves other portals’ guest sessions alone', async () => {
+      const adminCookie = await loginAsAdmin()
+      const timothy = portals.create({ title: 'Timothy', password: 'timothy-rotate-pass' })
+      portals.create({ title: 'Mary', password: 'mary-keeps-pass' })
+      const mary = await loginAsGuest('mary-keeps-pass')
+
+      await fetch(`${baseUrl}/api/admin/portals/${timothy.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({ password: 'timothy-rotated-pass' }),
+      })
+
+      expect(sessions.get(mary.sessionId)).toBeDefined()
+    })
+
+    it('leaves guest sessions alone for an update that does not touch the password', async () => {
+      const adminCookie = await loginAsAdmin()
+      const portal = portals.create({ title: 'Timothy', password: 'keep-this-pass' })
+      const guest = await loginAsGuest('keep-this-pass')
+
+      await fetch(`${baseUrl}/api/admin/portals/${portal.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({ title: 'Tim' }),
+      })
+
+      expect(sessions.get(guest.sessionId)).toBeDefined()
+    })
   })
 
   it('returns 401 for an unauthenticated request', async () => {

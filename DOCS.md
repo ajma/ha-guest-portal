@@ -21,25 +21,29 @@ A LAN-only web app that exposes a curated subset of Home Assistant devices to gu
 
 ## Configuration
 
-The add-on requires three options:
+The add-on has one option, and it is optional:
 
-### `guest_password` (required)
-Password for guests to access the portal and control exposed devices.
-- Must be at least 8 characters
-- Must differ from `admin_password`
-
-### `admin_password` (required)
-Password for administrators to configure which devices are exposed.
-- Must be at least 8 characters
-- Must differ from `guest_password`
+### `admin_password` (optional)
+Password for administrators to configure portals from outside Home Assistant.
+- Must be at least 8 characters if set
+- Must differ from every portal's password
+- Leave it empty to allow admin access only through the Home Assistant sidebar
 
 Example configuration:
 ```yaml
-guest_password: your-secure-guest-password
 admin_password: your-secure-admin-password
 ```
 
 **No Home Assistant token is needed** — the Supervisor automatically provides it.
+
+### Guest passwords
+
+There is no deployment-wide guest password. Each portal has its own, and which
+portal a guest sees is decided entirely by the password they log in with. You
+create the first portal — and every later one — from the portal page in the
+Home Assistant sidebar; each portal's password is set there and can be changed
+at any time from that portal's settings. A password must be unique across every
+portal, and must differ from `admin_password`.
 
 ## Changing the Port
 
@@ -181,9 +185,9 @@ From there, click **Edit** to choose which devices guests can access, or
 
 ### Guest Access via Direct Port
 
-Share the LAN address with your guests: `http://homeassistant.local:9123`. Guests log in with the **guest password** and can control only the devices you've exposed.
+Share the LAN address with your guests: `http://homeassistant.local:9123`. Guests log in with **their own portal's password**, which is what decides the portal they land on, and can control only the devices that portal exposes.
 
-**Admins can also use the direct port** by logging in with the admin password instead of the guest password.
+**Admins can also use the direct port** by logging in with the admin password instead of a portal's password.
 
 ## Add the portal to your home screen
 
@@ -228,31 +232,34 @@ guests reach the portal over an `https://` address.
 ## First-Run Setup
 
 1. Start the add-on
-2. Open the portal from the Home Assistant sidebar (admin access, no password)
-3. Click **Edit**, then the **+ Add device** tile at the end of the grid, and
+2. Open the portal from the Home Assistant sidebar (admin access, no
+   password). A fresh install has no portals yet, so you land on the
+   create-portal screen
+3. Give the portal a name and set its password, then create it
+4. Click **Edit**, then the **+ Add device** tile at the end of the grid, and
    pick an entity from your Home Assistant instance
-4. Tap the new device's tile to give it a friendly name and tick the actions
+5. Tap the new device's tile to give it a friendly name and tick the actions
    guests are allowed to use (e.g. unlock but not lock). Until you tick
    something the device is visible to guests but does nothing
-5. Click **Done**. There is no Save button — every change saved as you made it
-6. Optionally click **Settings** to name the portal and choose a theme
-7. Share the direct port URL and guest password with your guests:
+6. Click **Done**. There is no Save button — every change saved as you made it
+7. Optionally click **Settings** to rename the portal or choose a theme
+8. Share the direct port URL and the portal's password with your guests:
    - URL: `http://homeassistant.local:9123` (or your LAN IP)
-   - Password: The guest password you configured
+   - Password: The password you set when you created the portal
 
 ## Security Model
 
 This portal is designed for deployment on a trusted home network.
 
 - **Hybrid ingress**: Admins use the HA sidebar (ingress, no password); guests use the direct port with password authentication
-- **Two shared passwords**: one for guests (device control), one for admins (device selection) — both apply only to the direct port
+- **Shared passwords**: one per portal for its guests (device control), and one deployment-wide for admins (device selection) — both apply only to the direct port
 - **Server-side allowlist**: Only explicitly approved entities and actions are permitted
 - **Network isolation**: LAN-only; no TLS (relies on physical network boundary)
 - **Source address enforcement**: The ingress port only accepts connections from the Home Assistant Supervisor
 
 ## Accepted Risks
 
-- **Shared credentials**: Anyone with the guest password can operate every exposed device, including locks. Do not expose devices you cannot afford to have controlled by any guest.
+- **Shared credentials**: Anyone with a portal's password can operate every device that portal exposes, including locks. Do not expose devices you cannot afford to have controlled by any guest of that portal.
 - **Entity renaming**: If you rename an entity in Home Assistant, the portal's allowlist entry becomes orphaned and the device will appear as unavailable. Edit mode outlines an orphaned tile in red; remove it there and add the device again under its new name.
 - **Environment variable exposure**: The Supervisor provides full Core API access to the add-on. Treat add-on configuration access as equivalent to full access to all exposed devices.
 

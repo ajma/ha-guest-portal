@@ -94,4 +94,21 @@ describe('PortalStore', () => {
     store.update(created.id, { enabled: false }) // already false, no change
     expect(seen).toEqual([{ portalId: created.id, enabled: false }])
   })
+
+  it('notifies onDelete when a portal is deleted', () => {
+    const created = store.create({ title: 'Timothy', password: 'a-secret-5' })
+    const seen: string[] = []
+    store.onDelete((portalId) => seen.push(portalId))
+
+    store.delete(created.id)
+    expect(seen).toEqual([created.id])
+  })
+
+  it('does not notify onDelete for an unknown portal id', () => {
+    const seen: string[] = []
+    store.onDelete((portalId) => seen.push(portalId))
+
+    store.delete('no-such-portal')
+    expect(seen).toEqual([])
+  })
 })

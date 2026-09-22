@@ -10,12 +10,15 @@
 #
 # NOTE ON EXPOSURE: the portal server calls listen(port) with no host, so it
 # binds every interface — including LAN and, on this machine, tailscale0. Vite
-# binds localhost only. The passwords below are throwaway dev values; do not
-# reuse them anywhere real.
+# binds localhost only. The admin password below is a throwaway dev value; do
+# not reuse it anywhere real.
+#
+# There is no guest password to set here: portals are created at runtime
+# through the admin UI, and each one carries its own.
 
 #
 # HA_MODE=fake (default) spins up the seeded stand-in above.
-# HA_MODE=real reads HA_BASE_URL / HA_TOKEN / the passwords from .env and talks
+# HA_MODE=real reads HA_BASE_URL / HA_TOKEN / ADMIN_PASSWORD from .env and talks
 # to your actual Home Assistant. DB_PATH from .env is ignored in real mode —
 # it points at the container path /data, which does not exist here.
 
@@ -32,20 +35,18 @@ DEV_DB="./.dev-data/portal.db"
 
 if [ "$HA_MODE" = "real" ]; then
   if [ ! -f .env ]; then
-    echo "[dev] HA_MODE=real needs a .env with HA_BASE_URL, HA_TOKEN, GUEST_PASSWORD, ADMIN_PASSWORD" >&2
+    echo "[dev] HA_MODE=real needs a .env with HA_BASE_URL, HA_TOKEN, ADMIN_PASSWORD" >&2
     exit 1
   fi
   set -a; . ./.env; set +a
   : "${HA_BASE_URL:?missing in .env}"
   : "${HA_TOKEN:?missing in .env}"
-  : "${GUEST_PASSWORD:?missing in .env}"
   : "${ADMIN_PASSWORD:?missing in .env}"
   # .env's DB_PATH is the in-container path; use a local one instead.
   DB_PATH="$DEV_DB"
 else
   HA_BASE_URL="http://127.0.0.1:${FAKE_HA_PORT}"
   HA_TOKEN="$FAKE_HA_TOKEN"
-  GUEST_PASSWORD="dev-guest-password"
   ADMIN_PASSWORD="dev-admin-password"
   DB_PATH="$DEV_DB"
 fi
@@ -68,7 +69,7 @@ trap cleanup EXIT INT TERM
 if [ "$HA_MODE" = "real" ]; then
   echo "[dev] HA_MODE=real — using Home Assistant at ${HA_BASE_URL}"
   echo "[dev] REAL DEVICES: anything you add to the allowlist becomes actuable"
-  echo "[dev]               by anyone who can reach :${PORT} with the guest password."
+  echo "[dev]               by anyone who can reach :${PORT} with a portal password."
 else
   echo "[dev] starting fake Home Assistant on :${FAKE_HA_PORT}"
   node --experimental-strip-types scripts/dev-fake-ha.ts &
@@ -103,7 +104,6 @@ fi
 echo "[dev] starting portal server on :${PORT} (node --watch)"
 HA_BASE_URL="$HA_BASE_URL" \
 HA_TOKEN="$HA_TOKEN" \
-GUEST_PASSWORD="$GUEST_PASSWORD" \
 ADMIN_PASSWORD="$ADMIN_PASSWORD" \
 PORT="${PORT}" \
 DB_PATH="$DB_PATH" \
@@ -119,7 +119,8 @@ if [ "$HA_MODE" = "real" ]; then
 
   ───────────────────────────────────────────────
    Guest / admin UI   http://localhost:5173
-   Passwords          from .env (GUEST_PASSWORD / ADMIN_PASSWORD)
+   Admin password     from .env (ADMIN_PASSWORD)
+   Guest passwords    per portal, created through the admin UI
    Home Assistant     ${HA_BASE_URL}  (REAL)
    Portal DB          ${DB_PATH}
   ───────────────────────────────────────────────
@@ -131,8 +132,8 @@ else
 
   ───────────────────────────────────────────────
    Guest / admin UI   http://localhost:5173
-   Guest password     dev-guest-password
    Admin password     dev-admin-password
+   Guest passwords    per portal, created through the admin UI
    Fake HA            http://127.0.0.1:${FAKE_HA_PORT}
   ───────────────────────────────────────────────
    Ctrl-C to stop everything.

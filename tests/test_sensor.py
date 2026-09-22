@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from homeassistant.const import STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -259,6 +260,28 @@ async def test_removes_a_sensor_when_its_portal_is_deleted(
         is None
     )
     assert hass.states.get(mary_id).state == "2023-11-14T22:15:00+00:00"
+
+
+async def test_removes_the_device_when_its_portal_is_deleted(
+    hass: HomeAssistant, mock_config_entry_with_two_portals
+):
+    entry, get_state = mock_config_entry_with_two_portals
+    devices = dr.async_get(hass)
+    assert devices.async_get_device_by_identifier(
+        (DOMAIN, f"{DEPLOYMENT_ID}_timothy"), entry.entry_id
+    ) is not None
+
+    get_state.return_value = STATE_ONE_PORTAL_REMAINING
+    coordinator = entry.runtime_data
+    await coordinator.async_request_refresh()
+    await hass.async_block_till_done()
+
+    assert devices.async_get_device_by_identifier(
+        (DOMAIN, f"{DEPLOYMENT_ID}_timothy"), entry.entry_id
+    ) is None
+    assert devices.async_get_device_by_identifier(
+        (DOMAIN, f"{DEPLOYMENT_ID}_mary"), entry.entry_id
+    ) is not None
 
 
 def test_available_is_false_once_the_portal_is_gone():

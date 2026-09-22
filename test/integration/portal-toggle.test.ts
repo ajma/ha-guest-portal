@@ -490,6 +490,32 @@ describe('Portal toggle', () => {
     await maryStream.pump
   })
 
+  it("deleting one portal drops only that portal's guest stream and session", async () => {
+    const timothy = portals.create({ title: 'Timothy', password: 'timothy-pass-3' })
+    portals.create({ title: 'Mary', password: 'mary-pass-3' })
+
+    const { cookie: timothyCookie } = await loginAs('timothy-pass-3')
+    const { cookie: maryCookie } = await loginAs('mary-pass-3')
+
+    const timothyStream = await openSseConnection(baseUrl, timothyCookie)
+    const maryStream = await openSseConnection(baseUrl, maryCookie)
+
+    portals.delete(timothy.id)
+
+    await expect(timothyStream.closed()).resolves.toBe(true)
+    expect(maryStream.isClosed()).toBe(false)
+
+    // The session is gone too, so the client's stream-drop recheck lands on
+    // the login screen rather than reconnecting to a portal that no longer exists.
+    const recheck = await fetch(`${baseUrl}/api/session`, { headers: { cookie: timothyCookie } })
+    expect(recheck.status).toBe(401)
+    const maryRecheck = await fetch(`${baseUrl}/api/session`, { headers: { cookie: maryCookie } })
+    expect(maryRecheck.status).toBe(200)
+
+    maryStream.abort()
+    await maryStream.pump
+  })
+
   describe('interaction recording', () => {
     it('records a guest login', async () => {
       const portal = portals.create({ title: 'Guest Portal', password: 'guest-pass-12345678' })

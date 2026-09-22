@@ -29,7 +29,7 @@ Use your Home Assistant server's LAN IP address (e.g., `http://192.168.1.100:812
 1. Copy this repository into `/addons/ha-guest-portal/` on your Home Assistant host — either manually over the Samba share add-on, or with `scripts/deploy-to-ha.sh` (copy `scripts/.env.deploy.example` to `scripts/.env.deploy` first)
 2. Refresh the Add-on Store (Settings → Add-ons → ⋮ → Check for updates) or restart the Supervisor
 3. Install "Home Assistant Guest Portal" from the Local add-ons section
-4. Configure the add-on with `guest_password` and `admin_password` (both ≥8 characters, must differ)
+4. Optionally set `admin_password` (≥8 characters) — only needed for admin access from outside the Home Assistant sidebar. Guest passwords are not configured here: each portal carries its own, set when you create it in the UI
 5. Start the add-on
 
 #### Accessing the Portal
@@ -38,7 +38,7 @@ The add-on supports two access methods:
 
 - **Admin access via HA sidebar**: After starting the add-on, click "Home Assistant Guest Portal" in your Home Assistant sidebar. This opens the portal with admin privileges automatically (no password required).
 
-- **Guest access via direct port**: Share the LAN address with guests: `http://homeassistant.local:9123` (or your HA instance IP). Guests log in with the guest password.
+- **Guest access via direct port**: Share the LAN address with guests: `http://homeassistant.local:9123` (or your HA instance IP). Guests log in with their own portal's password, which is what decides the portal they land on.
 
 - **Add to home screen**: guests can keep the portal as an icon that opens without browser chrome, and it explains itself instead of showing a browser error when it cannot be reached — browsers require an `https://` address for this, so on a plain LAN address only iOS adds the icon. See `DOCS.md`.
 
@@ -118,8 +118,9 @@ Home Assistant learns about an interaction within about 10 seconds.
    HA_BASE_URL=http://192.168.1.100:8123
    HA_TOKEN=your-long-lived-access-token
 
-   # Passwords must be ≥8 characters and must differ
-   GUEST_PASSWORD=your-secure-guest-password
+   # Required outside the add-on: with no Home Assistant sidebar to authenticate
+   # through, this is the only way to reach admin and create the first portal.
+   # ≥8 characters, and must differ from every portal's password.
    ADMIN_PASSWORD=your-secure-admin-password
 
    # Optional settings
@@ -134,6 +135,10 @@ Home Assistant learns about an interaction within about 10 seconds.
    ```bash
    docker compose up -d
    ```
+
+6. Open the portal and log in with `ADMIN_PASSWORD`. A fresh database has no
+   portals, so you land on the create-portal screen; each portal you create
+   gets its own guest password there.
 
 The database is stored in a Docker named volume (`portal-data`). Named volumes are initialized with the image's ownership (uid 1000), so they work on any host regardless of your user's uid.
 
@@ -294,8 +299,7 @@ either produces a release that looks green and installs for nobody:
 |----------|----------|---------|-------------|
 | `HA_BASE_URL` | Yes | — | Home Assistant base URL (use LAN IP, not `.local`) |
 | `HA_TOKEN` | Yes | — | Long-lived access token from a non-admin HA user |
-| `GUEST_PASSWORD` | Yes | — | Guest login password (≥8 characters) |
-| `ADMIN_PASSWORD` | Yes | — | Admin login password (≥8 characters, must differ from guest) |
+| `ADMIN_PASSWORD` | Outside the add-on | — | Admin login password (≥8 characters, must differ from every portal's password). Optional in add-on mode, where the Home Assistant sidebar already authenticates admins; without either, the server refuses to start, since no one could create a portal |
 | `PORT` | No | 9123 | HTTP port to listen on |
 | `DB_PATH` | No | `/data/portal.db` | SQLite database path |
 | `HA_WS_URL` | No | — | Override WebSocket URL (advanced) |
@@ -305,7 +309,7 @@ either produces a release that looks green and installs for nobody:
 
 This portal is designed for deployment on a trusted home network behind a router with no inbound port forwarding.
 
-- **Two shared passwords**: one for guests (device control), one for admins (device selection)
+- **Shared passwords**: one per portal for its guests (device control), and one deployment-wide for admins (portal and device management)
 - **Server-side allowlist**: Only explicitly approved entities and actions are permitted
 - **Kill-switch**: the guest surface can be disabled from the portal's Settings
   panel or from Home Assistant, without affecting an owner's own access
@@ -315,10 +319,10 @@ This portal is designed for deployment on a trusted home network behind a router
 
 ## Accepted Risks
 
-- **Shared credentials**: Anyone with the guest password can operate every exposed device, including locks. Do not expose devices you cannot afford to have controlled by any guest.
+- **Shared credentials**: Anyone with a portal's guest password can operate every device that portal exposes, including locks. Do not expose devices you cannot afford to have controlled by any guest of that portal.
 - **Entity renaming**: If you rename an entity in Home Assistant, the portal's allowlist entry becomes orphaned and the device will appear as unavailable. Edit mode flags the orphaned tile; remove it there and add the device again.
 - **No per-entity token scoping**: Home Assistant's long-lived access tokens cannot be scoped to specific entities. The portal enforces the allowlist in application code. Use a non-admin HA user account to limit blast radius.
-- **Environment variable exposure**: Anyone with access to the Docker daemon on the host can read the Home Assistant token and both passwords via `docker inspect`. Treat host access as equivalent to full access to the portal and all exposed devices.
+- **Environment variable exposure**: Anyone with access to the Docker daemon on the host can read the Home Assistant token and the admin password via `docker inspect`, and the database holds every portal's password. Treat host access as equivalent to full access to the portal and all exposed devices.
 
 ## Monitoring
 

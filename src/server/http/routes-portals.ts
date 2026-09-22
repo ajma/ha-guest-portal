@@ -15,7 +15,7 @@ import {
 } from '../../shared/api.js'
 
 export function mountPortalRoutes(app: Hono<Env>, deps: Deps): void {
-  const { portals, cfg, allowlist, ha, settings } = deps
+  const { portals, cfg, allowlist, ha, settings, sessions, hub } = deps
 
   function collidesWithAdminPassword(password: string): boolean {
     return cfg.adminPassword !== undefined && verifyPassword(password, cfg.adminPassword)
@@ -100,6 +100,15 @@ export function mountPortalRoutes(app: Hono<Env>, deps: Deps): void {
         ...(enabled !== undefined && { enabled }),
         ...(password !== undefined && { password }),
       })
+
+      // A rotated password revokes the credential those guest sessions were
+      // issued against, so they must not survive it. Their streams are dropped
+      // too, or they would keep receiving updates until their next poll.
+      if (password !== undefined) {
+        sessions.destroyPortalSessions(portalId)
+        hub.closePortalGuests(portalId)
+      }
+
       return c.json(PortalDetailResponse.parse(updated))
     } catch (error) {
       if (error instanceof DuplicatePasswordError) {

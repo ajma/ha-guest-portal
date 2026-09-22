@@ -53,6 +53,7 @@ function isUniqueConstraintError(error: unknown): boolean {
 export class PortalStore {
   private db: DatabaseSync
   private enabledListeners: Set<(portalId: string, enabled: boolean) => void> = new Set()
+  private deleteListeners: Set<(portalId: string) => void> = new Set()
 
   constructor(db: DatabaseSync) {
     this.db = db
@@ -62,6 +63,13 @@ export class PortalStore {
     this.enabledListeners.add(fn)
     return () => {
       this.enabledListeners.delete(fn)
+    }
+  }
+
+  onDelete(fn: (portalId: string) => void): () => void {
+    this.deleteListeners.add(fn)
+    return () => {
+      this.deleteListeners.delete(fn)
     }
   }
 
@@ -143,6 +151,11 @@ export class PortalStore {
   }
 
   delete(id: string): void {
-    this.db.prepare('DELETE FROM portal WHERE id = ?').run(id)
+    const result = this.db.prepare('DELETE FROM portal WHERE id = ?').run(id)
+    if (result.changes === 0) return
+
+    for (const listener of this.deleteListeners) {
+      listener(id)
+    }
   }
 }

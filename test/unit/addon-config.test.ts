@@ -89,16 +89,42 @@ describe('Home Assistant add-on configuration', () => {
     expect(script.length).toBeGreaterThan(0)
   })
 
-  it('run.sh exports all seven environment variables in add-on mode', () => {
+  it('run.sh exports the add-on environment variables in add-on mode', () => {
     const script = readFileSync(runPath, 'utf-8')
     expect(script).toMatch(/export\s+HA_BASE_URL/)
     expect(script).toMatch(/export\s+HA_WS_URL/)
     expect(script).toMatch(/export\s+HA_TOKEN/)
-    expect(script).toMatch(/export\s+GUEST_PASSWORD/)
     expect(script).toMatch(/export\s+ADMIN_PASSWORD/)
     expect(script).toMatch(/export\s+PORT/)
     expect(script).toMatch(/export\s+DB_PATH/)
     expect(script).toMatch(/export\s+INGRESS_PORT/)
+  })
+
+  it('run.sh never mentions GUEST_PASSWORD - portals carry their own passwords', () => {
+    const script = readFileSync(runPath, 'utf-8')
+    expect(script).not.toMatch(/export\s+GUEST_PASSWORD/)
+    expect(script).not.toMatch(/GUEST_PASSWORD/)
+    expect(script).not.toMatch(/guest_password/)
+  })
+
+  it('run.sh treats an empty or null admin_password as unconfigured, not fatal', () => {
+    const script = readFileSync(runPath, 'utf-8')
+    // An add-on with no admin_password is valid: admin is reached via ingress.
+    // No guard may exit on an empty or null ADMIN_PASSWORD.
+    expect(script).not.toMatch(/-z\s+"\$ADMIN_PASSWORD"[\s\S]{0,200}?exit\s+1/)
+    expect(script).not.toMatch(/\$ADMIN_PASSWORD"?\s*=\s*"null"[\s\S]{0,200}?exit\s+1/)
+    // And the export itself is conditional, so config.ts sees it genuinely unset
+    // rather than as an empty string (which would fail the .min(8) check).
+    expect(script).toMatch(
+      /if\s+\[\s+-n\s+"\$ADMIN_PASSWORD"\s+\]\s+&&\s+\[\s+"\$ADMIN_PASSWORD"\s+!=\s+"null"\s+\]\s*;\s*then\s+export\s+ADMIN_PASSWORD/,
+    )
+  })
+})
+
+describe('config.yaml add-on options', () => {
+  it('declares no guest_password option', () => {
+    const config = readFileSync(configPath, 'utf-8')
+    expect(config).not.toMatch(/guest_password/)
   })
 
   it('HA_WS_URL points at /core/websocket not /api/websocket', () => {

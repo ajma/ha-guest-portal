@@ -11,25 +11,19 @@ if [ -n "$SUPERVISOR_TOKEN" ]; then
     exit 1
   fi
 
-  GUEST_PASSWORD=$(jq -r '.guest_password' /data/options.json)
   ADMIN_PASSWORD=$(jq -r '.admin_password' /data/options.json)
   # Port is fixed in add-on mode to match the container side of config.yaml's
   # ports mapping (9123/tcp: 9123). To change the host port, use the Supervisor's
   # Configuration → Network panel.
   PORT=9123
 
-  # Validate required passwords are present and not null
-  if [ -z "$GUEST_PASSWORD" ] || [ "$GUEST_PASSWORD" = "null" ]; then
-    echo "Error: guest_password is missing or null in /data/options.json" >&2
-    exit 1
+  # An unconfigured admin_password is valid - admin is then reachable only via
+  # ingress. Export it only when actually set: config.ts parses ADMIN_PASSWORD
+  # as optional with a minimum length, so an exported empty string would be
+  # rejected where a genuinely absent variable is accepted.
+  if [ -n "$ADMIN_PASSWORD" ] && [ "$ADMIN_PASSWORD" != "null" ]; then
+    export ADMIN_PASSWORD
   fi
-  if [ -z "$ADMIN_PASSWORD" ] || [ "$ADMIN_PASSWORD" = "null" ]; then
-    echo "Error: admin_password is missing or null in /data/options.json" >&2
-    exit 1
-  fi
-
-  export GUEST_PASSWORD
-  export ADMIN_PASSWORD
   export PORT
 
   # Set Home Assistant connection via Supervisor proxy

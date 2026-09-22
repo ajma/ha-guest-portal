@@ -163,6 +163,16 @@ export function createRuntime(deps: Deps): Runtime {
     }
   })
 
+  // Wire portals.onDelete → the same teardown as disabling, plus session
+  // eviction: a deleted portal's guests have nothing left to reconnect to.
+  portals.onDelete((portalId) => {
+    const frame: SseFrame = SseFrameSchema.parse({ type: 'portal', enabled: false })
+    hub.broadcastToPortal(portalId, frame)
+
+    sessions.destroyPortalSessions(portalId)
+    hub.closePortalGuests(portalId)
+  })
+
   // Create Hono app
   const app = createApp(deps)
 

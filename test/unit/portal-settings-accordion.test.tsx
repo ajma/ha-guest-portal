@@ -73,6 +73,36 @@ describe('PortalSettingsAccordion', () => {
     expect(onDeleted).toHaveBeenCalled()
   })
 
+  it('reloads when portalId changes, so edits never carry the old portal’s values', async () => {
+    const user = userEvent.setup()
+    const OTHER = {
+      id: 'p2',
+      title: 'Mary',
+      theme: 'classic' as const,
+      enabled: false,
+      password: 'mary-pass',
+    }
+    vi.mocked(api.updatePortal).mockResolvedValue({ ok: true, data: { ...OTHER, enabled: true } })
+
+    const { rerender } = render(
+      <PortalSettingsAccordion portalId="p1" onUpdated={vi.fn()} onDeleted={vi.fn()} />,
+    )
+    await user.click(screen.getByRole('button', { name: /portal settings/i }))
+    await screen.findByDisplayValue('Timothy')
+
+    vi.mocked(api.getPortal).mockResolvedValue({ ok: true, data: OTHER })
+    rerender(<PortalSettingsAccordion portalId="p2" onUpdated={vi.fn()} onDeleted={vi.fn()} />)
+
+    await waitFor(() => expect(api.getPortal).toHaveBeenCalledWith('p2'))
+    expect(await screen.findByDisplayValue('Mary')).toBeTruthy()
+
+    // p2 is disabled, so toggling must enable it. Reading p1's still-loaded
+    // state here would send enabled:false to p2 instead.
+    await user.click(screen.getByRole('checkbox'))
+    await waitFor(() => expect(api.updatePortal).toHaveBeenCalledWith('p2', { enabled: true }))
+    expect(api.updatePortal).not.toHaveBeenCalledWith('p1', expect.anything())
+  })
+
   it('shows a duplicate-password error without crashing', async () => {
     const user = userEvent.setup()
     vi.mocked(api.updatePortal).mockResolvedValue({ ok: false, status: 409 })

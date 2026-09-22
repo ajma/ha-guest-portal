@@ -1,4 +1,4 @@
-import { loadConfig } from './config.js'
+import { assertAdminAccessPossible, loadConfig } from './config.js'
 import { openDb } from './store/db.js'
 import { AllowlistStore } from './store/allowlist.js'
 import { AuditLog } from './store/auditlog.js'
@@ -14,6 +14,7 @@ import { publishDiscovery } from './hassio/discovery.js'
 async function main() {
   // Load configuration
   const cfg = loadConfig(process.env)
+  assertAdminAccessPossible(cfg)
 
   // Open database
   const db = openDb(cfg.dbPath)

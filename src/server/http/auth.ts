@@ -61,6 +61,19 @@ export class SessionStore {
     this.sessions.delete(id)
   }
 
+  /**
+   * Drop every guest session bound to one portal. Used when the portal's
+   * password is rotated or the portal is deleted: the credential those
+   * sessions were issued against no longer exists.
+   */
+  destroyPortalSessions(portalId: string): void {
+    for (const [id, session] of this.sessions.entries()) {
+      if (session.role === 'guest' && session.portalId === portalId) {
+        this.sessions.delete(id)
+      }
+    }
+  }
+
   sweep(): void {
     const now = this.now()
     for (const [id, session] of this.sessions.entries()) {

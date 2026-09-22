@@ -91,6 +91,23 @@ export function PortalSettingsAccordion({
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const [loadedFor, setLoadedFor] = useState(portalId)
+
+  // Callers render this component without a key, so React keeps the same
+  // instance across a portal switch. Dropping the loaded portal here is what
+  // stops the previous portal's field values being saved onto the new one.
+  // Done during render rather than in an effect so no click can land while
+  // the old portal's values are still on screen.
+  if (loadedFor !== portalId) {
+    setLoadedFor(portalId)
+    setPortal(null)
+    setTitleDraft(null)
+    setPasswordDraft(null)
+    setConfirmingDelete(false)
+    setPasswordRevealed(false)
+    setError(null)
+  }
+
   useEffect(() => {
     if (!expanded || portal !== null) return
     let cancelled = false

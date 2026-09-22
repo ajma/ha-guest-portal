@@ -8,6 +8,8 @@ type PortalDetail = z.infer<typeof PortalDetailResponse>
 
 export type CreatePortalScreenProps = {
   onCreated: (portal: PortalDetail) => void
+  /** Omitted for the full-page, zero-portal case — there is nothing to cancel back to. */
+  onCancel?: () => void
 }
 
 const wrap: CSSProperties = {
@@ -70,7 +72,20 @@ const submitButton: CSSProperties = {
 
 const errorText: CSSProperties = { margin: 0, fontSize: '13px', color: 'var(--danger)' }
 
-export function CreatePortalScreen({ onCreated }: CreatePortalScreenProps): ReactElement {
+const actionsRow: CSSProperties = { display: 'flex', gap: '8px' }
+
+const cancelButton: CSSProperties = {
+  padding: '10px 16px',
+  fontSize: '14px',
+  fontFamily: 'inherit',
+  cursor: 'pointer',
+  color: 'var(--text)',
+  backgroundColor: 'transparent',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--tileRadius)',
+}
+
+export function CreatePortalScreen({ onCreated, onCancel }: CreatePortalScreenProps): ReactElement {
   const [title, setTitle] = useState('')
   const [password, setPassword] = useState('')
   const [revealed, setRevealed] = useState(false)
@@ -149,16 +164,23 @@ export function CreatePortalScreen({ onCreated }: CreatePortalScreenProps): Reac
         </p>
       )}
 
-      <button
-        type="button"
-        style={submitButton}
-        disabled={submitting || title.trim() === '' || password.trim() === ''}
-        onClick={() => {
-          void handleSubmit()
-        }}
-      >
-        {submitting ? 'Creating…' : 'Create portal'}
-      </button>
+      <div style={actionsRow}>
+        <button
+          type="button"
+          style={submitButton}
+          disabled={submitting || title.trim() === '' || password.trim() === ''}
+          onClick={() => {
+            void handleSubmit()
+          }}
+        >
+          {submitting ? 'Creating…' : 'Create portal'}
+        </button>
+        {onCancel !== undefined && (
+          <button type="button" style={cancelButton} disabled={submitting} onClick={onCancel}>
+            Cancel
+          </button>
+        )}
+      </div>
     </div>
   )
 }

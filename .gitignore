@@ -16,3 +16,6 @@ __pycache__/
 
 # Samba deploy credentials (see scripts/.env.deploy.example)
 scripts/.env.deploy
+
+# Subagent-driven-development scratch (ledgers, briefs, review reports)
+.superpowers/

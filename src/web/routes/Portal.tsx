@@ -513,9 +513,14 @@ export function Portal({
         <div style={overlayInner}>
           <CreatePortalScreen
             onCreated={(portal) => {
+              // onPortalCreated's own handler already closes this overlay
+              // (addingPortal: false) as part of the same state update that
+              // adds the portal and selects it. A second setState here,
+              // built from this render's now-stale `state` closure, would
+              // overwrite that update and revert the portal list.
               onPortalCreated?.(portal)
-              onCancelAddPortal?.()
             }}
+            {...(onCancelAddPortal !== undefined && { onCancel: onCancelAddPortal })}
           />
         </div>
       </div>,

@@ -42,6 +42,22 @@ export type Config = {
   webRoot?: string
 }
 
+/**
+ * Fail fast when no admin path can ever exist.
+ *
+ * Admin is reachable two ways: through the ingress server (add-on mode) or by
+ * logging in with ADMIN_PASSWORD. With neither, the deployment starts but no
+ * credential can ever authenticate as admin - and since a fresh database has
+ * zero portals, nothing can create the first one either.
+ */
+export function assertAdminAccessPossible(cfg: Config): void {
+  if (cfg.ingressPort === undefined && cfg.adminPassword === undefined) {
+    throw new Error(
+      'No admin access is possible: set ADMIN_PASSWORD (at least 8 characters), or run as a Home Assistant add-on so admin is reachable via ingress. Without one of these, no portal can ever be created.',
+    )
+  }
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv): Config {
   const r = schema.safeParse(env)
   if (!r.success) throw new Error(`Invalid configuration:\n${z.prettifyError(r.error)}`)

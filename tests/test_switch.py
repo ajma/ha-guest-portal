@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -212,6 +213,28 @@ async def test_removes_a_switch_when_its_portal_is_deleted(
     assert _switch_count(hass, entry) == 1
     assert registry.async_get_entity_id("switch", DOMAIN, f"{DEPLOYMENT_ID}_timothy_portal") is None
     assert hass.states.get(mary_id).state == STATE_OFF
+
+
+async def test_removes_the_device_when_its_portal_is_deleted(
+    hass: HomeAssistant, mock_config_entry_with_two_portals
+):
+    entry, get_state, _set_enabled = mock_config_entry_with_two_portals
+    devices = dr.async_get(hass)
+    assert devices.async_get_device_by_identifier(
+        (DOMAIN, f"{DEPLOYMENT_ID}_timothy"), entry.entry_id
+    ) is not None
+
+    get_state.return_value = STATE_ONE_PORTAL_REMAINING
+    coordinator = entry.runtime_data
+    await coordinator.async_request_refresh()
+    await hass.async_block_till_done()
+
+    assert devices.async_get_device_by_identifier(
+        (DOMAIN, f"{DEPLOYMENT_ID}_timothy"), entry.entry_id
+    ) is None
+    assert devices.async_get_device_by_identifier(
+        (DOMAIN, f"{DEPLOYMENT_ID}_mary"), entry.entry_id
+    ) is not None
 
 
 def test_available_is_false_once_the_portal_is_gone():

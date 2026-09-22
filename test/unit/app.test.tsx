@@ -129,6 +129,50 @@ describe('App', () => {
     expect(screen.queryByRole('option', { name: 'Timothy' })).toBeNull()
   })
 
+  it('adds the new portal to the dropdown and selects it after using + Add portal', async () => {
+    // Portal.tsx's add-portal overlay used to call both onPortalCreated and
+    // onCancelAddPortal back to back, each building its next state from the
+    // same stale `state` closure -- the second call clobbered the first,
+    // leaving the newly created portal absent from the dropdown and the
+    // previously selected portal still showing. This pins the fix: creating
+    // a portal must be reflected in both the option list and the selection.
+    vi.mocked(api.getSession).mockResolvedValue({ role: 'admin' })
+    vi.mocked(api.getPortals).mockResolvedValue({
+      ok: true,
+      data: {
+        portals: [{ id: 'p1', title: 'Timothy', theme: 'classic', enabled: true }],
+        lastSelectedPortalId: 'p1',
+      },
+    })
+    vi.mocked(api.getCatalog).mockResolvedValue({ ok: true, data: [] })
+    vi.mocked(api.getPortalAllowlist).mockResolvedValue({ ok: true, data: { devices: [], orphaned: [] } })
+    vi.mocked(api.createPortal).mockResolvedValue({
+      ok: true,
+      data: { id: 'p2', title: 'Mary', theme: 'classic', enabled: true, password: 'mary-pass' },
+    })
+
+    const user = userEvent.setup()
+    render(<App />)
+
+    await waitFor(() =>
+      expect((screen.getByRole('combobox', { name: /portal/i }) as HTMLSelectElement).value).toBe('p1'),
+    )
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /portal/i }), '+ Add portal')
+    await user.type(await screen.findByLabelText(/portal name/i), 'Mary')
+    await user.type(screen.getByLabelText(/^password$/i), 'mary-pass')
+    await user.click(screen.getByRole('button', { name: /^create portal$/i }))
+
+    await waitFor(() =>
+      expect((screen.getByRole('combobox', { name: /portal/i }) as HTMLSelectElement).value).toBe('p2'),
+    )
+    expect(screen.getByRole('option', { name: 'Timothy' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'Mary' })).toBeTruthy()
+    // The overlay must actually close -- a leftover create-portal form after
+    // a successful creation is the other half of the original bug's symptom.
+    expect(screen.queryByRole('heading', { name: /create a portal/i })).toBeNull()
+  })
+
   it('flips a connected guest to the disabled screen on a live SSE frame, with no extra session fetch', async () => {
     // App.tsx's own bug, found and fixed during this task: the disabled-screen
     // gate must read the live device-store value (what the server's 'portal'

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { loadConfig } from '../../src/server/config.ts'
+import { assertAdminAccessPossible, loadConfig } from '../../src/server/config.ts'
 
 const valid = {
   HA_BASE_URL: 'http://192.168.1.100:8123',
@@ -74,5 +74,31 @@ describe('loadConfig', () => {
       const msg = err instanceof Error ? err.message : String(err)
       expect(msg).not.toContain(secretPassword)
     }
+  })
+})
+
+describe('assertAdminAccessPossible', () => {
+  it('throws when neither ingress nor an admin password can reach admin', () => {
+    const cfg = loadConfig({ ...valid })
+    expect(() => assertAdminAccessPossible(cfg)).toThrow(/ADMIN_PASSWORD/)
+  })
+
+  it('accepts ingress alone', () => {
+    const cfg = loadConfig({ ...valid, INGRESS_PORT: '8099' })
+    expect(() => assertAdminAccessPossible(cfg)).not.toThrow()
+  })
+
+  it('accepts an admin password alone', () => {
+    const cfg = loadConfig({ ...valid, ADMIN_PASSWORD: 'at-least-8-chars' })
+    expect(() => assertAdminAccessPossible(cfg)).not.toThrow()
+  })
+
+  it('accepts both together', () => {
+    const cfg = loadConfig({
+      ...valid,
+      INGRESS_PORT: '8099',
+      ADMIN_PASSWORD: 'at-least-8-chars',
+    })
+    expect(() => assertAdminAccessPossible(cfg)).not.toThrow()
   })
 })

@@ -267,6 +267,21 @@ describe('SessionStore (portal-scoped)', () => {
     const id = sessions.create({ role: 'admin' })
     expect(sessions.get(id)).toMatchObject({ role: 'admin' })
   })
+
+  it('destroys every guest session for one portal, leaving others intact', () => {
+    const sessions = new SessionStore()
+    const timothyA = sessions.create({ role: 'guest', portalId: 'timothy' })
+    const timothyB = sessions.create({ role: 'guest', portalId: 'timothy' })
+    const mary = sessions.create({ role: 'guest', portalId: 'mary' })
+    const admin = sessions.create({ role: 'admin' })
+
+    sessions.destroyPortalSessions('timothy')
+
+    expect(sessions.get(timothyA)).toBeUndefined()
+    expect(sessions.get(timothyB)).toBeUndefined()
+    expect(sessions.get(mary)).toBeDefined()
+    expect(sessions.get(admin)).toBeDefined()
+  })
 })
 
 describe('LoginRateLimiter', () => {
