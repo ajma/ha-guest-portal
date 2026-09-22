@@ -535,6 +535,17 @@ test.describe('Portal E2E', () => {
       await guestPage.getByRole('button', { name: 'Log in' }).click()
       await expect(guestPage.getByTestId('guest-screen')).toBeVisible()
 
+      // This pins the live half: login happens in-page, with no reload, so
+      // the document that was served the neutral default above must already
+      // carry the portal's theme right now — before the reload-based
+      // assertion below ever runs. Without a working live update this would
+      // still read 'classic', the value the pre-login `goto` left behind.
+      await expect(guestPage.locator('html')).toHaveAttribute('data-theme', 'tiles')
+
+      // This pins the other half: a *fresh* load, after the live update
+      // above, must still be served the theme by the server directly rather
+      // than relying on whatever the client wrote — the server-injection
+      // property the test above already covers on first paint.
       await guestPage.goto(baseUrl)
       await expect(guestPage.locator('html')).toHaveAttribute('data-theme', 'tiles')
       await expect(guestPage.getByTestId('guest-screen')).toBeVisible()

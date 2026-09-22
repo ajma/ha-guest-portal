@@ -4,7 +4,7 @@ import type { Device } from '@shared/api.ts'
 import { DEFAULT_THEME_ID } from '@shared/themes.ts'
 import { Portal } from '../../src/web/routes/Portal.tsx'
 import * as store from '../../src/web/store.ts'
-import { activeTheme, componentsFor, readThemeId } from '../../src/web/themes/active.ts'
+import { componentsFor, readThemeId } from '../../src/web/themes/active.ts'
 import classic from '../../src/web/themes/classic/index.ts'
 import { DEFAULT_COMPONENTS } from '../../src/web/themes/default/index.ts'
 import { resolveTheme } from '../../src/web/themes/registry.ts'
@@ -61,12 +61,15 @@ describe('readThemeId', () => {
 
     expect(readThemeId()).toBe('midnight')
     expect(resolveTheme('midnight').id).toBe(DEFAULT_THEME_ID)
-    expect(activeTheme().id).toBe(DEFAULT_THEME_ID)
+    // The end-to-end composition every production call site now does inline
+    // (App.tsx and Portal.tsx no longer have an `activeTheme()` to call) —
+    // this is what that helper was, not a new behaviour of its own.
+    expect(resolveTheme(readThemeId()).id).toBe(DEFAULT_THEME_ID)
   })
 
   it('selects the theme the attribute names when it is registered', () => {
     document.documentElement.dataset.theme = 'classic'
-    expect(activeTheme()).toBe(classic)
+    expect(resolveTheme(readThemeId())).toBe(classic)
   })
 })
 
@@ -144,12 +147,17 @@ describe('the guest route', () => {
     store.applyFrame({ type: 'snapshot', devices: [device], stale: false })
     store.setConnected(true)
 
-    render(<Portal role={GUEST} portalId="p1" onLogout={async () => {}} />)
+    render(<Portal role={GUEST} portalId="p1" theme="classic" onLogout={async () => {}} />)
 
-    // `classic` is what resolves with no data-theme attribute, and its tiles
-    // render an MDI glyph where the default set renders no icon at all. A page
-    // that still imported its tiles directly would fail this.
-    expect(componentsFor(activeTheme()).ToggleTile).toBe(classic.components?.ToggleTile)
+    // `theme="classic"` on the render above is what actually determines this
+    // — Portal takes its theme as a prop now, not from the DOM.
+    // `resolveTheme(readThemeId())` here is only a convenient stand-in for
+    // the classic `Theme` object: with no `data-theme` attribute set it
+    // happens to resolve to the same theme, but it is not what the page
+    // being rendered consults. Tiles render an MDI glyph where the default
+    // set renders no icon at all, so a page that still imported its tiles
+    // directly would fail this.
+    expect(componentsFor(resolveTheme(readThemeId())).ToggleTile).toBe(classic.components?.ToggleTile)
     expect(screen.getByRole('button', { name: 'Hall Light' }).querySelector('svg')).not.toBeNull()
   })
 })

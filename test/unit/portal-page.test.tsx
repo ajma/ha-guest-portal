@@ -67,7 +67,7 @@ function seed(devices: Device[] = [PORCH, KITCHEN]): void {
 }
 
 function renderPortal(role: 'admin' | 'guest', portalId = 'portal-1'): void {
-  render(<Portal role={role} portalId={portalId} onLogout={async () => {}} />)
+  render(<Portal role={role} portalId={portalId} theme="classic" onLogout={async () => {}} />)
 }
 
 /** The header's Edit button, by its accessible name — 'Done' once edit is on. */
@@ -167,6 +167,7 @@ describe('Portal page', () => {
         <Portal
           role={ADMIN}
           portalId="p1"
+          theme="classic"
           onLogout={async () => {}}
           portals={[
             { id: 'p1', title: 'Timothy', theme: 'classic', enabled: true },
@@ -186,7 +187,9 @@ describe('Portal page', () => {
     // title up in — it has to come straight through as `guestPortalTitle`.
     it('a guest sees their portal title as plain text, no dropdown', () => {
       seed()
-      render(<Portal role={GUEST} portalId="p1" guestPortalTitle="Timothy" onLogout={async () => {}} />)
+      render(
+        <Portal role={GUEST} portalId="p1" theme="classic" guestPortalTitle="Timothy" onLogout={async () => {}} />,
+      )
 
       expect(screen.getByRole('heading').textContent).toBe('Timothy')
       expect(screen.queryByRole('combobox', { name: /portal/i })).toBeNull()
@@ -459,13 +462,13 @@ describe('Portal page', () => {
       const user = userEvent.setup()
       seed()
       const { rerender } = render(
-        <Portal role={ADMIN} portalId="portal-1" onLogout={async () => {}} />,
+        <Portal role={ADMIN} portalId="portal-1" theme="classic" onLogout={async () => {}} />,
       )
       await enterEditMode(user)
       await user.click(screen.getByRole('button', { name: 'Porch' }))
       expect(screen.getByRole('heading', { name: 'Porch' })).toBeTruthy()
 
-      rerender(<Portal role={ADMIN} portalId="portal-2" onLogout={async () => {}} />)
+      rerender(<Portal role={ADMIN} portalId="portal-2" theme="classic" onLogout={async () => {}} />)
 
       expect(screen.queryByRole('heading', { name: 'Porch' })).toBeNull()
       expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy()
@@ -477,13 +480,13 @@ describe('Portal page', () => {
       const user = userEvent.setup()
       seed()
       const { rerender } = render(
-        <Portal role={ADMIN} portalId="portal-1" onLogout={async () => {}} />,
+        <Portal role={ADMIN} portalId="portal-1" theme="classic" onLogout={async () => {}} />,
       )
       await enterEditMode(user)
       await user.click(screen.getByRole('button', { name: /add device/i }))
       expect(screen.getByTestId('picker-overlay')).toBeTruthy()
 
-      rerender(<Portal role={ADMIN} portalId="portal-2" onLogout={async () => {}} />)
+      rerender(<Portal role={ADMIN} portalId="portal-2" theme="classic" onLogout={async () => {}} />)
 
       expect(screen.queryByTestId('picker-overlay')).toBeNull()
     })

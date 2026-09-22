@@ -16,6 +16,10 @@ describe('unreachable portal', () => {
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
+    // App's live-theme effect writes `data-theme` on every render even when a
+    // test never touches theming, so it leaks into whichever test runs next
+    // in this file unless it is cleared here.
+    delete document.documentElement.dataset.theme
   })
 
   it('shows the unreachable screen when the session request rejects', async () => {

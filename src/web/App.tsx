@@ -1,13 +1,23 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactElement } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+} from 'react'
 import type { z } from 'zod'
 import type { PortalDetailResponse, SessionResponse } from '@shared/api.js'
 import { DEFAULT_PORTAL_TITLE } from '@shared/portalTitle.js'
+import type { ThemeId } from '@shared/themes.js'
 import { getPortals, getSession, logout, putLastSelectedPortal, setUnauthorizedCallback } from './api.js'
 import { CreatePortalScreen } from './components/CreatePortalScreen.js'
 import { DeploymentSettingsPanel } from './components/DeploymentSettingsPanel.js'
 import { Portal } from './routes/Portal.js'
 import { setPortalEnabled, useDeviceStore } from './store.js'
-import { activeTheme, componentsFor } from './themes/active.js'
+import { componentsFor, readThemeId, writeThemeId } from './themes/active.js'
+import { resolveTheme } from './themes/registry.js'
 import type { PortalSummary } from './components/PortalDropdown.js'
 
 type PortalDetail = z.infer<typeof PortalDetailResponse>
@@ -46,16 +56,66 @@ type AppState =
     }
 
 export function App(): ReactElement {
-  // Every screen App owns comes from the active theme, so nobody crosses an
-  // unthemed seam. There is one portal: an owner gets Edit and Settings inside
-  // it, rather than a separate page that looks nothing like what they ship.
-  const { Login, Disabled, Unreachable, Shell } = componentsFor(activeTheme())
   const [state, setState] = useState<AppState>({ kind: 'loading' })
   const [loggingOut, setLoggingOut] = useState(false)
   const [showDeploymentSettings, setShowDeploymentSettings] = useState(false)
   const { connected, portalEnabled } = useDeviceStore()
   const prevConnectedRef = useRef<boolean>(false)
   const stateKindRef = useRef<AppState['kind']>(state.kind)
+
+  // The theme id lives in React state, not the DOM: a guest's is on their
+  // session, an admin's is on whichever portal is selected, and both can
+  // change without a reload (switching portals, saving a new theme in
+  // settings). `loading` / `logged-out` / `unreachable` have no themed data of
+  // their own to read, so they fall back to whatever `data-theme` currently
+  // holds -- which, now that the effect below can have already overwritten
+  // it, is not always what the server injected at page load. Concretely: an
+  // admin on p1/classic who switches to p2/cards and then logs out sees the
+  // login screen in cards, not classic, because the switch already wrote
+  // 'cards' onto <html>. That is correct, not a leak: `handleSelectPortal`
+  // and the settings save both PUT the change to the server before this ever
+  // renders, so a real reload lands on the same theme these branches already
+  // show; a session-less reload of the login screen itself always gets
+  // `DEFAULT_THEME_ID` from the server regardless of what was on screen a
+  // moment before (`themeAndTitleFor`, src/server/app.ts:57). Routed through
+  // `resolveTheme(...).id` rather than the raw attribute so the value handed
+  // to a required, ThemeId-typed prop is always one `componentsFor` can
+  // actually resolve, never a name from a theme that has since been removed.
+  let themeId: ThemeId
+  if (state.kind === 'guest') {
+    themeId = state.session.portalTheme
+  } else if (state.kind === 'admin') {
+    const selected = state.portals.find((p) => p.id === state.selectedPortalId)
+    themeId = selected?.theme ?? resolveTheme(readThemeId()).id
+  } else {
+    themeId = resolveTheme(readThemeId()).id
+  }
+
+  // The CSS half of the fix: `generated.css` keys every variable block off
+  // `[data-theme='...']` on <html>, and the server only writes that attribute
+  // once, at page load. Without this, a portal switch or a settings save can
+  // change `themeId` above and still leave the page painted in the old
+  // theme's colours.
+  //
+  // `useLayoutEffect`, not `useEffect`, and deliberately so: the component
+  // swap below is synchronous with render, but a passive effect commits after
+  // the browser paints. A portal switch would then paint one real frame of
+  // the new theme's Shell markup dressed in the old theme's CSS variables --
+  // a colour flash on exactly the interaction this whole fix exists for.
+  // `useLayoutEffect` runs after the DOM mutation and before paint, which
+  // lines the two up. There is no SSR to warn about here: `src/web/main.tsx`
+  // is a plain client `createRoot(...).render(...)`. No cleanup function on
+  // purpose -- removing the attribute on unmount/re-run would fight
+  // StrictMode's double-invoke, which unmounts and remounts effects once on
+  // every render in development.
+  useLayoutEffect(() => {
+    writeThemeId(themeId)
+  }, [themeId])
+
+  // Every screen App owns comes from the active theme, so nobody crosses an
+  // unthemed seam. There is one portal: an owner gets Edit and Settings inside
+  // it, rather than a separate page that looks nothing like what they ship.
+  const { Login, Disabled, Unreachable, Shell } = componentsFor(resolveTheme(themeId))
 
   useEffect(() => {
     stateKindRef.current = state.kind
@@ -290,6 +350,7 @@ export function App(): ReactElement {
         role={GUEST}
         portalId={state.session.portalId}
         guestPortalTitle={state.session.portalTitle}
+        theme={themeId}
         onLogout={handleLogout}
       />
     )
@@ -345,6 +406,7 @@ export function App(): ReactElement {
     <Portal
       role={ADMIN}
       portalId={state.selectedPortalId}
+      theme={themeId}
       onLogout={handleLogout}
       portals={state.portals}
       onSelectPortal={handleSelectPortal}

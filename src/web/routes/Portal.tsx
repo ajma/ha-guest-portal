@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type CSSProperties, type ReactElement
 import type { CatalogEntry, Device, Role } from '@shared/api.js'
 import type { z } from 'zod'
 import type { PortalDetailResponse } from '@shared/api.js'
+import type { ThemeId } from '@shared/themes.js'
 import { getCatalog } from '../api.js'
 import { CreatePortalScreen } from '../components/CreatePortalScreen.js'
 import { DeploymentSettingsPanel } from '../components/DeploymentSettingsPanel.js'
@@ -12,7 +13,8 @@ import { TileEditor } from '../components/TileEditor.js'
 import { useAllowlistEditor } from '../hooks/useAllowlistEditor.js'
 import { PortalIdProvider } from '../portalContext.js'
 import { connectDeviceStore, useDeviceStore } from '../store.js'
-import { activeTheme, componentsFor } from '../themes/active.js'
+import { componentsFor } from '../themes/active.js'
+import { resolveTheme } from '../themes/registry.js'
 import type { DEFAULT_COMPONENTS } from '../themes/default/index.js'
 
 type PortalDetail = z.infer<typeof PortalDetailResponse>
@@ -21,6 +23,16 @@ type PortalProps = {
   role: Role
   portalId: string
   onLogout: () => Promise<void>
+  /**
+   * Required, not optional: App.tsx is the only caller and it always has a
+   * resolved theme id in state (from the session for a guest, from the
+   * selected portal for an admin). Making this optional would let a future
+   * call site fall back to a stale DOM read the way this one used to, via a
+   * now-deleted `activeTheme()` helper (it no longer exists anywhere in
+   * `src/` — see `test/unit/theme-wiring.test.tsx` for what replaced it)
+   * without `tsc` noticing — exactly the bug this prop exists to close off.
+   */
+  theme: ThemeId
   /** Guest-only: their own portal's title, straight from their SessionResponse
    * (Task 8) — a guest is never given `portals`, so the title can't be looked
    * up the way the admin path looks it up. */
@@ -300,6 +312,7 @@ export function Portal({
   role,
   portalId,
   onLogout,
+  theme,
   guestPortalTitle,
   portals,
   onSelectPortal,
@@ -349,7 +362,7 @@ export function Portal({
   // with the stream up and down.
   const editor = useAllowlistEditor(devices, portalId, isOwner && mode === 'edit', connected)
 
-  const components = componentsFor(activeTheme())
+  const components = componentsFor(resolveTheme(theme))
   const { Shell } = components
 
   const loadCatalog = useCallback(async (): Promise<void> => {

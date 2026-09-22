@@ -15,6 +15,13 @@ describe('App', () => {
 
   afterEach(() => {
     cleanup()
+    // App's live-theme effect (App.tsx) writes `data-theme` on every render,
+    // including in tests that never seed or assert it. Left alone, a test
+    // earlier in the file that lands on a non-classic theme (e.g. "selects
+    // the last-selected portal…", which renders p2/tiles) leaks that
+    // attribute onto every test that runs after it in this file -- harmless
+    // today only because everything downstream happens to want 'classic' too.
+    delete document.documentElement.dataset.theme
   })
 
   it('shows the create-portal screen full-page when an admin has zero portals', async () => {
@@ -157,6 +164,145 @@ describe('App', () => {
     // append-without-replace bug in handlePortalUpdated's .map() would leave
     // both.
     expect(screen.queryByRole('option', { name: 'Timothy' })).toBeNull()
+  })
+
+  describe('live theme updates', () => {
+    // Every existing theme test navigates a fresh page -- the theme id is
+    // read once, synchronously, off `data-theme` at mount. Seeding the
+    // attribute here stands in for the server's one-time write (Task brief:
+    // theme-live-update), so these tests exercise the case that write cannot
+    // cover: a value that has to move *after* the page already opened with a
+    // different one.
+    beforeEach(() => {
+      document.documentElement.dataset.theme = 'classic'
+    })
+
+    afterEach(() => {
+      delete document.documentElement.dataset.theme
+    })
+
+    it('re-themes the page when the owner switches to a different-themed portal', async () => {
+      vi.mocked(api.getSession).mockResolvedValue({ role: 'admin' })
+      vi.mocked(api.getPortals).mockResolvedValue({
+        ok: true,
+        data: {
+          portals: [
+            { id: 'p1', title: 'Timothy', theme: 'classic', enabled: true },
+            { id: 'p2', title: 'Mary', theme: 'cards', enabled: true },
+          ],
+          lastSelectedPortalId: 'p1',
+        },
+      })
+      vi.mocked(api.getCatalog).mockResolvedValue({ ok: true, data: [] })
+      vi.mocked(api.getPortalAllowlist).mockResolvedValue({ ok: true, data: { devices: [], orphaned: [] } })
+      // Without this the selection PUT that handleSelectPortal fires rejects
+      // (the auto-mock has no configured resolution), which is an unrelated
+      // unhandled rejection this test has no interest in.
+      vi.mocked(api.putLastSelectedPortal).mockResolvedValue({ ok: true, data: undefined })
+
+      const user = userEvent.setup()
+      render(<App />)
+
+      await waitFor(() =>
+        expect((screen.getByRole('combobox', { name: /portal/i }) as HTMLSelectElement).value).toBe('p1'),
+      )
+      expect(screen.queryByTestId('card-grid')).toBeNull()
+
+      await user.selectOptions(screen.getByRole('combobox', { name: /portal/i }), 'Mary')
+
+      await waitFor(() =>
+        expect((screen.getByRole('combobox', { name: /portal/i }) as HTMLSelectElement).value).toBe('p2'),
+      )
+      // Both assertions matter, and they fail for different reasons: a fix
+      // that writes the attribute but still renders off `componentsFor`'s old
+      // call site swaps the CSS variables without swapping the Shell, and a
+      // fix that swaps the Shell through state alone leaves the CSS keyed off
+      // an attribute nothing ever wrote.
+      expect(document.documentElement.dataset.theme).toBe('cards')
+      expect(screen.queryByTestId('card-grid')).toBeTruthy()
+    })
+
+    it('re-themes the page when the owner saves a new theme in settings', async () => {
+      vi.mocked(api.getSession).mockResolvedValue({ role: 'admin' })
+      vi.mocked(api.getPortals).mockResolvedValue({
+        ok: true,
+        data: {
+          portals: [{ id: 'p1', title: 'Timothy', theme: 'classic', enabled: true }],
+          lastSelectedPortalId: 'p1',
+        },
+      })
+      vi.mocked(api.getCatalog).mockResolvedValue({ ok: true, data: [] })
+      vi.mocked(api.getPortalAllowlist).mockResolvedValue({ ok: true, data: { devices: [], orphaned: [] } })
+      vi.mocked(api.getPortal).mockResolvedValue({
+        ok: true,
+        data: { id: 'p1', title: 'Timothy', theme: 'classic', enabled: true, password: 'orig-pass' },
+      })
+      vi.mocked(api.updatePortal).mockResolvedValue({
+        ok: true,
+        data: { id: 'p1', title: 'Timothy', theme: 'cards', enabled: true, password: 'orig-pass' },
+      })
+
+      const user = userEvent.setup()
+      render(<App />)
+
+      await waitFor(() =>
+        expect((screen.getByRole('combobox', { name: /portal/i }) as HTMLSelectElement).value).toBe('p1'),
+      )
+      expect(screen.queryByTestId('card-grid')).toBeNull()
+
+      await user.click(screen.getByRole('button', { name: /portal settings/i }))
+      await user.click(await screen.findByRole('radio', { name: 'Cards' }))
+
+      await waitFor(() => expect(api.updatePortal).toHaveBeenCalledWith('p1', { theme: 'cards' }))
+
+      // Same pair, same reasoning as the dropdown test above -- this path goes
+      // through handlePortalUpdated instead of handleSelectPortal, and both
+      // halves of the fix have to hold regardless of which one changed the
+      // selected portal's theme.
+      expect(document.documentElement.dataset.theme).toBe('cards')
+      expect(screen.queryByTestId('card-grid')).toBeTruthy()
+    })
+
+    it('re-themes the page when a guest logs in, with no reload', async () => {
+      // The seeded 'classic' attribute stands in for the neutral default an
+      // anonymous visitor's document is served with (themeAndTitleFor with no
+      // session, src/server/app.ts:57) -- the server cannot know a portal's
+      // theme before someone authenticates as its guest. The session below
+      // deliberately answers with a *different* theme ('cards'): if the two
+      // agreed, a mutation that kept reading the DOM instead of
+      // `state.session.portalTheme` would pass this test by accident. There
+      // is no `location.reload` anywhere in `src/web/` -- login is always
+      // in-page, so this is the shape the reported bug takes on first login,
+      // every single time.
+      vi.mocked(api.getSession).mockResolvedValue(null)
+      vi.mocked(api.login).mockResolvedValue({
+        ok: true,
+        data: {
+          role: 'guest',
+          portalId: 'p1',
+          portalTitle: 'Timothy',
+          portalTheme: 'cards',
+          portalEnabled: true,
+        },
+      })
+
+      const user = userEvent.setup()
+      render(<App />)
+
+      const passwordField = await screen.findByLabelText(/password/i)
+      expect(screen.queryByTestId('card-grid')).toBeNull()
+
+      await user.type(passwordField, 'guest-pass')
+      await user.click(screen.getByRole('button', { name: /log in/i }))
+
+      await waitFor(() => expect(screen.getByTestId('guest-screen')).toBeTruthy())
+
+      // Same pair as the admin cases above, same reasoning: the attribute
+      // catches a fix that forgets the CSS half, `card-grid` catches one that
+      // forgets the component swap.
+      expect(document.documentElement.dataset.theme).toBe('cards')
+      expect(screen.queryByTestId('card-grid')).toBeTruthy()
+    })
   })
 
   it('adds the new portal to the dropdown and selects it after using + Add portal', async () => {

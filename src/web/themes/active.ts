@@ -1,6 +1,5 @@
 import { DEFAULT_THEME_ID } from '@shared/themes.js'
 import { DEFAULT_COMPONENTS } from './default/index.js'
-import { resolveTheme } from './registry.js'
 import type { Theme } from './types.js'
 
 /**
@@ -26,6 +25,20 @@ export function componentsFor(theme: Theme): typeof DEFAULT_COMPONENTS {
   return { ...DEFAULT_COMPONENTS, ...(theme.components ?? {}) }
 }
 
-export function activeTheme(): Theme {
-  return resolveTheme(readThemeId())
+/**
+ * Put a freshly selected or saved theme id back where the server put the
+ * original.
+ *
+ * The attribute is written by the server once, at page load, and
+ * `generated.css` keys every `[data-theme='...']` block off it. Without this,
+ * an owner who switches portals or saves a new theme from settings is
+ * choosing a value the rest of their own page cannot see: the CSS variables
+ * stay on whatever theme the page opened with until a reload.
+ *
+ * Nothing re-renders as a result of this call: React does not observe DOM
+ * attributes, so the caller is also responsible for threading the id through
+ * state to swap the component set (`componentsFor(resolveTheme(themeId))`).
+ */
+export function writeThemeId(themeId: string): void {
+  document.documentElement.dataset.theme = themeId
 }
