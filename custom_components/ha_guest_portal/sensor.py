@@ -6,37 +6,15 @@ from datetime import datetime
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
+from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util import dt as dt_util
 
 from . import GuestPortalConfigEntry
-from .const import DOMAIN
 from .coordinator import GuestPortalCoordinator
 from .entity import GuestPortalEntity
-
-
-def _remove_device_if_empty(
-    registry: er.EntityRegistry,
-    devices: dr.DeviceRegistry,
-    device_key: str,
-    config_entry_id: str,
-) -> None:
-    """Remove a deleted portal's device once its last entity is gone.
-
-    A portal's switch and sensor share one device, and each platform only
-    removes its own entity, so whichever of the two runs second is the one
-    that finds the device empty. Without this the device outlives the portal
-    as an empty entry in the device registry.
-    """
-    device = devices.async_get_device_by_identifier((DOMAIN, device_key), config_entry_id)
-    if device is None:
-        return
-    if er.async_entries_for_device(registry, device.id, include_disabled_entities=True):
-        return
-    devices.async_remove_device(device.id)
+from .portal_entities import async_setup_portal_entities
 
 
 async def async_setup_entry(
@@ -45,35 +23,14 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up one interaction sensor per portal, kept in sync as portals change."""
-    coordinator = entry.runtime_data
-    known_portal_ids: set[str] = set()
-
-    def _sync_entities() -> None:
-        current_ids = {portal.portal_id for portal in coordinator.data.portals}
-
-        new_ids = current_ids - known_portal_ids
-        if new_ids:
-            async_add_entities(
-                [GuestPortalLastInteraction(coordinator, portal_id) for portal_id in new_ids]
-            )
-            known_portal_ids.update(new_ids)
-
-        removed_ids = known_portal_ids - current_ids
-        if removed_ids:
-            registry = er.async_get(hass)
-            devices = dr.async_get(hass)
-            for portal_id in removed_ids:
-                device_key = f"{coordinator.data.deployment_id}_{portal_id}"
-                entity_id = registry.async_get_entity_id(
-                    "sensor", DOMAIN, f"{device_key}_last_interaction"
-                )
-                if entity_id is not None:
-                    registry.async_remove(entity_id)
-                _remove_device_if_empty(registry, devices, device_key, entry.entry_id)
-            known_portal_ids.difference_update(removed_ids)
-
-    _sync_entities()
-    entry.async_on_unload(coordinator.async_add_listener(_sync_entities))
+    async_setup_portal_entities(
+        hass,
+        entry,
+        async_add_entities,
+        Platform.SENSOR,
+        "last_interaction",
+        GuestPortalLastInteraction,
+    )
 
 
 class GuestPortalLastInteraction(GuestPortalEntity, SensorEntity):

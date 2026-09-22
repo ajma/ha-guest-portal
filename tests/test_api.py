@@ -34,6 +34,18 @@ STATE = {
 }
 
 
+# What a pre-multi-portal add-on answers with: one portal inline, no list and
+# no deployment id.
+LEGACY_STATE = {
+    "portalId": "11111111-1111-1111-1111-111111111111",
+    "enabled": True,
+    "haStale": False,
+    "deviceCount": 3,
+    "version": "1.4.0",
+    "lastInteraction": None,
+}
+
+
 @pytest.fixture
 async def portal(aiohttp_server):
     """Serve a stub portal and return (api, recorded_requests)."""
@@ -149,6 +161,38 @@ async def test_get_state_raises_connection_error_on_a_malformed_payload(aiohttp_
         api = PortalApi(session, "127.0.0.1", server.port, "good-token")
         with pytest.raises(PortalConnectionError):
             await api.async_get_state()
+
+
+async def test_get_state_raises_connection_error_on_a_payload_that_is_not_an_object(
+    aiohttp_server,
+):
+    async def handle(_request: web.Request) -> web.Response:
+        return web.json_response([])
+
+    app = web.Application()
+    app.router.add_get("/api/integration/state", handle)
+    server = await aiohttp_server(app)
+
+    async with ClientSession() as session:
+        api = PortalApi(session, "127.0.0.1", server.port, "good-token")
+        with pytest.raises(PortalConnectionError):
+            await api.async_get_state()
+
+
+async def test_get_state_reads_a_1_x_payload_as_an_empty_deployment(aiohttp_server):
+    async def handle(_request: web.Request) -> web.Response:
+        return web.json_response(LEGACY_STATE)
+
+    app = web.Application()
+    app.router.add_get("/api/integration/state", handle)
+    server = await aiohttp_server(app)
+
+    async with ClientSession() as session:
+        api = PortalApi(session, "127.0.0.1", server.port, "good-token")
+        state = await api.async_get_state()
+
+    assert state.version == "1.4.0"
+    assert state.portals == []
 
 
 async def test_get_state_raises_connection_error_on_malformed_json(aiohttp_server):

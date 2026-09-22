@@ -2,12 +2,34 @@
 
 from __future__ import annotations
 
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .api import PortalSummary
 from .const import DOMAIN
 from .coordinator import GuestPortalCoordinator
+
+
+def _hub_device_id(coordinator: GuestPortalCoordinator) -> str:
+    """The deployment's own device, registering it the first time it is asked for.
+
+    Every portal device points at this one, so a dashboard shows them grouped
+    under the add-on they came from rather than as unrelated top-level devices.
+    """
+    return (
+        dr.async_get(coordinator.hass)
+        .async_get_or_create(
+            config_entry_id=coordinator.config_entry.entry_id,
+            identifiers={(DOMAIN, coordinator.data.deployment_id)},
+            name="Guest Portal",
+            manufacturer="Home Assistant Guest Portal",
+            sw_version=coordinator.data.version,
+            configuration_url=coordinator.api.base_url,
+            entry_type=dr.DeviceEntryType.SERVICE,
+        )
+        .id
+    )
 
 
 class GuestPortalEntity(CoordinatorEntity[GuestPortalCoordinator]):
@@ -43,6 +65,7 @@ class GuestPortalEntity(CoordinatorEntity[GuestPortalCoordinator]):
             manufacturer="Home Assistant Guest Portal",
             sw_version=coordinator.data.version,
             configuration_url=coordinator.api.base_url,
+            via_device_id=_hub_device_id(coordinator),
         )
 
     def _current_portal(self) -> PortalSummary | None:

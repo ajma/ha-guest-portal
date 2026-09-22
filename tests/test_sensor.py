@@ -1,7 +1,6 @@
 """Tests for the Guest Portal interaction sensor."""
 
 from dataclasses import replace
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -71,17 +70,7 @@ STATE_ONE_PORTAL_REMAINING = DeploymentState(
 )
 
 
-def _stub_coordinator(
-    state: DeploymentState, *, last_update_success: bool = True
-) -> SimpleNamespace:
-    return SimpleNamespace(
-        data=state,
-        api=SimpleNamespace(base_url="http://portal.local"),
-        last_update_success=last_update_success,
-    )
-
-
-def _sensor_entity_id(hass: HomeAssistant, entry: MockConfigEntry, portal_id: str) -> str:
+def _sensor_entity_id(hass: HomeAssistant, portal_id: str) -> str:
     registry = er.async_get(hass)
     unique_id = f"{DEPLOYMENT_ID}_{portal_id}_last_interaction"
     entity_id = registry.async_get_entity_id("sensor", DOMAIN, unique_id)
@@ -149,8 +138,8 @@ async def test_creates_one_sensor_per_portal(
 ):
     entry, _get_state = mock_config_entry_with_two_portals
 
-    timothy_id = _sensor_entity_id(hass, entry, "timothy")
-    mary_id = _sensor_entity_id(hass, entry, "mary")
+    timothy_id = _sensor_entity_id(hass, "timothy")
+    mary_id = _sensor_entity_id(hass, "mary")
 
     # 1700000000000 ms == 2023-11-14T22:13:20+00:00
     assert hass.states.get(timothy_id).state == "2023-11-14T22:13:20+00:00"
@@ -163,8 +152,8 @@ async def test_sensor_exposes_action_attributes_per_portal(
 ):
     entry, _get_state = mock_config_entry_with_two_portals
 
-    timothy_attrs = hass.states.get(_sensor_entity_id(hass, entry, "timothy")).attributes
-    mary_attrs = hass.states.get(_sensor_entity_id(hass, entry, "mary")).attributes
+    timothy_attrs = hass.states.get(_sensor_entity_id(hass, "timothy")).attributes
+    mary_attrs = hass.states.get(_sensor_entity_id(hass, "mary")).attributes
 
     assert timothy_attrs["kind"] == "action"
     assert timothy_attrs["target_entity_id"] == "lock.front"
@@ -182,7 +171,7 @@ async def test_sensor_uses_target_entity_id_not_entity_id(
     entry, _get_state = mock_config_entry_with_one_portal
 
     # 'entity_id' as an attribute means group membership in Home Assistant.
-    attrs = hass.states.get(_sensor_entity_id(hass, entry, "timothy")).attributes
+    attrs = hass.states.get(_sensor_entity_id(hass, "timothy")).attributes
     assert "entity_id" not in attrs
 
 
@@ -201,7 +190,7 @@ async def test_sensor_exposes_login_attributes_as_nulls(
     await coordinator.async_request_refresh()
     await hass.async_block_till_done()
 
-    attrs = hass.states.get(_sensor_entity_id(hass, entry, "timothy")).attributes
+    attrs = hass.states.get(_sensor_entity_id(hass, "timothy")).attributes
 
     assert attrs["kind"] == "login"
     assert attrs["target_entity_id"] is None
@@ -221,7 +210,7 @@ async def test_sensor_is_unknown_before_any_interaction(
     await coordinator.async_request_refresh()
     await hass.async_block_till_done()
 
-    assert hass.states.get(_sensor_entity_id(hass, entry, "timothy")).state == STATE_UNKNOWN
+    assert hass.states.get(_sensor_entity_id(hass, "timothy")).state == STATE_UNKNOWN
 
 
 async def test_adds_a_sensor_when_a_new_portal_appears_on_a_later_poll(
@@ -236,7 +225,7 @@ async def test_adds_a_sensor_when_a_new_portal_appears_on_a_later_poll(
     await hass.async_block_till_done()
 
     assert _sensor_count(hass, entry) == 2
-    mary_id = _sensor_entity_id(hass, entry, "mary")
+    mary_id = _sensor_entity_id(hass, "mary")
     assert hass.states.get(mary_id) is not None
     assert hass.states.get(mary_id).state == "2023-11-14T22:15:00+00:00"
 
@@ -247,7 +236,7 @@ async def test_removes_a_sensor_when_its_portal_is_deleted(
     entry, get_state = mock_config_entry_with_two_portals
     registry = er.async_get(hass)
     assert _sensor_count(hass, entry) == 2
-    mary_id = _sensor_entity_id(hass, entry, "mary")
+    mary_id = _sensor_entity_id(hass, "mary")
 
     get_state.return_value = STATE_ONE_PORTAL_REMAINING
     coordinator = entry.runtime_data
@@ -284,16 +273,21 @@ async def test_removes_the_device_when_its_portal_is_deleted(
     ) is not None
 
 
-def test_available_is_false_once_the_portal_is_gone():
-    sensor = GuestPortalLastInteraction(_stub_coordinator(STATE_ONE_PORTAL), "gone")
+async def test_available_is_false_once_the_portal_is_gone(mock_config_entry_with_one_portal):
+    entry, _get_state = mock_config_entry_with_one_portal
+    sensor = GuestPortalLastInteraction(entry.runtime_data, "gone")
     assert sensor.available is False
 
 
-def test_native_value_is_none_when_the_portal_is_gone():
-    sensor = GuestPortalLastInteraction(_stub_coordinator(STATE_ONE_PORTAL), "gone")
+async def test_native_value_is_none_when_the_portal_is_gone(mock_config_entry_with_one_portal):
+    entry, _get_state = mock_config_entry_with_one_portal
+    sensor = GuestPortalLastInteraction(entry.runtime_data, "gone")
     assert sensor.native_value is None
 
 
-def test_extra_state_attributes_is_empty_when_the_portal_is_gone():
-    sensor = GuestPortalLastInteraction(_stub_coordinator(STATE_ONE_PORTAL), "gone")
+async def test_extra_state_attributes_is_empty_when_the_portal_is_gone(
+    mock_config_entry_with_one_portal,
+):
+    entry, _get_state = mock_config_entry_with_one_portal
+    sensor = GuestPortalLastInteraction(entry.runtime_data, "gone")
     assert sensor.extra_state_attributes == {}

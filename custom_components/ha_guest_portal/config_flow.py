@@ -12,7 +12,7 @@ from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.service_info.hassio import HassioServiceInfo
 
-from .api import PortalApi, PortalAuthError, PortalConnectionError
+from .api import PortalApi, PortalAuthError, PortalConnectionError, portal_version_too_old
 from .const import CONF_TOKEN, DEFAULT_PORT, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,6 +54,12 @@ class GuestPortalConfigFlow(ConfigFlow, domain=DOMAIN):
             self._error = "cannot_connect"
             return None
 
+        if portal_version_too_old(state.version):
+            # An add-on this old reports no deployment id at all, so there is
+            # nothing to key an entry on. Say why rather than inventing one.
+            self._error = "portal_too_old"
+            return None
+
         return state.deployment_id
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -85,15 +91,18 @@ class GuestPortalConfigFlow(ConfigFlow, domain=DOMAIN):
         """Handle discovery from the Supervisor."""
         config = discovery_info.config
 
-        portal_id = config.get("portalId")
+        # The add-on's discovery payload calls this key "portalId", but what it
+        # carries is the deployment's id -- the same value /api/integration/state
+        # reports as deploymentId, and the same one the user flow keys on.
+        deployment_id = config.get("portalId")
         host = config.get("host")
         port = config.get("port")
         token = config.get("token")
 
-        if portal_id is None or host is None or port is None or token is None:
+        if deployment_id is None or host is None or port is None or token is None:
             return self.async_abort(reason="cannot_connect")
 
-        await self.async_set_unique_id(str(portal_id))
+        await self.async_set_unique_id(str(deployment_id))
         self._abort_if_unique_id_configured(
             updates={
                 CONF_HOST: host,

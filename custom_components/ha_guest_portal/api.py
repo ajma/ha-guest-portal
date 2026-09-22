@@ -7,6 +7,9 @@ from typing import Any
 
 import aiohttp
 from aiohttp import ClientSession
+from awesomeversion import AwesomeVersion, AwesomeVersionCompareException
+
+from .const import MIN_PORTAL_VERSION
 
 TIMEOUT = aiohttp.ClientTimeout(total=10)
 
@@ -80,12 +83,41 @@ def _parse_portal_summary(raw: Any) -> PortalSummary:
     )
 
 
+def portal_version_too_old(version: str) -> bool:
+    """Whether a reported add-on version predates the contract we can read.
+
+    A version that cannot be compared at all counts as too old, so the user
+    gets the "update the add-on" repair issue rather than a traceback.
+    """
+    try:
+        return AwesomeVersion(version) < AwesomeVersion(MIN_PORTAL_VERSION)
+    except AwesomeVersionCompareException:
+        return True
+
+
 def _parse_deployment_state(raw: Any) -> DeploymentState:
+    if not isinstance(raw, dict):
+        raise TypeError(f"expected an object, got {type(raw).__name__}")
+
     # Missing or invalid version is treated as 0.0.0, which will fail the
     # minimum-version check and raise a repair issue rather than retrying forever.
     version = raw.get("version", "0.0.0")
     if not isinstance(version, str):
         version = "0.0.0"
+
+    if portal_version_too_old(version):
+        # An add-on this old has neither a portal list nor a deployment id in
+        # its payload, so insisting on them would turn "your add-on is out of
+        # date" into an unactionable parse error. Reading it as an empty
+        # deployment lets the caller raise the repair issue instead. haStale is
+        # still required: it is the oldest field this integration has ever
+        # read, so a payload without it is not a portal's at all.
+        return DeploymentState(
+            deployment_id=str(raw.get("deploymentId", "")),
+            ha_stale=bool(raw["haStale"]),
+            version=version,
+            portals=[],
+        )
 
     return DeploymentState(
         deployment_id=str(raw["deploymentId"]),
@@ -137,7 +169,6 @@ class PortalApi:
         try:
             return _parse_deployment_state(raw)
         except (KeyError, TypeError, ValueError) as err:
-            # An add-on too old to speak this protocol looks exactly like this.
             raise PortalConnectionError(f"Unexpected response from the portal: {err}") from err
 
     async def async_set_enabled(self, portal_id: str, enabled: bool) -> None:

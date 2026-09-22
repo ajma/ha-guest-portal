@@ -4,37 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.switch import SwitchEntity
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import entity_registry as er
+from homeassistant.components.switch import SwitchDeviceClass, SwitchEntity
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import GuestPortalConfigEntry
-from .const import DOMAIN
 from .coordinator import GuestPortalCoordinator
 from .entity import GuestPortalEntity
-
-
-def _remove_device_if_empty(
-    registry: er.EntityRegistry,
-    devices: dr.DeviceRegistry,
-    device_key: str,
-    config_entry_id: str,
-) -> None:
-    """Remove a deleted portal's device once its last entity is gone.
-
-    A portal's switch and sensor share one device, and each platform only
-    removes its own entity, so whichever of the two runs second is the one
-    that finds the device empty. Without this the device outlives the portal
-    as an empty entry in the device registry.
-    """
-    device = devices.async_get_device_by_identifier((DOMAIN, device_key), config_entry_id)
-    if device is None:
-        return
-    if er.async_entries_for_device(registry, device.id, include_disabled_entities=True):
-        return
-    devices.async_remove_device(device.id)
+from .portal_entities import async_setup_portal_entities
 
 
 async def async_setup_entry(
@@ -43,36 +21,15 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up one switch per portal, and keep the set in sync as portals change."""
-    coordinator = entry.runtime_data
-    known_portal_ids: set[str] = set()
-
-    def _sync_entities() -> None:
-        current_ids = {portal.portal_id for portal in coordinator.data.portals}
-
-        new_ids = current_ids - known_portal_ids
-        if new_ids:
-            async_add_entities([GuestPortalSwitch(coordinator, portal_id) for portal_id in new_ids])
-            known_portal_ids.update(new_ids)
-
-        removed_ids = known_portal_ids - current_ids
-        if removed_ids:
-            registry = er.async_get(hass)
-            devices = dr.async_get(hass)
-            for portal_id in removed_ids:
-                device_key = f"{coordinator.data.deployment_id}_{portal_id}"
-                entity_id = registry.async_get_entity_id("switch", DOMAIN, f"{device_key}_portal")
-                if entity_id is not None:
-                    registry.async_remove(entity_id)
-                _remove_device_if_empty(registry, devices, device_key, entry.entry_id)
-            known_portal_ids.difference_update(removed_ids)
-
-    _sync_entities()
-    entry.async_on_unload(coordinator.async_add_listener(_sync_entities))
+    async_setup_portal_entities(
+        hass, entry, async_add_entities, Platform.SWITCH, "portal", GuestPortalSwitch
+    )
 
 
 class GuestPortalSwitch(GuestPortalEntity, SwitchEntity):
     """Turns one portal's guest surface on and off."""
 
+    _attr_device_class = SwitchDeviceClass.SWITCH
     _attr_name = None
 
     def __init__(self, coordinator: GuestPortalCoordinator, portal_id: str) -> None:
@@ -104,16 +61,26 @@ class GuestPortalSwitch(GuestPortalEntity, SwitchEntity):
             "ha_link_stale": self.coordinator.data.ha_stale,
         }
 
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Let a freshly polled value supersede whatever we guessed."""
+        self._optimistic = None
+        super()._handle_coordinator_update()
+
     async def _async_set(self, enabled: bool) -> None:
         self._optimistic = enabled
         self.async_write_ha_state()
 
         try:
             await self.coordinator.api.async_set_enabled(self._portal_id, enabled)
-        finally:
+        except Exception:
             self._optimistic = None
             self.async_write_ha_state()
+            raise
 
+        # The guess stands until a poll replaces it: refreshes are debounced, so
+        # dropping it here would snap a second toggle made inside the cooldown
+        # back to the previous poll's value.
         await self.coordinator.async_request_refresh()
 
     async def async_turn_on(self, **kwargs: Any) -> None:

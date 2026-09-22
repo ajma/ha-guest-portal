@@ -1,17 +1,20 @@
 """Tests for the Guest Portal switch entity."""
 
 from dataclasses import replace
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON
+from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON, STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.ha_guest_portal.api import DeploymentState, PortalSummary
+from custom_components.ha_guest_portal.api import (
+    DeploymentState,
+    PortalConnectionError,
+    PortalSummary,
+)
 from custom_components.ha_guest_portal.const import CONF_TOKEN, DOMAIN
 from custom_components.ha_guest_portal.switch import GuestPortalSwitch
 
@@ -53,17 +56,15 @@ STATE_ONE_PORTAL_REMAINING = DeploymentState(
 )
 
 
-def _stub_coordinator(
-    state: DeploymentState, *, last_update_success: bool = True
-) -> SimpleNamespace:
-    return SimpleNamespace(
-        data=state,
-        api=SimpleNamespace(base_url="http://portal.local"),
-        last_update_success=last_update_success,
-    )
+STATE_REPLACED_DEPLOYMENT = DeploymentState(
+    deployment_id="dep-2",
+    ha_stale=False,
+    version="2.0.0",
+    portals=[_portal("brandnew", enabled=True, device_count=0)],
+)
 
 
-def _switch_entity_id(hass: HomeAssistant, entry: MockConfigEntry, portal_id: str) -> str:
+def _switch_entity_id(hass: HomeAssistant, portal_id: str) -> str:
     registry = er.async_get(hass)
     unique_id = f"{DEPLOYMENT_ID}_{portal_id}_portal"
     entity_id = registry.async_get_entity_id("switch", DOMAIN, unique_id)
@@ -139,8 +140,8 @@ async def test_creates_one_switch_per_portal(
 ):
     entry, _get_state, _set_enabled = mock_config_entry_with_two_portals
 
-    timothy_id = _switch_entity_id(hass, entry, "timothy")
-    mary_id = _switch_entity_id(hass, entry, "mary")
+    timothy_id = _switch_entity_id(hass, "timothy")
+    mary_id = _switch_entity_id(hass, "mary")
 
     assert hass.states.get(timothy_id).state == STATE_ON
     assert hass.states.get(mary_id).state == STATE_OFF
@@ -151,8 +152,8 @@ async def test_switch_exposes_device_count_and_link_health_per_portal(
 ):
     entry, _get_state, _set_enabled = mock_config_entry_with_two_portals
 
-    timothy_attrs = hass.states.get(_switch_entity_id(hass, entry, "timothy")).attributes
-    mary_attrs = hass.states.get(_switch_entity_id(hass, entry, "mary")).attributes
+    timothy_attrs = hass.states.get(_switch_entity_id(hass, "timothy")).attributes
+    mary_attrs = hass.states.get(_switch_entity_id(hass, "mary")).attributes
 
     assert timothy_attrs["device_count"] == 3
     assert timothy_attrs["ha_link_stale"] is False
@@ -163,7 +164,7 @@ async def test_turning_off_calls_the_portal_with_its_own_portal_id(
     hass: HomeAssistant, mock_config_entry_with_two_portals
 ):
     entry, get_state, set_enabled = mock_config_entry_with_two_portals
-    timothy_id = _switch_entity_id(hass, entry, "timothy")
+    timothy_id = _switch_entity_id(hass, "timothy")
     get_state.return_value = replace(
         STATE_TWO_PORTALS,
         portals=[
@@ -180,6 +181,61 @@ async def test_turning_off_calls_the_portal_with_its_own_portal_id(
     assert hass.states.get(timothy_id).state == STATE_OFF
 
 
+async def test_a_second_toggle_inside_the_debounce_window_still_shows_the_new_value(
+    hass: HomeAssistant, mock_config_entry_with_two_portals
+):
+    entry, get_state, _set_enabled = mock_config_entry_with_two_portals
+    timothy_id = _switch_entity_id(hass, "timothy")
+    mary_id = _switch_entity_id(hass, "mary")
+    get_state.return_value = replace(
+        STATE_TWO_PORTALS,
+        portals=[
+            replace(STATE_TWO_PORTALS.portals[0], enabled=False),
+            STATE_TWO_PORTALS.portals[1],
+        ],
+    )
+
+    await hass.services.async_call(
+        "switch", "turn_off", {ATTR_ENTITY_ID: timothy_id}, blocking=True
+    )
+    # The coordinator debounces refreshes, so this second toggle's own refresh
+    # will not land for another ten seconds.
+    await hass.services.async_call("switch", "turn_on", {ATTR_ENTITY_ID: mary_id}, blocking=True)
+
+    assert hass.states.get(mary_id).state == STATE_ON
+
+
+async def test_the_next_poll_overrides_a_toggle_the_portal_did_not_honour(
+    hass: HomeAssistant, mock_config_entry_with_one_portal
+):
+    entry, _get_state, _set_enabled = mock_config_entry_with_one_portal
+    timothy_id = _switch_entity_id(hass, "timothy")
+
+    # The stubbed portal keeps reporting the portal as enabled, as an add-on
+    # that refused the change would.
+    await hass.services.async_call(
+        "switch", "turn_off", {ATTR_ENTITY_ID: timothy_id}, blocking=True
+    )
+    await hass.async_block_till_done()
+
+    assert hass.states.get(timothy_id).state == STATE_ON
+
+
+async def test_a_toggle_the_portal_rejects_reverts_immediately(
+    hass: HomeAssistant, mock_config_entry_with_one_portal
+):
+    entry, _get_state, set_enabled = mock_config_entry_with_one_portal
+    timothy_id = _switch_entity_id(hass, "timothy")
+    set_enabled.side_effect = PortalConnectionError("boom")
+
+    with pytest.raises(PortalConnectionError):
+        await hass.services.async_call(
+            "switch", "turn_off", {ATTR_ENTITY_ID: timothy_id}, blocking=True
+        )
+
+    assert hass.states.get(timothy_id).state == STATE_ON
+
+
 async def test_adds_a_switch_when_a_new_portal_appears_on_a_later_poll(
     hass: HomeAssistant, mock_config_entry_with_one_portal
 ):
@@ -192,7 +248,7 @@ async def test_adds_a_switch_when_a_new_portal_appears_on_a_later_poll(
     await hass.async_block_till_done()
 
     assert _switch_count(hass, entry) == 2
-    mary_id = _switch_entity_id(hass, entry, "mary")
+    mary_id = _switch_entity_id(hass, "mary")
     assert hass.states.get(mary_id) is not None
     assert hass.states.get(mary_id).state == STATE_OFF
 
@@ -203,7 +259,7 @@ async def test_removes_a_switch_when_its_portal_is_deleted(
     entry, get_state, _set_enabled = mock_config_entry_with_two_portals
     registry = er.async_get(hass)
     assert _switch_count(hass, entry) == 2
-    mary_id = _switch_entity_id(hass, entry, "mary")
+    mary_id = _switch_entity_id(hass, "mary")
 
     get_state.return_value = STATE_ONE_PORTAL_REMAINING
     coordinator = entry.runtime_data
@@ -237,16 +293,41 @@ async def test_removes_the_device_when_its_portal_is_deleted(
     ) is not None
 
 
-def test_available_is_false_once_the_portal_is_gone():
-    switch = GuestPortalSwitch(_stub_coordinator(STATE_ONE_PORTAL), "gone")
+async def test_a_deployment_replaced_while_running_is_not_adopted(
+    hass: HomeAssistant, mock_config_entry_with_one_portal
+):
+    entry, get_state, _set_enabled = mock_config_entry_with_one_portal
+    timothy_id = _switch_entity_id(hass, "timothy")
+    registry = er.async_get(hass)
+
+    # What deleting the add-on's database -- the documented upgrade path --
+    # looks like from here: the same host now reports a different deployment.
+    get_state.return_value = STATE_REPLACED_DEPLOYMENT
+    await entry.runtime_data.async_refresh()
+    await hass.async_block_till_done()
+
+    assert registry.async_get_entity_id("switch", DOMAIN, "dep-2_brandnew_portal") is None
+    assert registry.async_get_entity_id("switch", DOMAIN, f"{DEPLOYMENT_ID}_timothy_portal") == (
+        timothy_id
+    )
+    assert hass.states.get(timothy_id).state == STATE_UNAVAILABLE
+
+
+async def test_available_is_false_once_the_portal_is_gone(mock_config_entry_with_one_portal):
+    entry, _get_state, _set_enabled = mock_config_entry_with_one_portal
+    switch = GuestPortalSwitch(entry.runtime_data, "gone")
     assert switch.available is False
 
 
-def test_is_on_is_false_when_the_portal_is_gone():
-    switch = GuestPortalSwitch(_stub_coordinator(STATE_ONE_PORTAL), "gone")
+async def test_is_on_is_false_when_the_portal_is_gone(mock_config_entry_with_one_portal):
+    entry, _get_state, _set_enabled = mock_config_entry_with_one_portal
+    switch = GuestPortalSwitch(entry.runtime_data, "gone")
     assert switch.is_on is False
 
 
-def test_extra_state_attributes_is_empty_when_the_portal_is_gone():
-    switch = GuestPortalSwitch(_stub_coordinator(STATE_ONE_PORTAL), "gone")
+async def test_extra_state_attributes_is_empty_when_the_portal_is_gone(
+    mock_config_entry_with_one_portal,
+):
+    entry, _get_state, _set_enabled = mock_config_entry_with_one_portal
+    switch = GuestPortalSwitch(entry.runtime_data, "gone")
     assert switch.extra_state_attributes == {}

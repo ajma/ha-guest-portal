@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from awesomeversion import AwesomeVersion, AwesomeVersionCompareException
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import PortalApi
-from .const import CONF_TOKEN, DOMAIN, MIN_PORTAL_VERSION
+from .const import CONF_TOKEN, DOMAIN
 from .coordinator import GuestPortalCoordinator
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH]
@@ -30,36 +29,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: GuestPortalConfigEntry) 
     coordinator = GuestPortalCoordinator(hass, entry, api)
     await coordinator.async_config_entry_first_refresh()
 
-    # The portal reports the version of its integration API. An add-on too old
-    # to speak this contract should say so plainly rather than surfacing as a
-    # parse failure the user cannot act on.
-    issue_id = f"portal_too_old_{entry.entry_id}"
-
-    # Treat an unparseable version (AwesomeVersionCompareException) as too old,
-    # showing the repair issue rather than failing setup with a traceback.
-    try:
-        version_too_old = AwesomeVersion(coordinator.data.version) < AwesomeVersion(
-            MIN_PORTAL_VERSION
-        )
-    except AwesomeVersionCompareException:
-        version_too_old = True
-
-    if version_too_old:
-        ir.async_create_issue(
-            hass,
-            DOMAIN,
-            issue_id,
-            is_fixable=False,
-            severity=ir.IssueSeverity.ERROR,
-            translation_key="portal_too_old",
-            translation_placeholders={
-                "found": coordinator.data.version,
-                "expected": MIN_PORTAL_VERSION,
-            },
-        )
-    else:
-        ir.async_delete_issue(hass, DOMAIN, issue_id)
-
     entry.runtime_data = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -70,3 +39,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: GuestPortalConfigEntry) 
 async def async_unload_entry(hass: HomeAssistant, entry: GuestPortalConfigEntry) -> bool:
     """Unload a config entry."""
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant, entry: GuestPortalConfigEntry, device: dr.DeviceEntry
+) -> bool:
+    """Offer a Delete button on any device that no longer stands for anything.
+
+    Without this Home Assistant refuses device removal outright, so a user who
+    meets an orphan has nothing to click and has to delete the whole
+    integration to be rid of it.
+    """
+    deployment_id = entry.runtime_data.data.deployment_id
+    live_keys = {deployment_id} | {
+        f"{deployment_id}_{portal.portal_id}" for portal in entry.runtime_data.data.portals
+    }
+
+    return not any(
+        identifier in live_keys for domain, identifier in device.identifiers if domain == DOMAIN
+    )
