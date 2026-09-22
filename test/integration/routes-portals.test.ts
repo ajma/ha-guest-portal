@@ -336,6 +336,50 @@ describe('portal management routes', () => {
     })
   })
 
+  describe('PUT allowlist', () => {
+    it("replaces only the named portal's devices, and leaves every other portal's alone", async () => {
+      // Every save is a whole-list replace, so a write whose scope widens past
+      // the path param does not merge — it overwrites. The owner saves
+      // Timothy's two devices and Mary's three become those same two.
+      const adminCookie = await loginAsAdmin()
+      const timothy = portals.create({ title: 'Timothy', password: 'allowlist-put-tim' })
+      const mary = portals.create({ title: 'Mary', password: 'allowlist-put-mary' })
+
+      // Disjoint device sets, so adopting the other portal's list is visible in
+      // the entity ids themselves rather than only in a label or an ordering.
+      const maryDevices = [
+        { entityId: 'lock.front', label: 'Front', allowedActions: ['unlock'], sortOrder: 0 },
+        { entityId: 'switch.fan', label: 'Fan', allowedActions: ['toggle'], sortOrder: 1 },
+        { entityId: 'light.hall', label: 'Hall', allowedActions: ['turn_on'], sortOrder: 2 },
+      ]
+      allowlist.replace(timothy.id, [
+        { entityId: 'light.porch', label: 'Porch', allowedActions: ['turn_on'], sortOrder: 0 },
+      ])
+      allowlist.replace(mary.id, maryDevices)
+
+      const res = await fetch(`${baseUrl}/api/admin/portals/${timothy.id}/allowlist`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({
+          devices: [
+            { entityId: 'light.porch', label: 'Porch Light', allowedActions: [], sortOrder: 0 },
+          ],
+        }),
+      })
+      expect(res.status).toBe(200)
+
+      // Control: the named portal really was written, so the assertion below
+      // pins the scope of the write rather than a route that writes nothing.
+      expect(allowlist.list(timothy.id)).toEqual([
+        { entityId: 'light.porch', label: 'Porch Light', allowedActions: [], sortOrder: 0 },
+      ])
+      // And Mary is untouched down to the labels, actions and ordering — not
+      // merely non-empty, which a widened write that happened to append would
+      // still satisfy.
+      expect(allowlist.list(mary.id)).toEqual(maryDevices)
+    })
+  })
+
   it('returns deployment settings', async () => {
     const adminCookie = await loginAsAdmin()
 

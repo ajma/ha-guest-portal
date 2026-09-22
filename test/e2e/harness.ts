@@ -10,6 +10,124 @@ export type TestHarness = {
   cleanup: () => Promise<void>
 }
 
+/**
+ * The one password this deployment is born with. Every portal password is
+ * created after the fact, through the admin API below — there is no longer a
+ * guest password in the environment for a test to reach for.
+ */
+export const ADMIN_PASSWORD = 'test-admin-password'
+
+export type SeedDevice = {
+  entityId: string
+  label: string
+  allowedActions: string[]
+  sortOrder: number
+}
+
+export type SeededPortal = {
+  id: string
+  title: string
+  theme: string
+  enabled: boolean
+  /** The password a guest of this portal logs in with. */
+  password: string
+}
+
+/**
+ * A fresh deployment has no portals at all, so every spec has to make one
+ * before it has anything to test. These go through the real admin HTTP API
+ * rather than touching the database: the routes are the contract the web
+ * client uses, so a spec seeded this way fails if they move, instead of
+ * quietly testing a shape the server stopped serving.
+ *
+ * Node's `fetch` rather than Playwright's `page.request`, because the seeding
+ * must not put an admin session into the browser context a test then logs into
+ * as a guest.
+ */
+export class AdminApi {
+  private constructor(
+    readonly baseUrl: string,
+    private readonly cookie: string,
+  ) {}
+
+  static async login(baseUrl: string): Promise<AdminApi> {
+    const response = await fetch(`${baseUrl}/api/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: ADMIN_PASSWORD }),
+    })
+    if (!response.ok) {
+      throw new Error(`admin login failed: ${response.status} ${await response.text()}`)
+    }
+    const cookie = response.headers.get('set-cookie')?.split(';')[0]
+    if (cookie === undefined) throw new Error('admin login returned no session cookie')
+    return new AdminApi(baseUrl, cookie)
+  }
+
+  private async send(method: string, path: string, body?: unknown): Promise<unknown> {
+    const response = await fetch(`${this.baseUrl}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json', Cookie: this.cookie },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    })
+    if (!response.ok) {
+      throw new Error(`${method} ${path} failed: ${response.status} ${await response.text()}`)
+    }
+    return response.json()
+  }
+
+  async createPortal(input: { title: string; password: string }): Promise<SeededPortal> {
+    const created = (await this.send('POST', '/api/admin/portals', input)) as SeededPortal
+    return created
+  }
+
+  async updatePortal(
+    portalId: string,
+    patch: { title?: string; theme?: string; enabled?: boolean; password?: string },
+  ): Promise<SeededPortal> {
+    return (await this.send('PUT', `/api/admin/portals/${portalId}`, patch)) as SeededPortal
+  }
+
+  async setAllowlist(portalId: string, devices: SeedDevice[]): Promise<void> {
+    await this.send('PUT', `/api/admin/portals/${portalId}/allowlist`, { devices })
+  }
+
+  /**
+   * What the admin UI writes when an owner picks a portal from the dropdown.
+   * It is also what decides which portal's theme the server injects into an
+   * admin's index.html, so a spec that asserts on that has to set it.
+   */
+  async selectPortal(portalId: string): Promise<void> {
+    await this.send('PUT', '/api/admin/last-selected-portal', { portalId })
+  }
+}
+
+/** Create a portal, give it devices, and (optionally) a theme, in one call. */
+export async function seedPortal(
+  baseUrl: string,
+  spec: {
+    title: string
+    password: string
+    devices?: SeedDevice[]
+    theme?: string
+    /** Point the admin's last-selected pointer at this portal. */
+    select?: boolean
+  },
+): Promise<SeededPortal> {
+  const admin = await AdminApi.login(baseUrl)
+  let portal = await admin.createPortal({ title: spec.title, password: spec.password })
+  if (spec.theme !== undefined) {
+    portal = await admin.updatePortal(portal.id, { theme: spec.theme })
+  }
+  if (spec.devices !== undefined) {
+    await admin.setAllowlist(portal.id, spec.devices)
+  }
+  if (spec.select === true) {
+    await admin.selectPortal(portal.id)
+  }
+  return portal
+}
+
 function getSeedData() {
   return {
     entities: [
@@ -115,7 +233,7 @@ async function startServer(opts: {
       ...process.env,
       HA_BASE_URL: opts.haBaseUrl,
       HA_TOKEN: opts.haToken,
-      ADMIN_PASSWORD: 'test-admin-password',
+      ADMIN_PASSWORD,
       PORT: String(port),
       DB_PATH: opts.dbPath,
       NODE_ENV: 'test',

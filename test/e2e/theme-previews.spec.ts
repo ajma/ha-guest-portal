@@ -1,18 +1,10 @@
 import { expect, test, type Page } from '@playwright/test'
 import { listThemes } from '../../src/web/themes/registry.js'
-import { startHarness, type TestHarness } from './harness.js'
+import { AdminApi, seedPortal, startHarness, type SeededPortal, type TestHarness } from './harness.js'
 
 let harness: TestHarness
-
-test.beforeAll(async () => {
-  harness = await startHarness()
-})
-
-test.afterAll(async () => {
-  if (harness) {
-    await harness.cleanup()
-  }
-})
+let admin: AdminApi
+let portal: SeededPortal
 
 // One light, one cover and one lock — the three tile shapes a theme has to
 // draw. The set is fixed and shared by every capture so the previews differ
@@ -29,39 +21,67 @@ const PREVIEW_DEVICES = [
 ] as const
 
 /**
+ * The title is `Guest Portal` on purpose: it is the deployment default, it is
+ * what the header in every stored baseline reads, and the preview is a picture
+ * of a theme rather than of one deployment's naming. A portal called anything
+ * else here would change every baseline for a reason that has nothing to do
+ * with the themes.
+ */
+const PREVIEW_PORTAL_TITLE = 'Guest Portal'
+const PREVIEW_PORTAL_PASSWORD = 'preview-portal-pw'
+
+/**
  * Seeded through the API, not through edit mode's picker.
  *
  * What this spec captures is how a theme paints a fixed set of tiles; how an
  * owner puts them there is `portal.spec.ts`'s subject and is exercised in full
  * there. Driving the editor here would couple every preview to the editor's
  * affordances and re-run the same flow once per theme, for a picture that must
- * not vary with it. The theme itself is already stored the same way, and for
+ * not vary with it. The portal and its theme are stored the same way, and for
  * the same reason.
  */
-async function seedPreviewDevices(page: Page, baseUrl: string): Promise<void> {
-  const seeded = await page.request.put(`${baseUrl}/api/admin/allowlist`, {
-    data: {
-      devices: PREVIEW_DEVICES.map((device, index) => ({
-        entityId: device.entityId,
-        label: device.name,
-        allowedActions: [...device.actions],
-        sortOrder: index,
-      })),
-    },
+test.beforeAll(async () => {
+  harness = await startHarness()
+  admin = await AdminApi.login(harness.baseUrl)
+  portal = await seedPortal(harness.baseUrl, {
+    title: PREVIEW_PORTAL_TITLE,
+    password: PREVIEW_PORTAL_PASSWORD,
+    devices: PREVIEW_DEVICES.map((device, index) => ({
+      entityId: device.entityId,
+      label: device.name,
+      allowedActions: [...device.actions],
+      sortOrder: index,
+    })),
+    select: true,
   })
-  expect(seeded.status(), 'PUT /api/admin/allowlist rejected the preview devices').toBe(200)
-}
+})
+
+test.afterAll(async () => {
+  if (harness) {
+    await harness.cleanup()
+  }
+})
 
 /**
- * The previews advertise what a GUEST sees. An owner's portal carries Edit and
- * Settings in the header, which belong to no theme and would put the owner's
- * chrome into a picture shown to choose a look.
+ * The previews advertise what a GUEST sees. An owner's portal carries the
+ * portal dropdown, Edit, Settings and the portal-settings accordion, none of
+ * which belong to any theme — they would put the owner's chrome into a picture
+ * shown to choose a look.
+ *
+ * The session is created over HTTP and the page then navigated, rather than
+ * typing the password into the login form. The theme lands on <html> at
+ * request time, resolved from the session's portal (see `themeAndTitleFor` in
+ * src/server/app.ts), so the capture has to be a *navigation made as the
+ * guest*. Logging in through the form leaves the document that was injected
+ * for a logged-out visitor — the default theme — with the guest screen drawn
+ * inside it, and every preview would silently capture that instead.
  */
-async function becomeGuest(page: Page): Promise<void> {
-  await page.getByRole('button', { name: /log out/i }).click()
-  await page.getByLabel('Password').fill('test-guest-password')
-  await page.getByRole('button', { name: 'Log in' }).click()
-  await expect(page.getByTestId('guest-screen')).toBeVisible()
+async function loadAsGuest(page: Page, baseUrl: string): Promise<void> {
+  const login = await page.request.post(`${baseUrl}/api/login`, {
+    data: { password: PREVIEW_PORTAL_PASSWORD },
+  })
+  expect(login.status(), 'guest login for the preview portal was refused').toBe(200)
+  await page.goto(baseUrl)
 }
 
 // The captured image is both the settings panel's preview and the visual
@@ -81,29 +101,21 @@ for (const theme of listThemes()) {
   test(`preview: ${id}`, async ({ page }) => {
     const { baseUrl } = harness
 
-    await page.goto(baseUrl)
-    await page.getByLabel('Password').fill('test-admin-password')
-    await page.getByRole('button', { name: 'Log in' }).click()
-    await expect(page).toHaveURL(`${baseUrl}/`)
-
-    await seedPreviewDevices(page, baseUrl)
-
-    // Store the theme through the real mechanism and let the server inject it.
-    // Setting document.documentElement.dataset.theme here would be discarded by
-    // the navigation below, and every preview would silently capture whichever
-    // theme the server happened to be serving.
-    const stored = await page.request.put(`${baseUrl}/api/admin/theme`, { data: { theme: id } })
-    expect(stored.status(), `PUT /api/admin/theme rejected ${id}`).toBe(200)
+    // Store the theme on the portal through the real admin route and let the
+    // server inject it. Setting document.documentElement.dataset.theme here
+    // would be discarded by the navigation below, and every preview would
+    // silently capture whichever theme the portal happened to be wearing.
+    const stored = await admin.updatePortal(portal.id, { theme: id })
+    expect(stored.theme, `PUT /api/admin/portals/:id did not store ${id}`).toBe(id)
 
     await page.setViewportSize({ width: 420, height: 380 })
-    await page.goto(baseUrl)
+    await loadAsGuest(page, baseUrl)
 
     // Prove the page under the camera is actually the theme being captured.
     // Without this a regression in the injection path would quietly re-capture
     // the wrong theme, and the screenshot would still pass.
     await expect(page.locator('html')).toHaveAttribute('data-theme', id)
-
-    await becomeGuest(page)
+    await expect(page.getByTestId('guest-screen')).toBeVisible()
 
     for (const device of PREVIEW_DEVICES) {
       await expect(page.getByText(device.name, { exact: true })).toBeVisible()

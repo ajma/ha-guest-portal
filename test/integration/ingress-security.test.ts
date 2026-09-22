@@ -35,6 +35,7 @@ describe('Ingress security - source address enforcement', () => {
   let settings: SettingsStore
   let interactions: InteractionStore
   let portals: PortalStore
+  let defaultPortalId: string
   let sessions: SessionStore
   let limiter: LoginRateLimiter
   let hub: SseHub
@@ -58,6 +59,7 @@ describe('Ingress security - source address enforcement', () => {
     allowlist = new AllowlistStore(db)
     portals = new PortalStore(db)
     const defaultPortal = portals.create({ title: 'Default Portal', password: 'guest-pass-12345678' })
+    defaultPortalId = defaultPortal.id
     allowlist.replace(defaultPortal.id, [
       {
         entityId: 'light.porch',
@@ -172,8 +174,8 @@ describe('Ingress security - source address enforcement', () => {
       expect(data).toEqual({ error: 'Forbidden' })
     })
 
-    it('rejects GET /api/admin/allowlist with 403', async () => {
-      const res = await fetch(`${ingressUrl}/api/admin/allowlist`)
+    it('rejects GET /api/admin/portals/:portalId/allowlist with 403', async () => {
+      const res = await fetch(`${ingressUrl}/api/admin/portals/${defaultPortalId}/allowlist`)
       expect(res.status).toBe(403)
       const data = await res.json()
       expect(data).toEqual({ error: 'Forbidden' })
@@ -211,8 +213,8 @@ describe('Ingress security - source address enforcement', () => {
       expect(res.status).toBe(401)
     })
 
-    it('requires session for /api/admin/allowlist', async () => {
-      const res = await fetch(`${directUrl}/api/admin/allowlist`)
+    it('requires session for /api/admin/portals/:portalId/allowlist', async () => {
+      const res = await fetch(`${directUrl}/api/admin/portals/${defaultPortalId}/allowlist`)
       expect(res.status).toBe(401)
     })
 
@@ -244,7 +246,7 @@ describe('Ingress security - source address enforcement', () => {
     })
 
     it('does not grant admin from spoofed X-Forwarded-For header', async () => {
-      const res = await fetch(`${directUrl}/api/admin/allowlist`, {
+      const res = await fetch(`${directUrl}/api/admin/portals/${defaultPortalId}/allowlist`, {
         headers: {
           'X-Forwarded-For': '172.30.32.2',
         },
@@ -253,7 +255,7 @@ describe('Ingress security - source address enforcement', () => {
     })
 
     it('does not grant admin from spoofed X-Real-IP header', async () => {
-      const res = await fetch(`${directUrl}/api/admin/allowlist`, {
+      const res = await fetch(`${directUrl}/api/admin/portals/${defaultPortalId}/allowlist`, {
         headers: {
           'X-Real-IP': '172.30.32.2',
         },

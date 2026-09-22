@@ -232,6 +232,10 @@ export function createRuntime(deps: Deps): Runtime {
         // guest hears only `portal_disabled`, an admin hears that the portal
         // they named is not there rather than getting an open stream and an
         // empty snapshot they cannot tell from a real, empty portal.
+        //
+        // This is `portalProblem` in routes-guest.ts, reimplemented inline
+        // because this handler runs before Hono and cannot reach it. The two
+        // must be kept in sync by hand — if this changes, check that one too.
         const portal = portals.get(portalId)
         if (session.role === 'guest') {
           if (portal === null || !portal.enabled) {

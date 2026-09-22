@@ -105,12 +105,15 @@ def portal_version_too_old(version: str) -> bool:
 def _parse_version(raw: dict[str, Any]) -> str:
     """Read the add-on's reported version, as a version we can compare.
 
-    An absent key is an add-on that predates the field, so 0.0.0 is the truth
-    and the caller goes on to raise the "update the add-on" repair issue. A
-    version that is present but unusable is a different fault: it comes from
-    something claiming to be current, so telling that user to update sends
-    them after an upgrade that does not exist. That is reported as a malformed
-    payload instead.
+    The route has sent `version` since its first commit, so an absent key is
+    not a real add-on's payload; the "0.0.0" fallback is a defensive default,
+    not a compatibility shim for a release that predates the field. It still
+    resolves to the "update the add-on" repair issue rather than a traceback,
+    which is the right outcome if this branch ever does run. A version that is
+    present but unusable is a different fault: it comes from something
+    claiming to be current, so telling that user to update sends them after an
+    upgrade that does not exist. That is reported as a malformed payload
+    instead.
     """
     if "version" not in raw:
         return "0.0.0"

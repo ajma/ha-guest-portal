@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { StrictMode } from 'react'
 import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import type { AllowlistRow, CatalogEntry, Device } from '@shared/api.js'
 import { useAllowlistEditor, type AllowlistEditor } from '../../src/web/hooks/useAllowlistEditor.ts'
@@ -767,6 +768,109 @@ describe('useAllowlistEditor', () => {
       teardownStream()
       globalThis.EventSource = OriginalEventSource
     }
+  })
+
+  it('refuses an allowlist for the portal the owner has already moved away from', async () => {
+    // The GET is issued per portal and the hook is not remounted on a switch,
+    // so a slow response for the portal that was left resolves into a hook now
+    // pointed at another one. Nothing downstream refuses it: `base` was just
+    // nulled by the render-phase reset, so the old portal's devices become the
+    // new portal's base, and the next edit is a whole-list PUT of them over
+    // this portal's own allowlist. The abandon token is the only thing that
+    // stops it — the same guard PortalSettingsAccordion carries, and the same
+    // thing its 'ignores a save that lands after the owner switched portals'
+    // pins there.
+    //
+    // What this reaches is the token being READ after the response resolves,
+    // which nothing else covers. It cannot separate the two places that SET
+    // `abandoned`: a switch fires both the render-phase reset and the
+    // `[portalId]` effect cleanup, so each covers for the other and dropping
+    // either alone still passes here. Dropping both does not — and the cleanup
+    // is pinned on its own by 'drops the load left behind when the effects
+    // remount under it', which reaches it without the reset.
+    //
+    // The reset's own window — the GET resolving after the switch commits and
+    // before the passive-effect flush — stays unpinned: React Testing Library
+    // flushes effects before handing control back, so that interleaving is not
+    // reachable from a test. The caveat note in the hook is what defends it.
+    const timothy = defer<Allowlist>()
+    vi.mocked(api.getPortalAllowlist).mockImplementation((portalId) =>
+      portalId === 'timothy' ? timothy.promise : Promise.resolve(loaded([])),
+    )
+
+    const { result, rerender } = renderHook(
+      ({ portalId }: { portalId: string }) => useAllowlistEditor([], portalId, true, false),
+      { initialProps: { portalId: 'timothy' } },
+    )
+
+    // Mary's allowlist is empty and answers at once, so the base a save would
+    // be computed from is settled before Timothy's reply lands. The stream is
+    // down throughout, which is what leaves the fetch as the only thing that
+    // can set a base — nothing else here can refuse Timothy's.
+    rerender({ portalId: 'mary' })
+    await waitFor(() => expect(result.current.ready).toBe(true))
+
+    await act(async () => {
+      timothy.resolve(loaded(two, ['light.gone']))
+      await timothy.promise
+    })
+
+    // Timothy's devices are not Mary's, and neither are the entities Home
+    // Assistant has stopped knowing about in his portal.
+    expect(result.current.rows).toEqual([])
+    expect(result.current.orphaned).toEqual([])
+
+    act(() => {
+      result.current.add(fan)
+    })
+    await settled(result, 1)
+
+    expect(vi.mocked(api.putPortalAllowlist).mock.calls[0]?.[0]).toBe('mary')
+    expect(putBody(1).map((r) => r.entityId)).toEqual(['switch.fan'])
+  })
+
+  it('drops the load left behind when the effects remount under it', async () => {
+    // The other half of the token, and the only path that reaches it on its
+    // own. A portal switch fires BOTH the render-phase reset and this effect's
+    // cleanup, so neither can be pinned there — each covers for the other. An
+    // effect remount fires only the cleanup: `portalId` never changes, so the
+    // reset block never runs, and the cleanup is the whole guard.
+    //
+    // `src/web/main.tsx` mounts the app in StrictMode, so this is what every
+    // dev mount of this hook already does, and Fast Refresh does it again on
+    // every edit. Both mounts issue a GET for the same portal. If the one
+    // belonging to the mount that was thrown away is still allowed to land, it
+    // overwrites the surviving mount's base with an older list — and the next
+    // edit is a whole-list PUT of it.
+    const abandonedLoad = defer<Allowlist>()
+    const survivingLoad = defer<Allowlist>()
+    const queued = [abandonedLoad, survivingLoad]
+    vi.mocked(api.getPortalAllowlist).mockImplementation(() => {
+      const next = queued.shift()
+      if (next === undefined) throw new Error('a third GET was issued')
+      return next.promise
+    })
+
+    const { result } = renderHook(() => useAllowlistEditor([], 'timothy', true, false), {
+      wrapper: StrictMode,
+    })
+    await waitFor(() => expect(api.getPortalAllowlist).toHaveBeenCalledTimes(2))
+
+    // The surviving mount's load answers first, so its list is the base. The
+    // discarded mount's answers after it, describing the portal as it was
+    // before a device was removed elsewhere.
+    await act(async () => {
+      survivingLoad.resolve(
+        loaded([device({ entityId: 'switch.fan', label: 'Fan', domain: 'switch', sortOrder: 0 })]),
+      )
+      await survivingLoad.promise
+    })
+    await act(async () => {
+      abandonedLoad.resolve(loaded(two))
+      await abandonedLoad.promise
+    })
+
+    expect(result.current.rows.map((r) => r.entityId)).toEqual(['switch.fan'])
   })
 
   it('saves against the given portal id', async () => {

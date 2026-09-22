@@ -74,6 +74,10 @@ export function createRoutes(deps: Deps) {
    * them would confirm which portal ids are real. An admin named the portal
    * deliberately, so they get the truth: 404, not a 500 from some later
    * foreign key and not a cheerful empty result.
+   *
+   * runtime.ts's `/api/stream` intercept reimplements this same logic inline,
+   * since it runs before Hono and cannot call this. The two must be kept in
+   * sync by hand — if this changes, check that one too.
    */
   function portalProblem(
     session: SessionData,

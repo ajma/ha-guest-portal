@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { startHarness, type TestHarness } from './harness.js'
+import { seedPortal, startHarness, type TestHarness } from './harness.js'
 
 /**
  * The requirement this whole feature exists for, tested rather than argued
@@ -17,37 +17,27 @@ let harness: TestHarness
  * hour ago. Seeding one means the test can assert that exact string is absent
  * offline, so a worker that cached the API fails on the harm itself rather than
  * on a proxy for it.
+ *
+ * It hangs off a portal of its own, with a password of its own: a deployment
+ * starts with no portals, and there is no global guest password left to log in
+ * with.
  */
-async function seedLock(baseUrl: string): Promise<void> {
-  const login = await fetch(`${baseUrl}/api/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password: 'test-admin-password' }),
-  })
-  if (!login.ok) throw new Error(`admin login failed: ${login.status}`)
-  const cookie = login.headers.get('set-cookie')?.split(';')[0]
-  if (!cookie) throw new Error('no session cookie')
-
-  const put = await fetch(`${baseUrl}/api/admin/allowlist`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', Cookie: cookie },
-    body: JSON.stringify({
-      devices: [
-        {
-          entityId: 'lock.front_door',
-          label: 'Front Door Lock',
-          allowedActions: ['lock', 'unlock'],
-          sortOrder: 1,
-        },
-      ],
-    }),
-  })
-  if (!put.ok) throw new Error(`allowlist put failed: ${put.status} ${await put.text()}`)
-}
+const GUEST_PASSWORD = 'offline-portal-pw'
 
 test.beforeAll(async () => {
   harness = await startHarness()
-  await seedLock(harness.baseUrl)
+  await seedPortal(harness.baseUrl, {
+    title: 'Beach House',
+    password: GUEST_PASSWORD,
+    devices: [
+      {
+        entityId: 'lock.front_door',
+        label: 'Front Door Lock',
+        allowedActions: ['lock', 'unlock'],
+        sortOrder: 1,
+      },
+    ],
+  })
 })
 
 test.afterAll(async () => {
@@ -64,7 +54,7 @@ test.describe('Offline', () => {
     const { baseUrl } = harness
 
     await page.goto(baseUrl)
-    await page.getByLabel('Password').fill('test-guest-password')
+    await page.getByLabel('Password').fill(GUEST_PASSWORD)
     await page.getByRole('button', { name: 'Log in' }).click()
     await expect(page.getByTestId('guest-screen')).toBeVisible()
 
