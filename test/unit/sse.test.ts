@@ -734,4 +734,155 @@ describe('SseHub', () => {
       await adminReader.cancel()
     })
   })
+
+  describe('closePortalStreams', () => {
+    let closeServer: Server
+    let closePort: number
+
+    beforeEach(async () => {
+      // Role, portal and session all come from the query string, so one server
+      // can stand in for a guest, a session-authenticated admin and the
+      // ingress listener's sessionless admin at once.
+      closeServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+        const url = new URL(req.url ?? '/', 'http://localhost')
+        const role = url.searchParams.get('role')
+        if (url.pathname !== '/events' || (role !== 'guest' && role !== 'admin')) return
+        hub.add(res, role, url.searchParams.get('portal'), url.searchParams.get('session'))
+      })
+
+      closePort = await new Promise<number>((resolve) => {
+        closeServer.listen(0, () => {
+          const addr = closeServer.address()
+          if (addr && typeof addr === 'object') {
+            resolve(addr.port)
+          }
+        })
+      })
+    })
+
+    afterEach(async () => {
+      // A failing assertion leaves streams open, and close() would then wait
+      // on them until the hook times out, burying the assertion that failed.
+      closeServer.closeAllConnections()
+      await new Promise<void>((resolve, reject) => {
+        closeServer.close((err) => {
+          if (err) reject(err)
+          else resolve()
+        })
+      })
+    })
+
+    it("ends that portal's streams whatever their role, and only that portal's", async () => {
+      const base = `http://localhost:${closePort}/events`
+      const guestA = await fetch(`${base}?role=guest&portal=portal-a&session=sess-1`)
+      const adminA = await fetch(`${base}?role=admin&portal=portal-a&session=sess-2`)
+      // No session id: the ingress listener's admin stream, which nothing
+      // session-shaped can ever close.
+      const ingressA = await fetch(`${base}?role=admin&portal=portal-a`)
+      const adminB = await fetch(`${base}?role=admin&portal=portal-b&session=sess-2`)
+
+      const readers = [guestA, adminA, ingressA, adminB].map((r) => r.body?.getReader())
+      const [guestAReader, adminAReader, ingressAReader, adminBReader] = readers
+      if (!guestAReader || !adminAReader || !ingressAReader || !adminBReader) {
+        throw new Error('No readers')
+      }
+
+      expect(hub.clientCount).toBe(4)
+
+      hub.closePortalStreams('portal-a')
+
+      expect(hub.clientCount).toBe(1)
+      expect((await guestAReader.read()).done).toBe(true)
+      expect((await adminAReader.read()).done).toBe(true)
+      expect((await ingressAReader.read()).done).toBe(true)
+
+      // portal-b's admin shares a session with portal-a's and must survive.
+      hub.broadcast({ type: 'portal', enabled: false })
+      const adminBResult = await adminBReader.read()
+      expect(new TextDecoder().decode(adminBResult.value)).toContain('"type":"portal"')
+
+      await adminBReader.cancel()
+    })
+
+    it('leaves a stream bound to no portal alone', async () => {
+      const unbound = await fetch(`http://localhost:${closePort}/events?role=admin`)
+      const reader = unbound.body?.getReader()
+      if (!reader) throw new Error('No reader')
+
+      expect(hub.clientCount).toBe(1)
+      hub.closePortalStreams('portal-a')
+      expect(hub.clientCount).toBe(1)
+
+      await reader.cancel()
+    })
+  })
+
+  describe('closeSession', () => {
+    let sessionServer: Server
+    let sessionPort: number
+
+    beforeEach(async () => {
+      sessionServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+        const url = new URL(req.url ?? '/', 'http://localhost')
+        if (url.pathname !== '/events') return
+        hub.add(res, 'guest', 'portal-a', url.searchParams.get('session'))
+      })
+
+      sessionPort = await new Promise<number>((resolve) => {
+        sessionServer.listen(0, () => {
+          const addr = sessionServer.address()
+          if (addr && typeof addr === 'object') {
+            resolve(addr.port)
+          }
+        })
+      })
+    })
+
+    afterEach(async () => {
+      await new Promise<void>((resolve, reject) => {
+        sessionServer.close((err) => {
+          if (err) reject(err)
+          else resolve()
+        })
+      })
+    })
+
+    it('ends only the streams that one session opened', async () => {
+      const leaving = await fetch(`http://localhost:${sessionPort}/events?session=sess-1`)
+      const staying = await fetch(`http://localhost:${sessionPort}/events?session=sess-2`)
+
+      const leavingReader = leaving.body?.getReader()
+      const stayingReader = staying.body?.getReader()
+      if (!leavingReader || !stayingReader) throw new Error('No readers')
+
+      expect(hub.clientCount).toBe(2)
+
+      hub.closeSession('sess-1')
+
+      expect(hub.clientCount).toBe(1)
+      expect((await leavingReader.read()).done).toBe(true)
+
+      const frame: SseFrame = { type: 'portal', enabled: false }
+      hub.broadcast(frame)
+      const stayingResult = await stayingReader.read()
+      expect(new TextDecoder().decode(stayingResult.value)).toContain('"type":"portal"')
+
+      await stayingReader.cancel()
+    })
+
+    // The ingress listener adds admin streams with no session id, since its
+    // authority is the Supervisor source check and not a cookie. Nothing must
+    // be able to close those by naming a session.
+    it('leaves a sessionless stream alone', async () => {
+      const ingressLike = await fetch(`http://localhost:${sessionPort}/events`)
+      const reader = ingressLike.body?.getReader()
+      if (!reader) throw new Error('No reader')
+
+      expect(hub.clientCount).toBe(1)
+      hub.closeSession('sess-1')
+      expect(hub.clientCount).toBe(1)
+
+      await reader.cancel()
+    })
+  })
 })

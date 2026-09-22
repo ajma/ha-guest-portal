@@ -1,4 +1,8 @@
-import { assertAdminAccessPossible, loadConfig } from './config.js'
+import {
+  assertAdminAccessPossible,
+  assertNoAdminPasswordCollision,
+  loadConfig,
+} from './config.js'
 import { openDb } from './store/db.js'
 import { AllowlistStore } from './store/allowlist.js'
 import { AuditLog } from './store/auditlog.js'
@@ -25,6 +29,7 @@ async function main() {
   const settings = new SettingsStore(db)
   const interactions = new InteractionStore(db)
   const portals = new PortalStore(db)
+  assertNoAdminPasswordCollision(cfg, portals.list())
   const sessions = new SessionStore()
   const limiter = new LoginRateLimiter()
   const hub = new SseHub()

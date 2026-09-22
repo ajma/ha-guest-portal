@@ -560,7 +560,6 @@ describe('loadConfig', () => {
     const env = {
       HA_BASE_URL: 'http://homeassistant.local:8123',
       HA_TOKEN: 'test-token',
-      GUEST_PASSWORD: 'guest12345',
       ADMIN_PASSWORD: 'admin12345',
     }
 
@@ -573,7 +572,6 @@ describe('loadConfig', () => {
     const env = {
       HA_BASE_URL: 'http://192.168.1.100:8123',
       HA_TOKEN: 'test-token',
-      GUEST_PASSWORD: 'guest12345',
       ADMIN_PASSWORD: 'admin12345',
     }
 
@@ -588,7 +586,6 @@ describe('loadConfig', () => {
       HA_BASE_URL: 'http://192.168.1.100:8123',
       HA_WS_URL: 'ws://supervisor/core/websocket',
       HA_TOKEN: 'test-token',
-      GUEST_PASSWORD: 'guest12345',
       ADMIN_PASSWORD: 'admin12345',
     }
 
@@ -602,7 +599,6 @@ describe('loadConfig', () => {
     const env = {
       HA_BASE_URL: 'http://192.168.1.100:8123',
       HA_TOKEN: 'test-token',
-      GUEST_PASSWORD: 'guest12345',
       ADMIN_PASSWORD: 'admin12345',
     }
 

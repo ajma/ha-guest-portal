@@ -6,7 +6,7 @@ import type { Server } from 'node:http'
 import { getRequestListener } from '@hono/node-server'
 import { createServer } from 'node:http'
 import { Hono, type MiddlewareHandler } from 'hono'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { HaClient } from '../../src/server/ha/client.ts'
 import type { Env } from '../../src/server/app.ts'
 import { createRoutes, type Deps } from '../../src/server/http/routes-guest.ts'
@@ -39,6 +39,7 @@ function buildApp(deps: Deps) {
 
   const requireAdmin: MiddlewareHandler<Env> = async (c, next) => {
     const session = c.var.session
+    if (!session) return c.json({ error: 'Unauthorized' }, 401)
     if (session.role !== 'admin') return c.json({ error: 'Forbidden' }, 403)
     await next()
   }
@@ -204,6 +205,137 @@ describe('portal management routes', () => {
     expect(res.status).toBe(409)
   })
 
+  describe('request validation', () => {
+    async function post(body: unknown, cookie: string) {
+      const res = await fetch(`${baseUrl}/api/admin/portals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', cookie },
+        body: JSON.stringify(body),
+      })
+      return { status: res.status, body: await res.json() }
+    }
+
+    async function put(portalId: string, body: unknown, cookie: string) {
+      const res = await fetch(`${baseUrl}/api/admin/portals/${portalId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', cookie },
+        body: JSON.stringify(body),
+      })
+      return { status: res.status, body: await res.json() }
+    }
+
+    it.each([
+      ['a missing password', { title: 'Timothy' }, /Invalid input/],
+      ['a short password', { title: 'Timothy', password: 'short12' }, /at least 8 characters/],
+      [
+        'a blank-space password',
+        { title: 'Timothy', password: '        ' },
+        /not counting leading or trailing spaces/,
+      ],
+      ['a missing title', { password: 'a-secret-1' }, /Invalid input/],
+      [
+        'an over-long title',
+        { title: 'x'.repeat(61), password: 'a-secret-1' },
+        /Title must be 60 characters or fewer/,
+      ],
+    ])('rejects a create with %s', async (_name, body, message) => {
+      const adminCookie = await loginAsAdmin()
+
+      const res = await post(body, adminCookie)
+
+      expect(res.status).toBe(400)
+      expect(res.body.error).toMatch(message)
+      expect(portals.list()).toHaveLength(0)
+    })
+
+    it.each([
+      ['a short password', { password: 'short12' }, /at least 8 characters/],
+      [
+        'a blank-space password',
+        { password: '        ' },
+        /not counting leading or trailing spaces/,
+      ],
+      ['an unknown theme', { theme: 'neon' }, /Invalid option/],
+      ['a non-boolean enabled', { enabled: 'yes' }, /Invalid input/],
+      [
+        'an over-long title',
+        { title: 'x'.repeat(61) },
+        /Title must be 60 characters or fewer/,
+      ],
+    ])('rejects an update with %s', async (_name, body, message) => {
+      const adminCookie = await loginAsAdmin()
+      const portal = portals.create({ title: 'Timothy', password: 'original-pass' })
+
+      const res = await put(portal.id, body, adminCookie)
+
+      expect(res.status).toBe(400)
+      expect(res.body.error).toMatch(message)
+      expect(portals.get(portal.id)).toEqual(portal)
+    })
+
+    it('rejects a create with a non-JSON body', async () => {
+      const adminCookie = await loginAsAdmin()
+
+      const res = await fetch(`${baseUrl}/api/admin/portals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+        body: 'not json',
+      })
+
+      expect(res.status).toBe(400)
+      expect(portals.list()).toHaveLength(0)
+    })
+
+    it('keeps an accepted password exactly as sent, padding included', async () => {
+      const adminCookie = await loginAsAdmin()
+
+      const res = await post({ title: 'Timothy', password: '  a-secret-1  ' }, adminCookie)
+
+      expect(res.status).toBe(200)
+      expect(portals.get(res.body.id)?.password).toBe('  a-secret-1  ')
+    })
+  })
+
+  describe('GET allowlist', () => {
+    it("returns a portal's devices and flags the ones HA no longer knows", async () => {
+      const adminCookie = await loginAsAdmin()
+      const portal = portals.create({ title: 'Timothy', password: 'allowlist-get-pass' })
+      allowlist.replace(portal.id, [
+        { entityId: 'light.porch', label: 'Porch', allowedActions: ['turn_on'], sortOrder: 0 },
+        { entityId: 'light.removed', label: 'Gone', allowedActions: ['turn_on'], sortOrder: 1 },
+      ])
+
+      const res = await fetch(`${baseUrl}/api/admin/portals/${portal.id}/allowlist`, {
+        headers: { cookie: adminCookie },
+      })
+      const body = await res.json()
+
+      expect(res.status).toBe(200)
+      expect(body.devices.map((d: { entityId: string }) => d.entityId)).toEqual([
+        'light.porch',
+        'light.removed',
+      ])
+      expect(body.orphaned).toEqual(['light.removed'])
+    })
+
+    it("does not leak another portal's devices", async () => {
+      const adminCookie = await loginAsAdmin()
+      const timothy = portals.create({ title: 'Timothy', password: 'allowlist-get-tim' })
+      const mary = portals.create({ title: 'Mary', password: 'allowlist-get-mary' })
+      allowlist.replace(timothy.id, [
+        { entityId: 'light.porch', label: 'Porch', allowedActions: ['turn_on'], sortOrder: 0 },
+      ])
+      allowlist.replace(mary.id, [])
+
+      const body = await fetch(`${baseUrl}/api/admin/portals/${mary.id}/allowlist`, {
+        headers: { cookie: adminCookie },
+      }).then((r) => r.json())
+
+      expect(body.devices).toEqual([])
+      expect(body.orphaned).toEqual([])
+    })
+  })
+
   it('returns deployment settings', async () => {
     const adminCookie = await loginAsAdmin()
 
@@ -246,13 +378,14 @@ describe('portal management routes', () => {
       return { cookie, sessionId }
     }
 
-    it("evicts that portal's guest sessions and drops their streams", async () => {
+    // The stream half of this invariant is proven over a real SSE round-trip
+    // in test/integration/portal-toggle.test.ts, which runs the full runtime;
+    // this harness mounts the routes without the /api/stream intercept.
+    it("evicts that portal's guest sessions", async () => {
       const adminCookie = await loginAsAdmin()
       const portal = portals.create({ title: 'Timothy', password: 'rotate-me-pass' })
       const guest = await loginAsGuest('rotate-me-pass')
       expect(sessions.get(guest.sessionId)).toBeDefined()
-
-      const closeSpy = vi.spyOn(hub, 'closePortalGuests')
 
       const res = await fetch(`${baseUrl}/api/admin/portals/${portal.id}`, {
         method: 'PUT',
@@ -262,7 +395,6 @@ describe('portal management routes', () => {
 
       expect(res.status).toBe(200)
       expect(sessions.get(guest.sessionId)).toBeUndefined()
-      expect(closeSpy).toHaveBeenCalledWith(portal.id)
     })
 
     it('leaves other portals’ guest sessions alone', async () => {
@@ -292,6 +424,62 @@ describe('portal management routes', () => {
       })
 
       expect(sessions.get(guest.sessionId)).toBeDefined()
+    })
+  })
+
+  // Every admin route that names a portal in its path or body answers the same
+  // way when that portal does not exist. Before this, one 500'd, one silently
+  // succeeded, one returned an empty list as if the portal were real, and one
+  // stored the bogus id — four different stories about the same mistake.
+  describe('an admin naming a portal that does not exist', () => {
+    const MISSING = 'no-such-portal-id'
+
+    it('gets 404 from DELETE', async () => {
+      const adminCookie = await loginAsAdmin()
+      const res = await fetch(`${baseUrl}/api/admin/portals/${MISSING}`, {
+        method: 'DELETE',
+        headers: { cookie: adminCookie },
+      })
+      expect(res.status).toBe(404)
+      expect(await res.json()).toEqual({ error: 'Not found' })
+    })
+
+    it('gets 404 from the allowlist GET', async () => {
+      const adminCookie = await loginAsAdmin()
+      const res = await fetch(`${baseUrl}/api/admin/portals/${MISSING}/allowlist`, {
+        headers: { cookie: adminCookie },
+      })
+      expect(res.status).toBe(404)
+      expect(await res.json()).toEqual({ error: 'Not found' })
+    })
+
+    it('gets 404 from the allowlist PUT, and writes nothing', async () => {
+      const adminCookie = await loginAsAdmin()
+      const res = await fetch(`${baseUrl}/api/admin/portals/${MISSING}/allowlist`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({
+          devices: [
+            { entityId: 'light.porch', label: 'Porch', allowedActions: ['turn_on'], sortOrder: 0 },
+          ],
+        }),
+      })
+      expect(res.status).toBe(404)
+      expect(allowlist.list(MISSING)).toEqual([])
+    })
+
+    it('gets 404 from the last-selected PUT, leaving the pointer alone', async () => {
+      const adminCookie = await loginAsAdmin()
+      const portal = portals.create({ title: 'Real', password: 'real-pass-12345678' })
+      settings.setLastSelectedPortalId(portal.id)
+
+      const res = await fetch(`${baseUrl}/api/admin/last-selected-portal`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+        body: JSON.stringify({ portalId: MISSING }),
+      })
+      expect(res.status).toBe(404)
+      expect(settings.getLastSelectedPortalId()).toBe(portal.id)
     })
   })
 

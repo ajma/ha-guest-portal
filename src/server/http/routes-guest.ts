@@ -11,6 +11,7 @@ import type { PortalStore } from '../store/portals.js'
 import type { Config } from '../config.js'
 import {
   SESSION_COOKIE,
+  sessionIdFromCookie,
   type SessionStore,
   type SessionData,
   type LoginRateLimiter,
@@ -63,7 +64,31 @@ const FAILURE_STATUS = {
 } as const satisfies Record<string, ContentfulStatusCode>
 
 export function createRoutes(deps: Deps) {
-  const { cfg, ha, allowlist, audit, interactions, portals, sessions, limiter } = deps
+  const { cfg, ha, allowlist, audit, interactions, portals, sessions, limiter, hub } = deps
+
+  /**
+   * What to answer when a request names a portal, or null to carry on.
+   *
+   * A guest hears `portal_disabled` whether their portal is switched off or
+   * gone entirely — the client has one screen for both, and distinguishing
+   * them would confirm which portal ids are real. An admin named the portal
+   * deliberately, so they get the truth: 404, not a 500 from some later
+   * foreign key and not a cheerful empty result.
+   */
+  function portalProblem(
+    session: SessionData,
+    portalId: string,
+  ): { body: { error: string }; status: 403 | 404 } | null {
+    const portal = portals.get(portalId)
+    if (session.role === 'guest') {
+      if (portal === null || !portal.enabled) {
+        return { body: { error: 'portal_disabled' }, status: 403 }
+      }
+      return null
+    }
+    if (portal === null) return { body: { error: 'Not found' }, status: 404 }
+    return null
+  }
 
   function sessionResponseFor(session: SessionData): z.infer<typeof SessionResponse> {
     if (session.role === 'admin') return { role: 'admin' }
@@ -135,7 +160,6 @@ export function createRoutes(deps: Deps) {
           return c.json({ error: 'portal_disabled' }, 403)
         }
 
-        limiter.recordSuccess(ip)
         interactions.record({
           portalId: portal.id,
           ts: Date.now(),
@@ -145,8 +169,6 @@ export function createRoutes(deps: Deps) {
           action: null,
           ok: true,
         })
-      } else {
-        limiter.recordSuccess(ip)
       }
 
       const sessionId = sessions.create(resolved)
@@ -173,12 +195,13 @@ export function createRoutes(deps: Deps) {
         return c.json({ error: 'Unauthorized' }, 401)
       }
 
-      const match = new RegExp(`${SESSION_COOKIE}=([^;]+)`).exec(cookie)
-      if (match) {
-        const sessionId = match[1]
-        if (sessionId) {
-          sessions.destroy(sessionId)
-        }
+      const sessionId = sessionIdFromCookie(cookie)
+      if (sessionId !== null) {
+        sessions.destroy(sessionId)
+        // The stream this session opened was authenticated before the logout
+        // and would otherwise keep pushing state to a browser that has signed
+        // off — destroying the session does not reach an open connection.
+        hub.closeSession(sessionId)
       }
 
       const cookieValue = `${SESSION_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`
@@ -208,11 +231,9 @@ export function createRoutes(deps: Deps) {
         return c.json({ error: 'Missing portalId' }, 400)
       }
 
-      if (session.role === 'guest') {
-        const portal = portals.get(portalId)
-        if (portal === null || !portal.enabled) {
-          return c.json({ error: 'portal_disabled' }, 403)
-        }
+      const problem = portalProblem(session, portalId)
+      if (problem !== null) {
+        return c.json(problem.body, problem.status)
       }
 
       const allowlistRows = allowlist.list(portalId)
@@ -236,11 +257,9 @@ export function createRoutes(deps: Deps) {
         return c.json({ error: 'Missing portalId' }, 400)
       }
 
-      if (session.role === 'guest') {
-        const portal = portals.get(portalId)
-        if (portal === null || !portal.enabled) {
-          return c.json({ error: 'portal_disabled' }, 403)
-        }
+      const problem = portalProblem(session, portalId)
+      if (problem !== null) {
+        return c.json(problem.body, problem.status)
       }
 
       const entityId = c.req.param('entityId')

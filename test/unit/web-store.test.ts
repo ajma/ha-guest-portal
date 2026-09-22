@@ -8,6 +8,7 @@ type DeviceStoreSnapshot = {
   stale: boolean
   connected: boolean
   portalEnabled: boolean
+  streamPortalId?: string | null
 }
 
 // We'll test the internal applyFrame function directly
@@ -405,6 +406,55 @@ describe('Device store', () => {
       expect(getSnapshot().devices).toEqual([])
       expect(getSnapshot().stale).toBe(false)
       expect(getSnapshot().connected).toBe(false)
+    })
+
+    it('says which portal the devices came from, and stops saying it when they go', async () => {
+      // The devices alone cannot say whose they are, so anything downstream
+      // that must not mix two portals up — the allowlist editor, whose every
+      // save is a whole-list PUT — is left inferring it from render order.
+      // The identity has to outlast the frames that follow it and go away
+      // with them.
+      const store = await import('../../src/web/store.js')
+      const teardown = store.connectDeviceStore('timothy')
+      expect(getSnapshot().streamPortalId).toBe('timothy')
+
+      applyFrame({ type: 'snapshot', devices: [makeDevice('light.porch')], stale: false })
+      applyFrame({ type: 'patch', devices: [makeDevice('light.porch', 'off')] })
+      applyFrame({ type: 'degraded', stale: true })
+      expect(getSnapshot().streamPortalId).toBe('timothy')
+
+      teardown()
+      expect(getSnapshot().streamPortalId).toBeNull()
+    })
+
+    it('clears all four fields in ONE notification, so no subscriber sees a live empty stream', async () => {
+      // A subscriber that ran between two notifications would see `devices: []`
+      // with `connected: true` and the portal still named — the one combination
+      // that means "this portal genuinely has no devices". The allowlist editor
+      // takes that as an answer, adopts the empty list as the base its
+      // whole-list PUT is computed from, and the next edit erases the
+      // allowlist. The single object and single notify in `connectDeviceStore`'s
+      // teardown are what rule that out, and nothing else here can see them, so
+      // this counts them.
+      const store = await import('../../src/web/store.js')
+      const teardown = store.connectDeviceStore('timothy')
+      setConnected(true)
+      applyFrame({ type: 'snapshot', devices: [makeDevice('light.porch')], stale: true })
+
+      const seen: DeviceStoreSnapshot[] = []
+      const unsubscribe = store.subscribeForTest(() => {
+        seen.push(getSnapshot())
+      })
+      teardown()
+      unsubscribe()
+
+      expect(seen).toHaveLength(1)
+      const observed = seen[0]
+      if (observed === undefined) throw new Error('teardown notified no subscriber')
+      expect(observed.devices).toEqual([])
+      expect(observed.stale).toBe(false)
+      expect(observed.connected).toBe(false)
+      expect(observed.streamPortalId).toBeNull()
     })
 
     it('keeps the devices while another caller still holds the stream', async () => {

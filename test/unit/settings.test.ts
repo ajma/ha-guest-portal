@@ -37,5 +37,13 @@ describe('SettingsStore', () => {
     expect(store.getLastSelectedPortalId()).toBeNull()
     store.setLastSelectedPortalId('portal-a')
     expect(store.getLastSelectedPortalId()).toBe('portal-a')
+    store.clearLastSelectedPortalId()
+    expect(store.getLastSelectedPortalId()).toBeNull()
+  })
+
+  it('tolerates clearing a last-selected portal id that was never set', () => {
+    const store = new SettingsStore(db)
+    store.clearLastSelectedPortalId()
+    expect(store.getLastSelectedPortalId()).toBeNull()
   })
 })

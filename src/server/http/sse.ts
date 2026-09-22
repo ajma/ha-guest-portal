@@ -1,7 +1,7 @@
 import type { ServerResponse } from 'node:http'
 import type { Role, SseFrame } from '../../shared/api.js'
 
-type ClientInfo = { role: Role; portalId: string | null }
+type ClientInfo = { role: Role; portalId: string | null; sessionId: string | null }
 
 export class SseHub {
   private readonly clients = new Map<ServerResponse, ClientInfo>()
@@ -14,7 +14,17 @@ export class SseHub {
     this.maxBufferBytes = opts?.maxBufferBytes ?? 1_048_576
   }
 
-  add(res: ServerResponse, role: Role, portalId: string | null): () => void {
+  /**
+   * `sessionId` is null for the ingress listener, whose admin access comes
+   * from the Supervisor source check rather than from a session there is any
+   * cookie for. Those streams are simply never closed by `closeSession`.
+   */
+  add(
+    res: ServerResponse,
+    role: Role,
+    portalId: string | null,
+    sessionId: string | null = null,
+  ): () => void {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache, no-transform',
@@ -24,7 +34,7 @@ export class SseHub {
     // Flush headers immediately so EventSource fires 'open'
     res.flushHeaders()
 
-    this.clients.set(res, { role, portalId })
+    this.clients.set(res, { role, portalId, sessionId })
 
     if (this.clients.size === 1 && this.heartbeatTimer === null) {
       this.startHeartbeat()
@@ -91,13 +101,13 @@ export class SseHub {
   }
 
   /**
-   * Ends every guest stream bound to this portal, leaving its admins and every
-   * other portal's connections untouched. Used by the kill-switch: disabling
-   * one portal must drop only that portal's guests.
+   * Ends every stream whose client matches, and leaves every other one open.
+   * The three public closers differ only in that predicate, so they share this
+   * rather than each repeating the delete-end-stop dance.
    */
-  closePortalGuests(portalId: string): void {
+  private closeMatching(matches: (info: ClientInfo) => boolean): void {
     for (const [client, info] of this.clients) {
-      if (info.role !== 'guest' || info.portalId !== portalId) continue
+      if (!matches(info)) continue
 
       this.clients.delete(client)
 
@@ -113,6 +123,35 @@ export class SseHub {
     if (this.clients.size === 0) {
       this.stopHeartbeat()
     }
+  }
+
+  /**
+   * Ends every guest stream bound to this portal, leaving its admins and every
+   * other portal's connections untouched. Used by the kill-switch: disabling
+   * one portal must drop only that portal's guests.
+   */
+  closePortalGuests(portalId: string): void {
+    this.closeMatching((info) => info.role === 'guest' && info.portalId === portalId)
+  }
+
+  /**
+   * Ends every stream bound to this portal, admins included. Used when the
+   * portal is deleted rather than merely disabled: there is nothing left for
+   * an admin stream to watch, and an ingress admin stream holds no session, so
+   * `closeSession` can never reach it. Left open, it would sit silent forever.
+   */
+  closePortalStreams(portalId: string): void {
+    this.closeMatching((info) => info.portalId === portalId)
+  }
+
+  /**
+   * Ends every stream opened by one session. Logging out destroys the session
+   * server-side, but the stream it opened was already authenticated and would
+   * otherwise keep delivering that portal's state to a browser that believes
+   * it has signed off.
+   */
+  closeSession(sessionId: string): void {
+    this.closeMatching((info) => info.sessionId === sessionId)
   }
 
   send(res: ServerResponse, frame: SseFrame): void {

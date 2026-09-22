@@ -307,16 +307,6 @@ describe('LoginRateLimiter', () => {
     }
   })
 
-  it('clears IP counter on success', () => {
-    const limiter = new LoginRateLimiter({ perIpMax: 10 })
-    for (let i = 0; i < 9; i++) {
-      limiter.recordFailure('192.168.1.1')
-    }
-    limiter.recordSuccess('192.168.1.1')
-    const result = limiter.check('192.168.1.1')
-    expect(result.allowed).toBe(true)
-  })
-
   it('expires the window', () => {
     let now = 1000
     const clock = () => now

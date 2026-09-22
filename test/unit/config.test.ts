@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { assertAdminAccessPossible, loadConfig } from '../../src/server/config.ts'
+import {
+  assertAdminAccessPossible,
+  assertNoAdminPasswordCollision,
+  loadConfig,
+} from '../../src/server/config.ts'
 
 const valid = {
   HA_BASE_URL: 'http://192.168.1.100:8123',
@@ -67,6 +71,9 @@ describe('loadConfig', () => {
   })
 
   it('does not leak password values in error messages', () => {
+    // Without this the test passes when loadConfig stops throwing at all, and
+    // the catch block — the only place it asserts anything — never runs.
+    expect.assertions(1)
     const secretPassword = 'short'
     try {
       loadConfig({ ...valid, ADMIN_PASSWORD: secretPassword })
@@ -100,5 +107,56 @@ describe('assertAdminAccessPossible', () => {
       ADMIN_PASSWORD: 'at-least-8-chars',
     })
     expect(() => assertAdminAccessPossible(cfg)).not.toThrow()
+  })
+})
+
+describe('assertNoAdminPasswordCollision', () => {
+  const cfgWith = (adminPassword?: string) =>
+    loadConfig(adminPassword === undefined ? { ...valid } : { ...valid, ADMIN_PASSWORD: adminPassword })
+
+  it('refuses to start when a portal password is also the admin password', () => {
+    // classify() tries the admin password first, so this portal's guests would
+    // be handed an admin session over every portal in the deployment.
+    const cfg = cfgWith('shared-secret-1')
+    const portals = [
+      { id: 'p1', title: 'Timothy', password: 'timothy-secret-1' },
+      { id: 'p2', title: 'Mary', password: 'shared-secret-1' },
+    ]
+
+    expect(() => assertNoAdminPasswordCollision(cfg, portals)).toThrow(/Mary/)
+  })
+
+  it('does not put the colliding password in the error message', () => {
+    expect.assertions(1)
+    const cfg = cfgWith('shared-secret-1')
+    try {
+      assertNoAdminPasswordCollision(cfg, [{ id: 'p1', title: 'Mary', password: 'shared-secret-1' }])
+    } catch (err) {
+      expect(err instanceof Error ? err.message : String(err)).not.toContain('shared-secret-1')
+    }
+  })
+
+  it('names every colliding portal, not just the first', () => {
+    const cfg = cfgWith('shared-secret-1')
+    const portals = [
+      { id: 'p1', title: 'Timothy', password: 'shared-secret-1' },
+      { id: 'p2', title: 'Mary', password: 'shared-secret-1' },
+    ]
+
+    expect(() => assertNoAdminPasswordCollision(cfg, portals)).toThrow(/Timothy.*Mary/)
+  })
+
+  it('accepts portals whose passwords all differ from the admin password', () => {
+    const cfg = cfgWith('admin-secret-1')
+    const portals = [{ id: 'p1', title: 'Timothy', password: 'timothy-secret-1' }]
+
+    expect(() => assertNoAdminPasswordCollision(cfg, portals)).not.toThrow()
+  })
+
+  it('accepts a deployment with no admin password at all', () => {
+    const cfg = cfgWith()
+    const portals = [{ id: 'p1', title: 'Timothy', password: 'timothy-secret-1' }]
+
+    expect(() => assertNoAdminPasswordCollision(cfg, portals)).not.toThrow()
   })
 })

@@ -9,6 +9,7 @@ import {
   PortalCreateRequest,
   PortalDetailResponse,
   PortalPutRequest,
+  PortalsListResponse,
   PortalSummaryResponse,
   SessionResponse,
   type SseFrame,
@@ -131,14 +132,36 @@ describe('AllowlistResponse', () => {
 })
 
 describe('PortalSummarySchema / PortalDetailSchema', () => {
-  it('summary excludes the password', () => {
-    const result = PortalSummaryResponse.safeParse({
+  // GET /api/admin/portals pipes portals.list() — every portal's plaintext
+  // password — straight into PortalsListResponse.parse. The strip is the only
+  // thing keeping those out of the response body, so assert on the output
+  // rather than on a payload that never carried a password to begin with.
+  it('summary strips a password that was present on the input', () => {
+    const parsed = PortalSummaryResponse.parse({
       id: 'p1',
       title: 'Timothy',
       theme: 'classic',
       enabled: true,
+      password: 'SECRET',
     })
-    expect(result.success).toBe(true)
+
+    expect(parsed).not.toHaveProperty('password')
+    expect(JSON.stringify(parsed)).not.toContain('SECRET')
+  })
+
+  it('the portal list strips every portal password', () => {
+    const parsed = PortalsListResponse.parse({
+      portals: [
+        { id: 'p1', title: 'Timothy', theme: 'classic', enabled: true, password: 'SECRET-ONE' },
+        { id: 'p2', title: 'Mary', theme: 'classic', enabled: false, password: 'SECRET-TWO' },
+      ],
+      lastSelectedPortalId: 'p1',
+    })
+
+    for (const portal of parsed.portals) {
+      expect(portal).not.toHaveProperty('password')
+    }
+    expect(JSON.stringify(parsed)).not.toContain('SECRET')
   })
 
   it('detail requires the password', () => {
@@ -157,6 +180,28 @@ describe('PortalCreateRequest', () => {
     const result = PortalCreateRequest.safeParse({ title: 'Timothy', password: 'a-secret-1' })
     expect(result.success).toBe(true)
   })
+
+  it('rejects a password shorter than the minimum', () => {
+    const result = PortalCreateRequest.safeParse({ title: 'Timothy', password: 'short12' })
+    expect(result.success).toBe(false)
+  })
+
+  it('rejects a password that is only blank space', () => {
+    const result = PortalCreateRequest.safeParse({ title: 'Timothy', password: '          ' })
+    expect(result.success).toBe(false)
+  })
+
+  it('keeps a password whose padding is not the whole of it', () => {
+    const result = PortalCreateRequest.safeParse({ title: 'Timothy', password: '  a-secret-1  ' })
+    expect(result.success).toBe(true)
+    // Untrimmed: the spaces are part of the owner's secret.
+    if (result.success) expect(result.data.password).toBe('  a-secret-1  ')
+  })
+
+  it('rejects a title over the length cap', () => {
+    const result = PortalCreateRequest.safeParse({ title: 'x'.repeat(61), password: 'a-secret-1' })
+    expect(result.success).toBe(false)
+  })
 })
 
 describe('PortalPutRequest', () => {
@@ -168,6 +213,22 @@ describe('PortalPutRequest', () => {
   it('accepts an empty object (no-op update)', () => {
     const result = PortalPutRequest.safeParse({})
     expect(result.success).toBe(true)
+  })
+
+  it('rejects a password shorter than the minimum', () => {
+    expect(PortalPutRequest.safeParse({ password: 'short12' }).success).toBe(false)
+  })
+
+  it('rejects a password that is only blank space', () => {
+    expect(PortalPutRequest.safeParse({ password: '        ' }).success).toBe(false)
+  })
+
+  it('rejects an unknown theme', () => {
+    expect(PortalPutRequest.safeParse({ theme: 'neon' }).success).toBe(false)
+  })
+
+  it('rejects a non-boolean enabled', () => {
+    expect(PortalPutRequest.safeParse({ enabled: 'yes' }).success).toBe(false)
   })
 })
 

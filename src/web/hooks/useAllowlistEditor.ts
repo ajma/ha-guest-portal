@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AllowlistRow, CatalogEntry, Device } from '@shared/api.js'
 import { DOMAIN_ACTIONS, type SupportedDomain } from '@shared/devices.js'
 import { getPortalAllowlist, putPortalAllowlist } from '../api.js'
+import { useDeviceStore } from '../store.js'
 
 function defaultActionsFor(domain: string): readonly string[] {
   return Object.hasOwn(DOMAIN_ACTIONS, domain)
@@ -56,6 +57,54 @@ function allowlistKey(rows: AllowlistRow[]): string {
 }
 
 /**
+ * Whether the stream has actually answered *for `portalId`*, as opposed to
+ * having said nothing about it yet.
+ *
+ * A delivered list is the server's own answer and the freshest base there is.
+ * An empty one is only an answer while the stream is up: the store empties its
+ * snapshot when the stream is torn down, so the same frame arrives on every
+ * disconnect saying nothing at all. `connected` separates them — the store
+ * clears `devices` and `connected` in one snapshot object with one
+ * notification (`store.ts`), so a teardown is never seen as a live empty list.
+ *
+ * Both answers are load-bearing and they fail in opposite directions. Reading
+ * a torn-down stream as "no devices" PUTs `[]` and erases the allowlist;
+ * refusing a live empty one leaves an allowlist another session emptied
+ * un-lowerable, and puts every deleted device back. Every site that decides
+ * what `base` should be asks this one function, because three inline copies of
+ * the question is how the two directions kept getting different answers.
+ *
+ * `streamPortalId` is the third input rather than a separate guard because it
+ * is the same question: rows belonging to another portal have told this portal
+ * nothing. Which makes it right in both directions too — the effect declines
+ * them, and `load()` treats the GET as the only thing that has spoken. A
+ * portal switch leaves the store still naming the portal that was left until
+ * its teardown effect runs, and a frame landing in that batch is precisely the
+ * case this catches. Null means no stream at all, which claims nothing either
+ * way and is left to `rows`/`connected` to decide.
+ *
+ * Where that third input is actually load-bearing, as of this writing: the
+ * stream effect only. At the other two call sites — the initial `base` and
+ * `load()` — both branches currently agree whatever it answers, because a
+ * portal switch nulls `base` first and `Portal.tsx` is the only caller of
+ * `connectDeviceStore`, so the store's refcount never exceeds 1 and two
+ * portals' streams are never open at once. They pass it because the question
+ * is the same one and asking it three different ways is what went wrong
+ * before, not because the guard is what protects them today. Anyone moving one
+ * of those call sites — or adding a second `connectDeviceStore` caller — is
+ * removing an unreachability argument, not leaning on a live check.
+ */
+function streamHasAnswered(
+  rows: AllowlistRow[],
+  connected: boolean,
+  streamPortalId: string | null,
+  portalId: string,
+): boolean {
+  if (streamPortalId !== null && streamPortalId !== portalId) return false
+  return rows.length > 0 || connected
+}
+
+/**
  * Instant-save editing of the allowlist.
  *
  * There is no dirty state by design. This page also holds a live SSE stream, so
@@ -84,7 +133,7 @@ function allowlistKey(rows: AllowlistRow[]): string {
  * That distinction is the point of it: an empty stream on its own is
  * indistinguishable from a portal with no devices, and a whole-list PUT
  * computed from the wrong one erases the allowlist. `connected` is what tells
- * the two apart — see the stream effect. `editing` gates the fetch that fills
+ * the two apart — see `streamHasAnswered`. `editing` gates the fetch that fills
  * `base` — the endpoint is admin-only, and a guest reaching it takes a 401,
  * which the api client turns into a logout.
  */
@@ -102,11 +151,44 @@ export function useAllowlistEditor(
   const streamKey = useMemo(() => allowlistKey(streamRows), [streamRows])
   const lastStreamKey = useRef(streamKey)
   const [editingPortalId, setEditingPortalId] = useState(portalId)
+  // `devices` reaches this hook as a prop but carries no portal identity, and
+  // the caller has none to add — the store is the only thing that knows whose
+  // stream produced them, so it is read here directly rather than inferred
+  // from the order renders arrive in.
+  const streamPortalId = useDeviceStore().streamPortalId ?? null
+  // The stream effect below only fires when the key CHANGES, and `lastStreamKey`
+  // starts out holding the mount frame's key — so nothing re-decides the mount
+  // frame. This initial value is the only thing that reads it.
   const [base, setBase] = useState<AllowlistRow[] | null>(
-    streamRows.length > 0 ? streamRows : null,
+    streamHasAnswered(streamRows, connected, streamPortalId, portalId) ? streamRows : null,
   )
   const [orphaned, setOrphaned] = useState<string[]>([])
   const [loadFailed, setLoadFailed] = useState(false)
+
+  // One token per portal this hook has been pointed at, abandoned when it moves
+  // on or unmounts — the same guard PortalSettingsAccordion uses, and needed
+  // here for the same reason: a response for the portal that was left must not
+  // become the base the next save is computed from. Declared above the reset
+  // block below because that block abandons it; see the note there.
+  //
+  // `abandoned` is the only field anything may read. `forPortalId` is a label,
+  // and `load()` used to compare it against its own `portalId` as though it
+  // were a second, independent guard: the token is built from the same
+  // `portalId` the callback closes over, so that comparison was always false
+  // and the cleanup was carrying the guard alone. Do not reinstate it. It is
+  // kept as a label because the token is per-portal and the dependency below
+  // is the whole mechanism — dropping the field makes `[portalId]` look
+  // unused, and the lint fix for that (remove the dependency) would pin this
+  // token at the mount portal's forever, so the reset block's abandon would
+  // never be undone and no load would ever land again.
+  const loadTarget = useRef({ forPortalId: portalId, abandoned: false })
+  useEffect(() => {
+    const target = { forPortalId: portalId, abandoned: false }
+    loadTarget.current = target
+    return () => {
+      target.abandoned = true
+    }
+  }, [portalId])
 
   // Same render-phase reset as PortalSettingsAccordion, for the same reason:
   // callers render this page without a key, so a portal switch keeps the hook
@@ -123,47 +205,54 @@ export function useAllowlistEditor(
     setBase(null)
     setOrphaned([])
     setLoadFailed(false)
+    // Abandon the in-flight GET here, not only in the effect cleanup below.
+    // This line is the whole guard for the window between them, and removing
+    // it puts one portal's allowlist back in reach of another's save button.
+    //
+    // React flushes passive effects on a macrotask; a resolved `fetch`
+    // continuation resumes on a microtask. So a GET issued for the portal
+    // being left can resolve AFTER this render commits and BEFORE the cleanup
+    // that would have marked it abandoned. `base` is null at that instant —
+    // just set, above — and `load()` adopts the old portal's list as this
+    // portal's base. The next click is a whole-list PUT of the wrong portal's
+    // devices.
+    //
+    // This is the earliest moment the hook learns the portal changed, and the
+    // token still in the ref is the one the outstanding GET holds: the effect
+    // installs a fresh one only after commit, and its cleanup then covers
+    // unmount. Mutating a ref in render is impure, but this
+    // block already sets state during render for the same reason, and the
+    // write only fires when `portalId` genuinely changed — which changes
+    // `load`'s identity and re-runs the fetching effect, so the load being
+    // abandoned is never one anybody still wants.
+    loadTarget.current.abandoned = true
   }
 
   useEffect(() => {
     if (streamKey === lastStreamKey.current) return
     lastStreamKey.current = streamKey
     setOptimistic(null)
-    // A delivered list is the server's own answer and the freshest base there
-    // is. An empty one is only an answer while the stream is up: the store
-    // empties its snapshot when the stream is torn down, so the same frame
-    // arrives on every disconnect saying nothing at all. `connected` separates
-    // them — the store clears `devices` and `connected` in one snapshot
-    // (`store.ts`), so a teardown is never seen as a live empty list. Refusing
-    // a live one instead would leave an allowlist another session emptied
-    // un-lowerable until the next fetch, and put every deleted device back.
-    if (streamRows.length > 0 || connected) setBase(streamRows)
-  }, [streamKey, streamRows, connected])
+    if (streamHasAnswered(streamRows, connected, streamPortalId, portalId)) setBase(streamRows)
+  }, [streamKey, streamRows, connected, streamPortalId, portalId])
 
-  // One token per portal this hook has been pointed at, abandoned when it moves
-  // on or unmounts — the same guard PortalSettingsAccordion uses, and needed
-  // here for the same reason: a response for the portal that was left must not
-  // become the base the next save is computed from.
-  const loadTarget = useRef({ portalId, abandoned: false })
-  useEffect(() => {
-    const target = { portalId, abandoned: false }
-    loadTarget.current = target
-    return () => {
-      target.abandoned = true
-    }
-  }, [portalId])
-
-  // Read after the response, so a ref rather than a dependency of `load`: that
+  // Read after the response, so refs rather than dependencies of `load`: that
   // callback is keyed to the portal, and rebuilding it per stream frame would
-  // refetch the allowlist on every frame.
+  // refetch the allowlist on every frame — or, for `connected`, on every
+  // connection blip.
   const latestStreamRows = useRef(streamRows)
+  const latestConnected = useRef(connected)
+  const latestStreamPortalId = useRef(streamPortalId)
   useEffect(() => {
     latestStreamRows.current = streamRows
-  }, [streamRows])
+    latestConnected.current = connected
+    latestStreamPortalId.current = streamPortalId
+  }, [streamRows, connected, streamPortalId])
 
   const load = useCallback(async (): Promise<void> => {
     const target = loadTarget.current
-    const abandoned = (): boolean => target.abandoned || target.portalId !== portalId
+    // Read through the token, never captured as a boolean: it is false when
+    // the GET is issued and the whole point is what it says once it resolves.
+    const abandoned = (): boolean => target.abandoned
     try {
       const result = await getPortalAllowlist(portalId)
       if (abandoned()) return
@@ -173,13 +262,24 @@ export function useAllowlistEditor(
       }
       setLoadFailed(false)
       setOrphaned(result.data.orphaned)
-      // Behind the stream while it is delivering, since it can be ahead of this
-      // response — but authoritative when it is not. Left as a pure fallback,
-      // nothing could ever lower the base: an allowlist emptied in another
-      // session arrives as the empty snapshot this hook refuses to adopt, and
-      // the next save would put every deleted device back.
+      // Behind the stream whenever the stream has answered, since it can be
+      // ahead of this response — authoritative only when it has not. An empty
+      // stream is NOT on its own a silent one: a live empty frame is an answer,
+      // and a newer one than a GET issued before the deletion that emptied it,
+      // so adopting here would resurrect every device that frame removed.
+      // Left as a pure fallback nothing could lower the base either, so this
+      // still has to fire when the stream is down — that is the other
+      // direction, and the same question decides both.
       setBase((current) =>
-        current === null || latestStreamRows.current.length === 0 ? result.data.devices : current,
+        current === null ||
+        !streamHasAnswered(
+          latestStreamRows.current,
+          latestConnected.current,
+          latestStreamPortalId.current,
+          portalId,
+        )
+          ? result.data.devices
+          : current,
       )
     } catch {
       if (!abandoned()) setLoadFailed(true)

@@ -3,6 +3,7 @@ import { act, cleanup, renderHook, waitFor } from '@testing-library/react'
 import type { AllowlistRow, CatalogEntry, Device } from '@shared/api.js'
 import { useAllowlistEditor, type AllowlistEditor } from '../../src/web/hooks/useAllowlistEditor.ts'
 import * as api from '../../src/web/api.ts'
+import * as store from '../../src/web/store.ts'
 
 vi.mock('../../src/web/api.ts')
 
@@ -103,12 +104,18 @@ const fan = {
 describe('useAllowlistEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // The hook reads the streaming portal's identity from the device store, a
+    // module-level singleton. Nothing here connects one unless it says so, and
+    // with no stream open the store names no portal — which is how these tests
+    // get to hand `devices` in directly.
+    store.resetStore()
     vi.mocked(api.putPortalAllowlist).mockResolvedValue({ ok: true, data: undefined })
     vi.mocked(api.getPortalAllowlist).mockResolvedValue(loaded([]))
   })
 
   afterEach(() => {
     cleanup()
+    store.resetStore()
     vi.restoreAllMocks()
   })
 
@@ -564,6 +571,57 @@ describe('useAllowlistEditor', () => {
       expect(putBody(1).map((r) => r.entityId)).toEqual(['switch.fan'])
     })
 
+    it('is empty from the first render when a live stream shows nothing', async () => {
+      // The stream effect only runs when the key CHANGES, and it starts out
+      // holding the mount frame's key — so for a portal that is genuinely
+      // empty, nothing after mount ever re-decides this. The initial value is
+      // the only thing that can read the live empty stream as an answer, and
+      // if it does not, the owner is told to wait for a fetch that may be the
+      // slower of the two.
+      const never = defer<Allowlist>()
+      vi.mocked(api.getPortalAllowlist).mockReturnValue(never.promise)
+      const { result } = renderHook(() => useAllowlistEditor([], 'portal-1', true, true))
+
+      expect(result.current.ready).toBe(true)
+      act(() => {
+        result.current.add(fan)
+      })
+      await settled(result, 1)
+
+      expect(putBody(1).map((r) => r.entityId)).toEqual(['switch.fan'])
+    })
+
+    it('does not let a fetch older than the deletion resurrect what a live frame removed', async () => {
+      // The owner is in edit mode, so the GET is already in flight when
+      // another session empties the allowlist. The live empty frame lands
+      // first and correctly lowers the base; the response that follows
+      // describes the list as it was BEFORE the deletion. Taking it would put
+      // every deleted device back on the next save — an empty base is only
+      // stale-looking here, the stream has answered and it is the newer of the
+      // two.
+      const gate = defer<Allowlist>()
+      vi.mocked(api.getPortalAllowlist).mockReturnValue(gate.promise)
+      const { result, rerender } = renderHook(
+        ({ devices }: { devices: Device[] }) => useAllowlistEditor(devices, 'portal-1', true, true),
+        { initialProps: { devices: two } },
+      )
+
+      rerender({ devices: [] })
+      await waitFor(() => expect(result.current.rows).toHaveLength(0))
+
+      await act(async () => {
+        gate.resolve(loaded(two))
+        await gate.promise
+      })
+
+      act(() => {
+        result.current.add(fan)
+      })
+      await settled(result, 1)
+
+      expect(putBody(1).map((r) => r.entityId)).toEqual(['switch.fan'])
+    })
+
     it('does not undo a stream frame that lands while the fetch is in flight', async () => {
       // The other half of the rule above: while the stream is delivering it is
       // ahead of any response, so a device another session has just added must
@@ -659,6 +717,56 @@ describe('useAllowlistEditor', () => {
 
     expect(vi.mocked(api.putPortalAllowlist).mock.calls[1]?.[0]).toBe('mary')
     expect(putBody(2).map((r) => r.label)).toEqual(['Mary fan'])
+  })
+
+  it('refuses stream rows that still describe the portal the owner just left', async () => {
+    // The store empties its devices when a stream is torn down, but that runs
+    // in an effect cleanup: a frame for the portal being left can land in the
+    // very batch that switches to the next one. The render-phase reset nulls
+    // `base`, and an effect that adopts whatever the stream is holding puts
+    // the old portal's rows straight back — now under the new portal's id,
+    // where the next whole-list PUT writes them over the new portal's own
+    // allowlist. Only the store can settle whose rows these are; inferring it
+    // from which render they arrived in is what produced this bug.
+    const OriginalEventSource = globalThis.EventSource
+    globalThis.EventSource = class FakeEventSource {
+      addEventListener(): void {}
+      close(): void {}
+    } as unknown as typeof EventSource
+    const teardownStream = store.connectDeviceStore('timothy')
+
+    try {
+      const maryAllowlist = defer<Allowlist>()
+      vi.mocked(api.getPortalAllowlist).mockImplementation((portalId) =>
+        portalId === 'mary' ? maryAllowlist.promise : Promise.resolve(loaded([device()])),
+      )
+
+      const { result, rerender } = renderHook(
+        ({ portalId, devices }: { portalId: string; devices: Device[] }) =>
+          useAllowlistEditor(devices, portalId, true, true),
+        { initialProps: { portalId: 'timothy', devices: [device()] } },
+      )
+
+      // Timothy's stream delivers a second device in the same batch as the
+      // switch to Mary. The stream is still Timothy's — nothing has torn it
+      // down yet, and the store says so.
+      rerender({ portalId: 'mary', devices: two })
+      await act(async () => {
+        maryAllowlist.resolve(loaded([]))
+        await maryAllowlist.promise
+      })
+
+      act(() => {
+        result.current.add(fan)
+      })
+      await settled(result, 1)
+
+      expect(vi.mocked(api.putPortalAllowlist).mock.calls[0]?.[0]).toBe('mary')
+      expect(putBody(1).map((r) => r.entityId)).toEqual(['switch.fan'])
+    } finally {
+      teardownStream()
+      globalThis.EventSource = OriginalEventSource
+    }
   })
 
   it('saves against the given portal id', async () => {

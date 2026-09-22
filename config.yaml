@@ -2,8 +2,8 @@ name: Guest Portal
 version: 0.0.1
 slug: ha_guest_portal
 description: >-
-  Expose a curated subset of Home Assistant devices to guests via a shared password.
-  Designed for short-term rentals and vacation homes.
+  Expose a curated subset of Home Assistant devices to guests. Each guest portal
+  has its own password. Designed for short-term rentals and vacation homes.
 arch:
   - amd64
   - aarch64
@@ -25,4 +25,4 @@ ports:
 options:
   admin_password: ""
 schema:
-  admin_password: "password?"
+  admin_password: "password(8,)?"

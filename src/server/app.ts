@@ -13,7 +13,12 @@ import type { SessionData } from './http/auth.js'
 export type Env = {
   Bindings: HttpBindings
   Variables: {
-    session: SessionData
+    // Optional because it genuinely is: `ingressMiddleware` runs on every
+    // request and only sets a session for Supervisor traffic, so any handler
+    // reachable without `requireSession` sees it unset. Typing it as always
+    // present made the `if (!session)` guards in the handlers look redundant
+    // to the compiler when they are the only thing standing there.
+    session?: SessionData
   }
 }
 

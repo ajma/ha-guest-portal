@@ -10,7 +10,7 @@ import type { AuditLog } from './store/auditlog.js'
 import type { SettingsStore } from './store/settings.js'
 import type { InteractionStore } from './store/interactions.js'
 import type { PortalStore } from './store/portals.js'
-import { SESSION_COOKIE, type SessionStore, type SessionData, type LoginRateLimiter } from './http/auth.js'
+import { sessionIdFromCookie, type SessionStore, type SessionData, type LoginRateLimiter } from './http/auth.js'
 import type { SseHub } from './http/sse.js'
 import { createApp } from './app.js'
 import { assembleDevices } from './device-assembly.js'
@@ -84,32 +84,31 @@ export function checkSession(
   cookie: string | undefined,
   sessions: SessionStore,
 ): SessionData | null {
-  if (!cookie) return null
-
-  const match = new RegExp(`${SESSION_COOKIE}=([^;]+)`).exec(cookie)
-  if (!match) return null
-
-  const sessionId = match[1]
-  if (!sessionId) return null
+  const sessionId = sessionIdFromCookie(cookie)
+  if (sessionId === null) return null
 
   return sessions.get(sessionId) ?? null
 }
 
 export function createRuntime(deps: Deps): Runtime {
-  const { ha, allowlist, hub, sessions, portals } = deps
+  const { ha, allowlist, hub, sessions, portals, settings } = deps
+
+  // Every entity any portal still wants. HA is subscribed to exactly this set,
+  // so anything that changes which portals or rows exist has to recompute it.
+  function watchedUnion(): string[] {
+    const union = new Set<string>()
+    for (const portal of portals.list()) {
+      for (const entityId of allowlist.entityIds(portal.id)) {
+        union.add(entityId)
+      }
+    }
+    return [...union]
+  }
 
   // Wire allowlist.onChange → ha.setWatchedEntities (union across ALL portals)
   // → broadcast a fresh snapshot to just the portal that changed.
   allowlist.onChange((portalId, _entityIds) => {
-    const allPortalIds = portals.list().map((p) => p.id)
-    const watchedAcrossAllPortals = new Set<string>()
-    for (const id of allPortalIds) {
-      for (const entityId of allowlist.entityIds(id)) {
-        watchedAcrossAllPortals.add(entityId)
-      }
-    }
-
-    ha.setWatchedEntities([...watchedAcrossAllPortals])
+    ha.setWatchedEntities(watchedUnion())
       .then(() => {
         const allowlistRows = allowlist.list(portalId)
         const states = ha.getStates()
@@ -170,7 +169,26 @@ export function createRuntime(deps: Deps): Runtime {
     hub.broadcastToPortal(portalId, frame)
 
     sessions.destroyPortalSessions(portalId)
-    hub.closePortalGuests(portalId)
+
+    // Admins too, unlike the disable path: the portal is gone, so an admin
+    // stream still bound to it would receive nothing for the rest of its life,
+    // and an ingress admin stream has no session for `destroyPortalSessions`
+    // to evict. The frame above goes out first, so a client that is still
+    // listening learns why before the connection drops.
+    hub.closePortalStreams(portalId)
+
+    // The portal's allowlist rows went with it by FK cascade, which fires no
+    // store listener — so recompute here or HA keeps streaming entities that
+    // no portal can show any more.
+    ha.setWatchedEntities(watchedUnion()).catch((error) => {
+      console.error('Failed to update watched entities after portal delete:', error)
+    })
+
+    // An admin's last-selected pointer outlives the portal it names, and the
+    // UI would open on a portal that no longer exists.
+    if (settings.getLastSelectedPortalId() === portalId) {
+      settings.clearLastSelectedPortalId()
+    }
   })
 
   // Create Hono app
@@ -210,16 +228,24 @@ export function createRuntime(deps: Deps): Runtime {
           return
         }
 
+        // Same contract as the Hono routes, which this intercept bypasses: a
+        // guest hears only `portal_disabled`, an admin hears that the portal
+        // they named is not there rather than getting an open stream and an
+        // empty snapshot they cannot tell from a real, empty portal.
+        const portal = portals.get(portalId)
         if (session.role === 'guest') {
-          const portal = portals.get(portalId)
           if (portal === null || !portal.enabled) {
             res.writeHead(403, { 'Content-Type': 'application/json' })
             res.end(JSON.stringify({ error: 'portal_disabled' }))
             return
           }
+        } else if (portal === null) {
+          res.writeHead(404, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Not found' }))
+          return
         }
 
-        hub.add(res, session.role, portalId)
+        hub.add(res, session.role, portalId, sessionIdFromCookie(req.headers.cookie))
 
         // Send initial snapshot immediately
         const allowlistRows = allowlist.list(portalId)
@@ -286,6 +312,12 @@ export function createRuntime(deps: Deps): Runtime {
         if (portalId === null) {
           res.writeHead(400, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify({ error: 'Missing portalId' }))
+          return
+        }
+
+        if (portals.get(portalId) === null) {
+          res.writeHead(404, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ error: 'Not found' }))
           return
         }
 

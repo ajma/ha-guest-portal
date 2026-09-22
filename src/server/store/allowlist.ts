@@ -94,9 +94,12 @@ export class AllowlistStore {
   }
 
   replace(portalId: string, rows: AllowlistRow[]): void {
-    try {
-      this.db.exec('BEGIN')
+    // BEGIN is deliberately outside the try. If it fails there is no
+    // transaction of ours to undo, and the ROLLBACK below would discard
+    // whatever the caller had in flight in a transaction of their own.
+    this.db.exec('BEGIN')
 
+    try {
       this.db.prepare('DELETE FROM exposed_device WHERE portal_id = ?').run(portalId)
 
       const insert = this.db.prepare(
@@ -108,14 +111,18 @@ export class AllowlistStore {
       }
 
       this.db.exec('COMMIT')
-
-      // Fire listeners only after successful commit
-      const entityIds = rows.map((r) => r.entityId)
-      this.notifyListeners(portalId, entityIds)
     } catch (error) {
       this.db.exec('ROLLBACK')
       throw error
     }
+
+    // Outside the try, and only after the commit: a listener that throws must
+    // not land in a catch whose first act is to roll back a transaction that
+    // no longer exists.
+    this.notifyListeners(
+      portalId,
+      rows.map((r) => r.entityId),
+    )
   }
 
   onChange(fn: AllowlistChangeListener): () => void {

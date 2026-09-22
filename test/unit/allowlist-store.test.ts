@@ -59,4 +59,28 @@ describe('AllowlistStore (portal-scoped)', () => {
 
     expect(seen).toEqual([{ portalId: timothy, entityIds: ['light.a'] }])
   })
+
+  it('does not roll back a transaction it did not start', () => {
+    store.replace(timothy, [
+      { entityId: 'light.keep', label: 'Keep', allowedActions: [], sortOrder: 0 },
+    ])
+
+    // A caller with its own transaction open. `replace`'s BEGIN cannot succeed
+    // inside it, and the failure must be reported as-is — not turned into a
+    // ROLLBACK that discards work belonging to whoever opened the outer one.
+    db.exec('BEGIN')
+    db.prepare('UPDATE portal SET title = ? WHERE id = ?').run('Renamed', timothy)
+
+    expect(() =>
+      store.replace(timothy, [
+        { entityId: 'light.other', label: 'Other', allowedActions: [], sortOrder: 0 },
+      ]),
+    ).toThrow()
+
+    expect(portals.get(timothy)?.title).toBe('Renamed')
+    expect(store.list(timothy).map((r) => r.entityId)).toEqual(['light.keep'])
+
+    db.exec('COMMIT')
+    expect(portals.get(timothy)?.title).toBe('Renamed')
+  })
 })

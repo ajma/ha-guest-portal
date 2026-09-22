@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { verifyPassword } from './http/auth.js'
 
 const schema = z
   .object({
@@ -56,6 +57,37 @@ export function assertAdminAccessPossible(cfg: Config): void {
       'No admin access is possible: set ADMIN_PASSWORD (at least 8 characters), or run as a Home Assistant add-on so admin is reachable via ingress. Without one of these, no portal can ever be created.',
     )
   }
+}
+
+/**
+ * Fail fast when the admin password is also some portal's password.
+ *
+ * `classify` tries the admin password before any portal's and returns on the
+ * first match, so a collision does not merely make that portal unreachable —
+ * it hands that portal's guests an admin session over every portal in the
+ * deployment. The create and update routes already answer 409 for the same
+ * collision, so the only way to reach this state is to point ADMIN_PASSWORD
+ * at a password a portal already had.
+ *
+ * Refusing to start is the fail-closed choice, and a recoverable one: the
+ * owner changes ADMIN_PASSWORD in the add-on options, which is Home
+ * Assistant's own UI rather than anything this add-on has to be running to
+ * serve. Starting anyway would mean knowingly serving the escalation.
+ */
+export function assertNoAdminPasswordCollision(
+  cfg: Config,
+  portals: ReadonlyArray<{ id: string; title: string; password: string }>,
+): void {
+  const adminPassword = cfg.adminPassword
+  if (adminPassword === undefined) return
+
+  const colliding = portals.filter((p) => verifyPassword(p.password, adminPassword))
+  if (colliding.length === 0) return
+
+  const names = colliding.map((p) => `"${p.title}" (${p.id})`).join(', ')
+  throw new Error(
+    `ADMIN_PASSWORD is also the guest password for ${names}. A guest of that portal would be logged in as admin over every portal. Change ADMIN_PASSWORD, or change that portal's password.`,
+  )
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv): Config {

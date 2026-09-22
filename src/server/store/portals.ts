@@ -87,13 +87,6 @@ export class PortalStore {
     return row === undefined ? null : rowToPortal(row)
   }
 
-  findByPassword(password: string): Portal | null {
-    const row = this.db
-      .prepare('SELECT id, title, theme, password, enabled, created_at FROM portal WHERE password = ?')
-      .get(password)
-    return row === undefined ? null : rowToPortal(row)
-  }
-
   create(input: { title: string; password: string }): Portal {
     const id = randomUUID()
     const createdAt = Date.now()
@@ -150,12 +143,14 @@ export class PortalStore {
     return updated
   }
 
-  delete(id: string): void {
+  /** True when a portal was removed, false when no portal had that id. */
+  delete(id: string): boolean {
     const result = this.db.prepare('DELETE FROM portal WHERE id = ?').run(id)
-    if (result.changes === 0) return
+    if (result.changes === 0) return false
 
     for (const listener of this.deleteListeners) {
       listener(id)
     }
+    return true
   }
 }

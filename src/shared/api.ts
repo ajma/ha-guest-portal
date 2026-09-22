@@ -184,6 +184,27 @@ export const PortalDetailResponse = PortalFieldsSchema.extend({
   password: z.string(),
 })
 
+/**
+ * The shortest password the server will store for a portal. It lives beside
+ * the schemas that enforce it so both halves of the app name one number, and
+ * so a client can tell an owner the rule instead of relaying a bare 400.
+ */
+export const MIN_PORTAL_PASSWORD_LENGTH = 8
+
+// The trimmed-length rule is what refuses an effectively blank secret: eight
+// spaces satisfies `min(8)` on its own. It deliberately does not trim the value
+// that gets stored — those characters belong to the owner, and the rule only
+// exists to reject a password that is empty in everything but length.
+const PortalPasswordSchema = z
+  .string()
+  .min(
+    MIN_PORTAL_PASSWORD_LENGTH,
+    `Password must be at least ${MIN_PORTAL_PASSWORD_LENGTH} characters`,
+  )
+  .refine((value) => value.trim().length >= MIN_PORTAL_PASSWORD_LENGTH, {
+    message: `Password must be at least ${MIN_PORTAL_PASSWORD_LENGTH} characters, not counting leading or trailing spaces`,
+  })
+
 // The length cap is enforced here rather than left to `normalizePortalTitle`'s
 // silent truncation: an owner who pastes something too long should be told, not
 // have the tail quietly removed behind their back.
@@ -191,7 +212,7 @@ export const PortalCreateRequest = z.object({
   title: z
     .string()
     .max(MAX_PORTAL_TITLE_LENGTH, `Title must be ${MAX_PORTAL_TITLE_LENGTH} characters or fewer`),
-  password: z.string().min(8),
+  password: PortalPasswordSchema,
 })
 
 export const PortalPutRequest = z.object({
@@ -201,7 +222,7 @@ export const PortalPutRequest = z.object({
     .optional(),
   theme: z.enum(THEME_IDS).optional(),
   enabled: z.boolean().optional(),
-  password: z.string().min(8).optional(),
+  password: PortalPasswordSchema.optional(),
 })
 
 export const DeploymentSettingsResponse = z.object({

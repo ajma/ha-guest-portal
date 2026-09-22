@@ -4,6 +4,13 @@ import type { PortalStore } from '../store/portals.js'
 
 export const SESSION_COOKIE = 'hagp_session'
 
+/** The session id carried by a raw Cookie header, or null if there is none. */
+export function sessionIdFromCookie(cookie: string | undefined): string | null {
+  if (!cookie) return null
+  const match = new RegExp(`${SESSION_COOKIE}=([^;]+)`).exec(cookie)
+  return match?.[1] ?? null
+}
+
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
 const FIFTEEN_MINUTES_MS = 15 * 60 * 1000
 
@@ -112,9 +119,13 @@ export function classify(
   cfg: Config,
   portals: PortalStore,
 ): NewSession | null {
-  // Every portal password is checked unconditionally, and the admin password
-  // (if set) too, so a login attempt's timing does not reveal how many
-  // portals exist or which one almost matched.
+  // The loop deliberately does not break on a match, so the work done is the
+  // same whether the password matches the first portal, the last, or none.
+  // That hides *which* portal matched. It does not hide how many portals
+  // exist — the loop is longer when there are more of them — and this is not
+  // constant-time in any rigorous sense; `verifyPassword` is, but the rest is
+  // ordinary SQLite and allocation. Treat it as removing the obvious oracle,
+  // not as a defence against careful measurement.
   const isAdmin = cfg.adminPassword !== undefined && verifyPassword(supplied, cfg.adminPassword)
 
   let matchedPortalId: string | null = null
@@ -216,9 +227,10 @@ export class LoginRateLimiter {
     }
   }
 
-  recordSuccess(ip: string): void {
-    this.perIpFailures.delete(ip)
-  }
+  // There is deliberately no `recordSuccess`. A per-IP budget that a success
+  // refunds is no budget at all once more than one password opens the door:
+  // whoever holds any portal's password could grind at every other portal's
+  // forever, nine guesses at a time. Only the window expiring clears a count.
 
   private sweepIfNeeded(): void {
     const now = this.now()

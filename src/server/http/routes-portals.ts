@@ -1,4 +1,4 @@
-import type { Hono } from 'hono'
+import type { Context, Hono } from 'hono'
 import type { Env } from '../app.js'
 import type { Deps } from './routes-guest.js'
 import { verifyPassword } from './auth.js'
@@ -16,6 +16,13 @@ import {
 
 export function mountPortalRoutes(app: Hono<Env>, deps: Deps): void {
   const { portals, cfg, allowlist, ha, settings, sessions, hub } = deps
+
+  // Every admin route below names a portal in its path or its body. They all
+  // answer the same way when it does not exist, so that a typo reads as a typo
+  // rather than as a broken server or a portal with nothing in it.
+  function notFound(c: Context<Env>) {
+    return c.json({ error: 'Not found' }, 404)
+  }
 
   function collidesWithAdminPassword(password: string): boolean {
     return cfg.adminPassword !== undefined && verifyPassword(password, cfg.adminPassword)
@@ -119,7 +126,8 @@ export function mountPortalRoutes(app: Hono<Env>, deps: Deps): void {
   })
 
   app.delete('/api/admin/portals/:portalId', (c) => {
-    portals.delete(c.req.param('portalId'))
+    const deleted = portals.delete(c.req.param('portalId'))
+    if (!deleted) return notFound(c)
     return c.json({ ok: true })
   })
 
@@ -127,6 +135,8 @@ export function mountPortalRoutes(app: Hono<Env>, deps: Deps): void {
   // /api/admin/allowlist, now scoped by path param.
   app.get('/api/admin/portals/:portalId/allowlist', async (c) => {
     const portalId = c.req.param('portalId')
+    if (portals.get(portalId) === null) return notFound(c)
+
     const devices = allowlist.list(portalId)
     const catalog = await ha.getCatalog()
 
@@ -140,6 +150,7 @@ export function mountPortalRoutes(app: Hono<Env>, deps: Deps): void {
 
   app.put('/api/admin/portals/:portalId/allowlist', async (c) => {
     const portalId = c.req.param('portalId')
+    if (portals.get(portalId) === null) return notFound(c)
 
     let body: unknown
     try {
@@ -179,6 +190,8 @@ export function mountPortalRoutes(app: Hono<Env>, deps: Deps): void {
     if (!parseResult.success) {
       return c.json({ error: 'Invalid request' }, 400)
     }
+
+    if (portals.get(parseResult.data.portalId) === null) return notFound(c)
 
     settings.setLastSelectedPortalId(parseResult.data.portalId)
     return c.json({ ok: true })

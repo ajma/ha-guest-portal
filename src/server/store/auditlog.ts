@@ -35,6 +35,17 @@ export class AuditLog {
       .run(e.portalId, e.ts, e.entityId, e.action, e.role, e.ok ? 1 : 0)
   }
 
+  /**
+   * Read side of the audit log. No production code calls this, and that is by
+   * design rather than an oversight: the design doc makes the log "a test
+   * oracle: integration tests assert on `action_log` rows, verifying the
+   * decision the server made rather than the call it happened to emit"
+   * (docs/superpowers/specs/2026-09-18-ha-guest-portal-design.md).
+   *
+   * That is what most of its callers do — routes-guest.test.ts checks what a
+   * guest action wrote here, which is a real assertion about production code.
+   * Deleting this would take the oracle with it.
+   */
   recent(portalId: string, limit: number): Array<Omit<AuditEntry, 'portalId'>> {
     const rows = this.db
       .prepare(

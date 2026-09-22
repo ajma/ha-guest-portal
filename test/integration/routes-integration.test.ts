@@ -241,7 +241,11 @@ describe('Integration routes', () => {
   })
 
   it('reports the latest interaction for the right portal', async () => {
+    // Two portals with interactions of their own: with only one, a handler
+    // that reported *any* interaction regardless of portal would pass.
     const timothy = portals.create({ title: 'Timothy', password: 'timothy-pass-6' })
+    const mary = portals.create({ title: 'Mary', password: 'mary-pass-6' })
+
     interactions.record({
       portalId: timothy.id,
       ts: 1_700_000_000_000,
@@ -251,20 +255,39 @@ describe('Integration routes', () => {
       action: 'unlock',
       ok: true,
     })
+    // Later than Timothy's, so a handler ignoring portalId would pick this one.
+    interactions.record({
+      portalId: mary.id,
+      ts: 1_700_000_999_000,
+      kind: 'action',
+      entityId: 'light.porch',
+      label: 'Porch',
+      action: 'turn_on',
+      ok: false,
+    })
 
     const res = await fetch(`${baseUrl}/api/integration/state`, {
       headers: auth(token),
     })
     const body = await res.json()
-    const reported = body.portals.find((p: { portalId: string }) => p.portalId === timothy.id)
+    const findPortal = (id: string) =>
+      body.portals.find((p: { portalId: string }) => p.portalId === id)
 
-    expect(reported.lastInteraction).toEqual({
+    expect(findPortal(timothy.id).lastInteraction).toEqual({
       ts: 1_700_000_000_000,
       kind: 'action',
       entityId: 'lock.front',
       label: 'Front Door',
       action: 'unlock',
       ok: true,
+    })
+    expect(findPortal(mary.id).lastInteraction).toEqual({
+      ts: 1_700_000_999_000,
+      kind: 'action',
+      entityId: 'light.porch',
+      label: 'Porch',
+      action: 'turn_on',
+      ok: false,
     })
   })
 

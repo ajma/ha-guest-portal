@@ -39,12 +39,6 @@ describe('PortalStore', () => {
     expect(() => store.update(a.id, { password: 'pass-a' })).not.toThrow()
   })
 
-  it('finds a portal by its password', () => {
-    const created = store.create({ title: 'Timothy', password: 'find-me' })
-    expect(store.findByPassword('find-me')?.id).toBe(created.id)
-    expect(store.findByPassword('wrong')).toBeNull()
-  })
-
   it('updates title, theme, and enabled independently', () => {
     const created = store.create({ title: 'Timothy', password: 'a-secret-2' })
     const updated = store.update(created.id, { title: 'Tim', theme: 'tiles', enabled: false })

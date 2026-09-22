@@ -66,4 +66,8 @@ export class SettingsStore {
   setLastSelectedPortalId(id: string): void {
     this.write(KEY_LAST_SELECTED_PORTAL_ID, id)
   }
+
+  clearLastSelectedPortalId(): void {
+    this.db.prepare('DELETE FROM settings WHERE key = ?').run(KEY_LAST_SELECTED_PORTAL_ID)
+  }
 }

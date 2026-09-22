@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -30,18 +33,13 @@ describe('Server process smoke test', () => {
       buildProc.on('close', resolve)
     })
 
-    // routes-integration.ts deliberately stays on the pre-multi-portal API
-    // until a later task in this plan rewrites it, so `tsc` exits non-zero on
-    // its errors alone even on an otherwise-correct checkout. `noEmitOnError`
-    // is not set, so tsc still emits dist/server/index.js despite them — only
-    // an error outside that one file means the server itself failed to build.
+    // `noEmitOnError` is not set, so `tsc` still emits dist/server/index.js
+    // even when the build fails — which is exactly why a non-zero build must
+    // not be swallowed here. This test's whole job is "does the built server
+    // actually start"; letting it start from a build that failed to compile
+    // would report green for a server that doesn't type-check.
     if (buildCode !== 0) {
-      const unexpectedErrors = buildOutput
-        .split('\n')
-        .filter((line) => /error TS/.test(line) && !line.includes('routes-integration.ts'))
-      if (unexpectedErrors.length > 0) {
-        throw new Error(`Build failed with unexpected errors:\n${unexpectedErrors.join('\n')}`)
-      }
+      throw new Error(`Build failed:\n${buildOutput}`)
     }
 
     // Spawn the built server
@@ -52,7 +50,6 @@ describe('Server process smoke test', () => {
         ...process.env,
         HA_BASE_URL: 'http://127.0.0.1:1', // Unreachable - no HA needed
         HA_TOKEN: 'test-token',
-        GUEST_PASSWORD: 'guest-password-test',
         ADMIN_PASSWORD: 'admin-password-test',
         PORT: String(18000 + Math.floor(Math.random() * 1000)), // Random high port
         DB_PATH: ':memory:',
@@ -179,4 +176,61 @@ describe('Server process smoke test', () => {
 
     db.close()
   })
+
+  it('refuses to start when ADMIN_PASSWORD collides with a portal password', async () => {
+    // This is the only file that boots the real server process. The
+    // collision guard (config.ts's assertNoAdminPasswordCollision) is well
+    // unit-tested in isolation, but its call site in index.ts had no
+    // coverage at all: deleting that call left the whole suite green. Guard
+    // the call site itself by actually booting the server into the state it
+    // exists to refuse.
+    const { openDb } = await import('../../src/server/store/db.ts')
+    const { PortalStore } = await import('../../src/server/store/portals.ts')
+
+    const workDir = mkdtempSync(join(tmpdir(), 'server-process-collision-'))
+    const dbPath = join(workDir, 'portal.db')
+    const collidingPassword = `collide-${randomUUID()}`
+
+    const seedDb = openDb(dbPath)
+    const portal = new PortalStore(seedDb).create({ title: 'Barn', password: collidingPassword })
+    seedDb.close()
+
+    const proc = spawn('node', ['dist/server/index.js'], {
+      cwd: projectRoot,
+      stdio: 'pipe',
+      env: {
+        ...process.env,
+        HA_BASE_URL: 'http://127.0.0.1:1', // Unreachable - no HA needed
+        HA_TOKEN: 'test-token',
+        ADMIN_PASSWORD: collidingPassword,
+        PORT: String(18000 + Math.floor(Math.random() * 1000)),
+        DB_PATH: dbPath,
+      },
+    })
+
+    let output = ''
+    proc.stdout?.on('data', (data) => {
+      output += data.toString()
+    })
+    proc.stderr?.on('data', (data) => {
+      output += data.toString()
+    })
+
+    try {
+      const exitCode = await new Promise<number | null>((resolve) => {
+        proc.on('close', (code) => resolve(code))
+        setTimeout(() => resolve(null), 5000)
+      })
+
+      expect(exitCode).not.toBeNull()
+      expect(exitCode).not.toBe(0)
+      expect(output).toContain('ADMIN_PASSWORD is also the guest password for')
+      expect(output).toContain(`"${portal.title}" (${portal.id})`)
+      // The message names the colliding portal, never the password itself.
+      expect(output).not.toContain(collidingPassword)
+    } finally {
+      if (proc.exitCode === null) proc.kill('SIGKILL')
+      rmSync(workDir, { recursive: true, force: true })
+    }
+  }, 10000)
 })

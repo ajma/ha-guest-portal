@@ -12,70 +12,14 @@ import { openDb } from '../../src/server/store/db.ts'
 import type { Config } from '../../src/server/config.ts'
 import { createRuntime, type Runtime } from '../../src/server/runtime.ts'
 import { FakeHomeAssistant } from '../fake-ha.ts'
-import type { SseFrame } from '../../src/shared/api.ts'
-
-async function openStream(baseUrl: string, cookie: string) {
-  const ctrl = new AbortController()
-  const res = await fetch(`${baseUrl}/api/stream`, {
-    headers: { Cookie: cookie },
-    signal: ctrl.signal,
-  })
-  const reader = res.body?.getReader()
-  if (!reader) throw new Error('no body')
-  const dec = new TextDecoder()
-  const frames: SseFrame[] = []
-  const pump = (async () => {
-    let buf = ''
-    try {
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buf += dec.decode(value, { stream: true })
-        for (;;) {
-          const i = buf.indexOf('\n\n')
-          if (i === -1) break
-          const chunk = buf.slice(0, i)
-          buf = buf.slice(i + 2)
-          const line = chunk.split('\n').find((l) => l.startsWith('data: '))
-          if (line) frames.push(JSON.parse(line.slice(6)))
-        }
-      }
-    } catch {
-      // aborted
-    }
-  })()
-  return { res, frames, abort: () => ctrl.abort(), pump }
-}
-
-async function waitForFrame(frames: SseFrame[], type: string, ms = 5000): Promise<boolean> {
-  const t0 = Date.now()
-  while (Date.now() - t0 < ms) {
-    if (frames.some((f) => f.type === type)) return true
-    await new Promise((r) => setTimeout(r, 25))
-  }
-  return false
-}
-
-// A thin wrapper around openStream that answers "has this connection been
-// closed by the server?" both synchronously (isClosed) and awaitably
-// (closed), for tests whose whole point is a stream being dropped out from
-// under the client rather than any frame it carries.
-async function openSseConnection(baseUrl: string, cookie: string) {
-  const stream = await openStream(baseUrl, cookie)
-  let closed = false
-  void stream.pump.then(() => {
-    closed = true
-  })
-  return {
-    ...stream,
-    closed: (ms = 3000) =>
-      Promise.race([
-        stream.pump.then(() => true),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms)),
-      ]),
-    isClosed: () => closed,
-  }
-}
+import {
+  entityIdsSeen,
+  framesOfType,
+  openSseConnection,
+  openStream,
+  waitFor,
+  waitForFrame,
+} from './sse-client.ts'
 
 describe('Portal toggle', () => {
   let fake: FakeHomeAssistant
@@ -318,45 +262,24 @@ describe('Portal toggle', () => {
     const guest = await loginAs('guest-pass-12345678')
     const admin = await loginAs('admin-pass-87654321')
 
-    const guestStream = await fetch(`${baseUrl}/api/stream`, { headers: { cookie: guest.cookie } })
-    const adminStream = await fetch(`${baseUrl}/api/stream?portalId=${portal.id}`, {
-      headers: { cookie: admin.cookie },
-    })
-    expect(guestStream.status).toBe(200)
-    expect(adminStream.status).toBe(200)
+    const guestStream = await openSseConnection(baseUrl, guest.cookie)
+    const adminStream = await openSseConnection(baseUrl, admin.cookie, `?portalId=${portal.id}`)
+    expect(guestStream.res.status).toBe(200)
+    expect(adminStream.res.status).toBe(200)
 
     portals.update(portal.id, { enabled: false })
 
     // The guest stream must receive the portal frame, then close.
-    const guestReader = guestStream.body?.getReader()
-    if (!guestReader) throw new Error('no guest body')
-    const dec = new TextDecoder()
-    let guestBuf = ''
-    let guestClosed = false
-    let sawPortalFrame = false
-    for (let i = 0; i < 20; i++) {
-      const { done, value } = await guestReader.read()
-      if (done) {
-        guestClosed = true
-        break
-      }
-      if (value) {
-        guestBuf += dec.decode(value, { stream: true })
-        if (guestBuf.includes('"type":"portal"')) {
-          sawPortalFrame = true
-        }
-      }
-    }
-    expect(sawPortalFrame).toBe(true)
-    expect(guestClosed).toBe(true)
+    expect(await waitForFrame(guestStream.frames, 'portal')).toBe(true)
+    await expect(guestStream.closed()).resolves.toBe(true)
 
-    // The admin stream must remain open: reading one chunk must NOT return done.
-    const adminReader = adminStream.body?.getReader()
-    if (!adminReader) throw new Error('no admin body')
-    const { done: adminDone } = await adminReader.read()
-    expect(adminDone).toBe(false)
+    // The admin stream must still be open. Asked of the connection itself, not
+    // of a single read(): the buffered initial snapshot satisfies one read()
+    // even on a stream the server has already closed.
+    expect(adminStream.isClosed()).toBe(false)
 
-    await adminReader.cancel()
+    adminStream.abort()
+    await adminStream.pump
   })
 
   it("emits a snapshot immediately on connect, scoped to the guest's own portal", async () => {
@@ -433,13 +356,15 @@ describe('Portal toggle', () => {
   })
 
   it('only streams patches for the portal a guest is bound to', async () => {
+    // Disjoint allowlists. A shared entity would reach both guests
+    // legitimately, so the test could not fail however the patch was routed.
     const timothy = portals.create({ title: 'Timothy', password: 'timothy-pass' })
     const mary = portals.create({ title: 'Mary', password: 'mary-pass' })
     allowlist.replace(timothy.id, [
-      { entityId: 'light.shared', label: 'Shared', allowedActions: ['turn_on'], sortOrder: 0 },
+      { entityId: 'light.porch', label: 'Porch', allowedActions: ['turn_on'], sortOrder: 0 },
     ])
     allowlist.replace(mary.id, [
-      { entityId: 'light.shared', label: 'Shared', allowedActions: ['turn_on'], sortOrder: 0 },
+      { entityId: 'lock.front', label: 'Front', allowedActions: ['lock'], sortOrder: 0 },
     ])
 
     const { cookie: timothyCookie } = await loginAs('timothy-pass')
@@ -447,23 +372,104 @@ describe('Portal toggle', () => {
 
     const timothyStream = await openStream(baseUrl, timothyCookie)
     const maryStream = await openStream(baseUrl, maryCookie)
-    await waitForFrame(timothyStream.frames, 'snapshot')
-    await waitForFrame(maryStream.frames, 'snapshot')
+    expect(await waitForFrame(timothyStream.frames, 'snapshot')).toBe(true)
+    expect(await waitForFrame(maryStream.frames, 'snapshot')).toBe(true)
 
-    fake.setState('light.shared', 'on')
+    fake.setState('lock.front', 'unlocked')
 
-    await waitForFrame(timothyStream.frames, 'patch')
-    await waitForFrame(maryStream.frames, 'patch')
-
-    // Both received it independently — this assertion is really about the
-    // *routing*, proven properly by the next case.
-    const timothyPatch = timothyStream.frames.find((f) => f.type === 'patch')
+    expect(await waitForFrame(maryStream.frames, 'patch')).toBe(true)
     const maryPatch = maryStream.frames.find((f) => f.type === 'patch')
-    if (timothyPatch?.type !== 'patch' || maryPatch?.type !== 'patch') {
-      throw new Error('Expected patch frames')
-    }
-    expect(timothyPatch.devices.find((d) => d.entityId === 'light.shared')?.state.state).toBe('on')
-    expect(maryPatch.devices.find((d) => d.entityId === 'light.shared')?.state.state).toBe('on')
+    if (maryPatch?.type !== 'patch') throw new Error('Expected a patch frame for Mary')
+    expect(maryPatch.devices.map((d) => d.entityId)).toEqual(['lock.front'])
+
+    // Mary's patch has landed, so an unrouted broadcast would already have
+    // landed on Timothy too.
+    expect(framesOfType(timothyStream.frames, 'patch')).toEqual([])
+    expect(entityIdsSeen(timothyStream.frames)).not.toContain('lock.front')
+
+    // ...and the same in the other direction.
+    fake.setState('light.porch', 'on')
+    expect(await waitForFrame(timothyStream.frames, 'patch')).toBe(true)
+    expect(framesOfType(maryStream.frames, 'patch')).toHaveLength(1)
+    expect(entityIdsSeen(maryStream.frames)).not.toContain('light.porch')
+
+    timothyStream.abort()
+    maryStream.abort()
+    await timothyStream.pump
+    await maryStream.pump
+  })
+
+  it("ignores a guest-supplied ?portalId= on the stream and serves only the session's portal", async () => {
+    // /api/stream is intercepted before Hono, so it does not share the
+    // resolvePortalId() that protects /api/devices — the rule is reimplemented
+    // there and needs its own guard.
+    const timothy = portals.create({ title: 'Timothy', password: 'stream-scope-timothy' })
+    const mary = portals.create({ title: 'Mary', password: 'stream-scope-mary' })
+    allowlist.replace(timothy.id, [
+      { entityId: 'light.porch', label: 'Porch', allowedActions: ['turn_on'], sortOrder: 0 },
+    ])
+    allowlist.replace(mary.id, [
+      { entityId: 'lock.front', label: 'Front', allowedActions: ['lock'], sortOrder: 0 },
+    ])
+
+    const { cookie: timothyCookie } = await loginAs('stream-scope-timothy')
+    const { cookie: maryCookie } = await loginAs('stream-scope-mary')
+
+    const attacker = await openStream(baseUrl, timothyCookie, `?portalId=${mary.id}`)
+    const maryStream = await openStream(baseUrl, maryCookie)
+    expect(await waitForFrame(attacker.frames, 'snapshot')).toBe(true)
+    expect(await waitForFrame(maryStream.frames, 'snapshot')).toBe(true)
+
+    const snapshot = attacker.frames.find((f) => f.type === 'snapshot')
+    if (snapshot?.type !== 'snapshot') throw new Error('Expected a snapshot frame')
+    expect(snapshot.devices.map((d) => d.entityId)).toEqual(['light.porch'])
+
+    fake.setState('lock.front', 'unlocked')
+    expect(await waitForFrame(maryStream.frames, 'patch')).toBe(true)
+
+    expect(framesOfType(attacker.frames, 'patch')).toEqual([])
+    expect(entityIdsSeen(attacker.frames)).not.toContain('lock.front')
+
+    attacker.abort()
+    maryStream.abort()
+    await attacker.pump
+    await maryStream.pump
+  })
+
+  it("only streams a fresh snapshot to the portal whose allowlist changed", async () => {
+    const timothy = portals.create({ title: 'Timothy', password: 'snapshot-scope-timothy' })
+    const mary = portals.create({ title: 'Mary', password: 'snapshot-scope-mary' })
+    allowlist.replace(timothy.id, [
+      { entityId: 'light.porch', label: 'Porch', allowedActions: ['turn_on'], sortOrder: 0 },
+    ])
+    allowlist.replace(mary.id, [
+      { entityId: 'lock.front', label: 'Front', allowedActions: ['lock'], sortOrder: 0 },
+    ])
+
+    const { cookie: timothyCookie } = await loginAs('snapshot-scope-timothy')
+    const { cookie: maryCookie } = await loginAs('snapshot-scope-mary')
+
+    const timothyStream = await openStream(baseUrl, timothyCookie)
+    const maryStream = await openStream(baseUrl, maryCookie)
+    expect(await waitForFrame(timothyStream.frames, 'snapshot')).toBe(true)
+    expect(await waitForFrame(maryStream.frames, 'snapshot')).toBe(true)
+    const timothySnapshotsBefore = framesOfType(timothyStream.frames, 'snapshot').length
+
+    allowlist.replace(mary.id, [
+      { entityId: 'lock.front', label: 'Front', allowedActions: ['lock'], sortOrder: 0 },
+      { entityId: 'switch.fan', label: 'Fan', allowedActions: ['turn_on'], sortOrder: 1 },
+    ])
+
+    expect(
+      await waitFor(() => framesOfType(maryStream.frames, 'snapshot').length > 1),
+    ).toBe(true)
+
+    // Widening the union does legitimately resubscribe HA, which re-announces
+    // Timothy's own entities as a patch. What must not reach him is another
+    // *snapshot* — or any sight of Mary's entities.
+    expect(framesOfType(timothyStream.frames, 'snapshot')).toHaveLength(timothySnapshotsBefore)
+    expect(entityIdsSeen(timothyStream.frames)).not.toContain('switch.fan')
+    expect(entityIdsSeen(timothyStream.frames)).not.toContain('lock.front')
 
     timothyStream.abort()
     maryStream.abort()
@@ -507,6 +513,215 @@ describe('Portal toggle', () => {
 
     // The session is gone too, so the client's stream-drop recheck lands on
     // the login screen rather than reconnecting to a portal that no longer exists.
+    const recheck = await fetch(`${baseUrl}/api/session`, { headers: { cookie: timothyCookie } })
+    expect(recheck.status).toBe(401)
+    const maryRecheck = await fetch(`${baseUrl}/api/session`, { headers: { cookie: maryCookie } })
+    expect(maryRecheck.status).toBe(200)
+
+    maryStream.abort()
+    await maryStream.pump
+  })
+
+  // Disabling a portal deliberately spares its admins — they still need the
+  // stream to turn it back on. Deleting it does not: there is no portal left
+  // to watch, so a surviving admin stream is an open connection that can never
+  // carry another frame.
+  it("deleting one portal drops its admin stream too, and no other portal's", async () => {
+    const timothy = portals.create({ title: 'Timothy', password: 'admin-del-timothy' })
+    const mary = portals.create({ title: 'Mary', password: 'admin-del-mary' })
+    const { cookie: adminCookie } = await loginAs('admin-pass-87654321')
+
+    const timothyStream = await openSseConnection(baseUrl, adminCookie, `?portalId=${timothy.id}`)
+    const maryStream = await openSseConnection(baseUrl, adminCookie, `?portalId=${mary.id}`)
+    expect(timothyStream.res.status).toBe(200)
+    expect(maryStream.res.status).toBe(200)
+
+    portals.delete(timothy.id)
+
+    await expect(timothyStream.closed()).resolves.toBe(true)
+
+    // Both streams belong to the same admin session, so closing by session
+    // would take Mary's as well.
+    expect(maryStream.isClosed()).toBe(false)
+
+    maryStream.abort()
+    await maryStream.pump
+  })
+
+  it('resubscribes HA to the union across every portal after an allowlist PUT', async () => {
+    const timothy = portals.create({ title: 'Timothy', password: 'union-timothy-pass' })
+    const mary = portals.create({ title: 'Mary', password: 'union-mary-pass' })
+    allowlist.replace(mary.id, [
+      { entityId: 'lock.front', label: 'Front', allowedActions: ['lock'], sortOrder: 0 },
+    ])
+    const { cookie: adminCookie } = await loginAs('admin-pass-87654321')
+
+    const res = await fetch(`${baseUrl}/api/admin/portals/${timothy.id}/allowlist`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+      body: JSON.stringify({
+        devices: [
+          { entityId: 'light.porch', label: 'Porch', allowedActions: ['turn_on'], sortOrder: 0 },
+        ],
+      }),
+    })
+    expect(res.status).toBe(200)
+
+    // The union, not just the portal that changed: dropping the other portals
+    // would silently stop their live updates.
+    expect(
+      await waitFor(() => {
+        const ids = fake.subscribedEntityIds()
+        return ids !== null && ids.length === 2
+      }),
+    ).toBe(true)
+    expect([...(fake.subscribedEntityIds() ?? [])].sort()).toEqual(['light.porch', 'lock.front'])
+
+    // ...and emptying one portal's list narrows the union back rather than
+    // leaving a stale subscription behind.
+    const cleared = await fetch(`${baseUrl}/api/admin/portals/${mary.id}/allowlist`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+      body: JSON.stringify({ devices: [] }),
+    })
+    expect(cleared.status).toBe(200)
+
+    expect(
+      await waitFor(() => {
+        const ids = fake.subscribedEntityIds()
+        return ids !== null && ids.length === 1
+      }),
+    ).toBe(true)
+    expect(fake.subscribedEntityIds()).toEqual(['light.porch'])
+  })
+
+  it('narrows the HA subscription when a portal is deleted', async () => {
+    const timothy = portals.create({ title: 'Timothy', password: 'del-timothy-pass' })
+    const mary = portals.create({ title: 'Mary', password: 'del-mary-pass' })
+    allowlist.replace(timothy.id, [
+      { entityId: 'light.porch', label: 'Porch', allowedActions: ['turn_on'], sortOrder: 0 },
+    ])
+    allowlist.replace(mary.id, [
+      { entityId: 'lock.front', label: 'Front', allowedActions: ['lock'], sortOrder: 0 },
+    ])
+    const { cookie: adminCookie } = await loginAs('admin-pass-87654321')
+
+    expect(
+      await waitFor(() => {
+        const ids = fake.subscribedEntityIds()
+        return ids !== null && ids.length === 2
+      }),
+    ).toBe(true)
+
+    const res = await fetch(`${baseUrl}/api/admin/portals/${mary.id}`, {
+      method: 'DELETE',
+      headers: { cookie: adminCookie },
+    })
+    expect(res.status).toBe(200)
+
+    // Mary's allowlist rows go with her portal by FK cascade, which fires no
+    // store listener — so nothing recomputes the union unless the delete path
+    // does it, and HA keeps streaming an entity no portal can show.
+    expect(
+      await waitFor(() => {
+        const ids = fake.subscribedEntityIds()
+        return ids !== null && ids.length === 1
+      }, 2000),
+    ).toBe(true)
+    expect(fake.subscribedEntityIds()).toEqual(['light.porch'])
+  })
+
+  it('closes the logging-out session’s stream and nobody else’s', async () => {
+    portals.create({ title: 'Timothy', password: 'logout-timothy-pass' })
+
+    // Two sessions on the SAME portal: closing by portal would take both, and
+    // the point is that logout is scoped to the one session that ended.
+    const { cookie: leaving } = await loginAs('logout-timothy-pass')
+    const { cookie: staying } = await loginAs('logout-timothy-pass')
+
+    const leavingStream = await openSseConnection(baseUrl, leaving)
+    const stayingStream = await openSseConnection(baseUrl, staying)
+
+    const res = await fetch(`${baseUrl}/api/logout`, {
+      method: 'POST',
+      headers: { cookie: leaving },
+    })
+    expect(res.status).toBe(200)
+
+    await expect(leavingStream.closed()).resolves.toBe(true)
+    expect(stayingStream.isClosed()).toBe(false)
+
+    stayingStream.abort()
+    await stayingStream.pump
+  })
+
+  it('refuses an admin stream for a portal that does not exist', async () => {
+    const { cookie: adminCookie } = await loginAs('admin-pass-87654321')
+
+    // The stream used to open regardless, hold the connection, and emit an
+    // empty snapshot — indistinguishable from a real portal with no devices.
+    const res = await fetch(`${baseUrl}/api/stream?portalId=no-such-portal`, {
+      headers: { cookie: adminCookie, accept: 'text/event-stream' },
+    })
+    expect(res.status).toBe(404)
+    expect(await res.json()).toEqual({ error: 'Not found' })
+  })
+
+  it('clears the last-selected pointer when that portal is deleted', async () => {
+    const timothy = portals.create({ title: 'Timothy', password: 'sel-timothy-pass' })
+    const mary = portals.create({ title: 'Mary', password: 'sel-mary-pass' })
+    const { cookie: adminCookie } = await loginAs('admin-pass-87654321')
+
+    const select = await fetch(`${baseUrl}/api/admin/last-selected-portal`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+      body: JSON.stringify({ portalId: mary.id }),
+    })
+    expect(select.status).toBe(200)
+
+    const deleteOther = await fetch(`${baseUrl}/api/admin/portals/${timothy.id}`, {
+      method: 'DELETE',
+      headers: { cookie: adminCookie },
+    })
+    expect(deleteOther.status).toBe(200)
+
+    // Deleting some other portal must leave the pointer alone.
+    const stillMary = await fetch(`${baseUrl}/api/admin/portals`, {
+      headers: { cookie: adminCookie },
+    })
+    expect(await stillMary.json()).toMatchObject({ lastSelectedPortalId: mary.id })
+
+    const deleteSelected = await fetch(`${baseUrl}/api/admin/portals/${mary.id}`, {
+      method: 'DELETE',
+      headers: { cookie: adminCookie },
+    })
+    expect(deleteSelected.status).toBe(200)
+
+    const after = await fetch(`${baseUrl}/api/admin/portals`, { headers: { cookie: adminCookie } })
+    expect(await after.json()).toMatchObject({ lastSelectedPortalId: null })
+  })
+
+  it("rotating one portal's password drops only that portal's guest stream and session", async () => {
+    const timothy = portals.create({ title: 'Timothy', password: 'timothy-rotate-1' })
+    portals.create({ title: 'Mary', password: 'mary-rotate-1' })
+
+    const { cookie: timothyCookie } = await loginAs('timothy-rotate-1')
+    const { cookie: maryCookie } = await loginAs('mary-rotate-1')
+    const { cookie: adminCookie } = await loginAs('admin-pass-87654321')
+
+    const timothyStream = await openSseConnection(baseUrl, timothyCookie)
+    const maryStream = await openSseConnection(baseUrl, maryCookie)
+
+    const res = await fetch(`${baseUrl}/api/admin/portals/${timothy.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', cookie: adminCookie },
+      body: JSON.stringify({ password: 'timothy-rotate-2' }),
+    })
+    expect(res.status).toBe(200)
+
+    await expect(timothyStream.closed()).resolves.toBe(true)
+    expect(maryStream.isClosed()).toBe(false)
+
     const recheck = await fetch(`${baseUrl}/api/session`, { headers: { cookie: timothyCookie } })
     expect(recheck.status).toBe(401)
     const maryRecheck = await fetch(`${baseUrl}/api/session`, { headers: { cookie: maryCookie } })

@@ -282,6 +282,32 @@ describe('Guest API routes', () => {
       expect(limiter.size).toBeGreaterThan(0)
     })
 
+    it('does not let one portal password launder failed guesses at another portal', async () => {
+      // The attacker holds the default portal's password and is grinding at
+      // this one. A successful login must not refund the per-IP budget, or the
+      // loop below could run forever three guesses at a time.
+      portals.create({ title: 'Target', password: 'target-pass-12345678' })
+
+      const attempt = async (password: string) =>
+        fetch(`${baseUrl}/api/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password }),
+        })
+
+      for (let round = 0; round < 3; round++) {
+        for (let guess = 0; guess < 3; guess++) {
+          expect((await attempt(`target-guess-${round}-${guess}`)).status).toBe(401)
+        }
+        expect((await attempt('guest-pass-12345678')).status).toBe(200)
+      }
+
+      // Nine failures so far. The cap is ten, so the tenth guess is still
+      // served and the eleventh must not be.
+      expect((await attempt('target-guess-final')).status).toBe(401)
+      expect((await attempt('target-guess-over')).status).toBe(429)
+    })
+
     it('login for a disabled portal returns 403 and does NOT count as a rate-limit failure', async () => {
       const disabled = portals.create({ title: 'Disabled', password: 'disabled-pass' })
       portals.update(disabled.id, { enabled: false })
@@ -489,6 +515,16 @@ describe('Guest API routes', () => {
       expect(body.devices).toHaveLength(1)
     })
 
+    it('an admin naming a portal that does not exist gets 404', async () => {
+      const adminCookie = await loginAsAdmin()
+
+      const res = await fetch(`${baseUrl}/api/devices?portalId=no-such-portal-id`, {
+        headers: { Cookie: adminCookie },
+      })
+      expect(res.status).toBe(404)
+      expect(await res.json()).toEqual({ error: 'Not found' })
+    })
+
     it('lets an admin view devices for a disabled portal (admin bypasses the enabled gate)', async () => {
       const adminCookie = await loginAsAdmin()
       portals.update(defaultPortal.id, { enabled: false })
@@ -648,6 +684,21 @@ describe('Guest API routes', () => {
       const logs = audit.recent(defaultPortal.id, 10)
       expect(logs).toHaveLength(1)
       expect(logs[0]?.role).toBe('admin')
+    })
+
+    it('an admin calling an action on a portal that does not exist gets 404', async () => {
+      const adminCookie = await loginAsAdmin()
+
+      // This used to reach audit.record and 500 on the foreign key, telling the
+      // caller the server broke rather than that they named nothing.
+      const res = await fetch(`${baseUrl}/api/devices/light.porch/turn_on?portalId=no-such-portal`, {
+        method: 'POST',
+        headers: { Cookie: adminCookie },
+      })
+
+      expect(res.status).toBe(404)
+      expect(await res.json()).toEqual({ error: 'Not found' })
+      expect(fake.serviceCalls).toHaveLength(0)
     })
   })
 

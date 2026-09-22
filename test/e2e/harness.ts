@@ -115,7 +115,6 @@ async function startServer(opts: {
       ...process.env,
       HA_BASE_URL: opts.haBaseUrl,
       HA_TOKEN: opts.haToken,
-      GUEST_PASSWORD: 'test-guest-password',
       ADMIN_PASSWORD: 'test-admin-password',
       PORT: String(port),
       DB_PATH: opts.dbPath,

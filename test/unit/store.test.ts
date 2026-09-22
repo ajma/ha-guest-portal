@@ -181,14 +181,22 @@ describe('AllowlistStore', () => {
   })
 
   it('onChange() unsubscribe is idempotent', () => {
-    const { store } = setup()
+    const { store, portalId } = setup()
 
-    const unsubscribe = store.onChange(() => {})
+    const heard: string[] = []
+    const unsubscribeFirst = store.onChange(() => heard.push('first'))
+    store.onChange(() => heard.push('second'))
 
-    unsubscribe()
-    unsubscribe() // Should not throw
+    unsubscribeFirst()
+    // The second call must do nothing at all. An unsubscribe that removed
+    // "whatever is there now" a second time would take the other listener.
+    unsubscribeFirst()
 
-    expect(true).toBe(true)
+    store.replace(portalId, [
+      { entityId: 'light.a', label: 'A', allowedActions: ['turn_on'], sortOrder: 1 },
+    ])
+
+    expect(heard).toEqual(['second'])
   })
 
   it('list() returns rows ordered by sortOrder, then entityId', () => {
@@ -390,9 +398,9 @@ describe('AuditLog', () => {
     log.record({ portalId, ts: 2000, entityId: 'light.b', action: 'turn_off', role: 'admin', ok: false })
 
     const entries = log.recent(portalId, 10)
+    // toBe(false)/toBe(true) already prove the type: SQLite stores these as
+    // 0 and 1, and neither would pass a strict comparison against a boolean.
     expect(entries[0]?.ok).toBe(false)
     expect(entries[1]?.ok).toBe(true)
-    expect(typeof entries[0]?.ok).toBe('boolean')
-    expect(typeof entries[1]?.ok).toBe('boolean')
   })
 })

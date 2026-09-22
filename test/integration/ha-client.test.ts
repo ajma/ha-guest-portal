@@ -137,6 +137,9 @@ describe('HaClient', () => {
 
       const result = await client.callAction('light', 'turn_on', 'light.living_room')
 
+      // Guard first: without it the whole assertion block is skipped on a
+      // successful call and the test passes having checked nothing.
+      expect(result.ok).toBe(false)
       if (!result.ok) {
         expect(result.message).not.toContain('test-token-abc123xyz')
         expect(result.message).not.toContain('abc123xyz')

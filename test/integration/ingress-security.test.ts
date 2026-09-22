@@ -12,6 +12,14 @@ import { openDb } from '../../src/server/store/db.ts'
 import type { Config } from '../../src/server/config.ts'
 import { createRuntime, type Runtime } from '../../src/server/runtime.ts'
 import { FakeHomeAssistant } from '../fake-ha.ts'
+import {
+  entityIdsSeen,
+  framesOfType,
+  openSseConnection,
+  openStream,
+  waitFor,
+  waitForFrame,
+} from './sse-client.ts'
 
 describe('Ingress security - source address enforcement', () => {
   let fake: FakeHomeAssistant
@@ -251,6 +259,115 @@ describe('Ingress security - source address enforcement', () => {
         },
       })
       expect(res.status).toBe(401) // Still requires session
+    })
+  })
+
+  // Everything behind the source gate — the whole Supervisor-authenticated
+  // admin path, including an /api/stream intercept that runs before Hono and
+  // therefore inherits none of Hono's route-level portal isolation — used to
+  // be untested on the grounds that a loopback test could never pass the gate.
+  // It can: the gate reads `socket.remoteAddress`, and a `connection` listener
+  // can redefine that on the accepted socket before the request handler runs.
+  describe('Ingress admin stream, authenticated by source alone', () => {
+    beforeEach(() => {
+      ingressServer.on('connection', (socket) => {
+        Object.defineProperty(socket, 'remoteAddress', {
+          value: '172.30.32.2',
+          configurable: true,
+        })
+      })
+    })
+
+    // Sanity check on the technique itself: if this 200s, the spoofed socket
+    // really is getting past the gate, so a 403 in any test below would mean a
+    // genuine rejection rather than a harness that never arrived.
+    it('passes the source gate', async () => {
+      const res = await fetch(`${ingressUrl}/api/session`)
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ role: 'admin' })
+    })
+
+    it('refuses a stream with no portalId', async () => {
+      const res = await fetch(`${ingressUrl}/api/stream`)
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ error: 'Missing portalId' })
+    })
+
+    // The stream used to open regardless, hold the connection, and emit an
+    // empty snapshot — indistinguishable from a real portal with no devices.
+    it('refuses a stream for a portal that does not exist', async () => {
+      const res = await fetch(`${ingressUrl}/api/stream?portalId=no-such-portal`, {
+        headers: { accept: 'text/event-stream' },
+      })
+      expect(res.status).toBe(404)
+      expect(await res.json()).toEqual({ error: 'Not found' })
+    })
+
+    it('serves only the requested portal, and never another portal’s frames', async () => {
+      const timothy = portals.create({ title: 'Timothy', password: 'ingress-timothy-pass' })
+      const mary = portals.create({ title: 'Mary', password: 'ingress-mary-pass' })
+      allowlist.replace(timothy.id, [
+        { entityId: 'light.porch', label: 'Porch', allowedActions: ['turn_on'], sortOrder: 0 },
+      ])
+      allowlist.replace(mary.id, [
+        { entityId: 'lock.front', label: 'Front', allowedActions: ['lock'], sortOrder: 0 },
+      ])
+      expect(
+        await waitFor(() => (fake.subscribedEntityIds() ?? []).includes('lock.front')),
+      ).toBe(true)
+
+      const timothyStream = await openStream(ingressUrl, null, `?portalId=${timothy.id}`)
+      const maryStream = await openStream(ingressUrl, null, `?portalId=${mary.id}`)
+      expect(timothyStream.res.status).toBe(200)
+      expect(maryStream.res.status).toBe(200)
+
+      expect(await waitForFrame(timothyStream.frames, 'snapshot')).toBe(true)
+      expect(await waitForFrame(maryStream.frames, 'snapshot')).toBe(true)
+
+      const snapshot = timothyStream.frames.find((f) => f.type === 'snapshot')
+      if (snapshot?.type !== 'snapshot') throw new Error('Expected a snapshot frame')
+      expect(snapshot.devices.map((d) => d.entityId)).toEqual(['light.porch'])
+
+      // Mary's entity changes: only Mary's stream may hear about it.
+      fake.setState('lock.front', 'unlocked')
+      expect(await waitForFrame(maryStream.frames, 'patch')).toBe(true)
+      expect(framesOfType(timothyStream.frames, 'patch')).toEqual([])
+      expect(entityIdsSeen(timothyStream.frames)).not.toContain('lock.front')
+
+      // ...and the same in the other direction, which also proves the streams
+      // are scoped rather than simply mute.
+      fake.setState('light.porch', 'on')
+      expect(await waitForFrame(timothyStream.frames, 'patch')).toBe(true)
+      expect(framesOfType(maryStream.frames, 'patch')).toHaveLength(1)
+      expect(entityIdsSeen(maryStream.frames)).not.toContain('light.porch')
+
+      timothyStream.abort()
+      maryStream.abort()
+      await timothyStream.pump
+      await maryStream.pump
+      // Room for two five-second frame waits, so a stream that never receives
+      // its patch fails on the assertion rather than on the test timeout.
+    }, 15_000)
+
+    // These streams hold no session, so session eviction cannot reach them:
+    // without a portal-scoped close they would sit open and silent forever,
+    // watching a portal that no longer exists.
+    it('closes when the portal it watches is deleted, and nobody else’s', async () => {
+      const timothy = portals.create({ title: 'Timothy', password: 'ingress-del-timothy' })
+      const mary = portals.create({ title: 'Mary', password: 'ingress-del-mary' })
+
+      const timothyStream = await openSseConnection(ingressUrl, null, `?portalId=${timothy.id}`)
+      const maryStream = await openSseConnection(ingressUrl, null, `?portalId=${mary.id}`)
+      expect(timothyStream.res.status).toBe(200)
+      expect(maryStream.res.status).toBe(200)
+
+      portals.delete(timothy.id)
+
+      await expect(timothyStream.closed()).resolves.toBe(true)
+      expect(maryStream.isClosed()).toBe(false)
+
+      maryStream.abort()
+      await maryStream.pump
     })
   })
 
