@@ -75,10 +75,36 @@ function rowOf(body: AllowlistRow[], entityId: string): AllowlistRow {
   return row
 }
 
+type Allowlist = { ok: true; data: { devices: AllowlistRow[]; orphaned: string[] } }
+
+/** What GET /api/portals/:id/allowlist answers for these devices. */
+function loaded(devices: Device[], orphaned: string[] = []): Allowlist {
+  return {
+    ok: true,
+    data: {
+      devices: devices.map(({ entityId, label, allowedActions, sortOrder }) => ({
+        entityId,
+        label,
+        allowedActions,
+        sortOrder,
+      })),
+      orphaned,
+    },
+  }
+}
+
+const fan = {
+  entityId: 'switch.fan',
+  name: 'Fan',
+  domain: 'switch',
+  supported: true,
+} as CatalogEntry
+
 describe('useAllowlistEditor', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(api.putPortalAllowlist).mockResolvedValue({ ok: true, data: undefined })
+    vi.mocked(api.getPortalAllowlist).mockResolvedValue(loaded([]))
   })
 
   afterEach(() => {
@@ -87,12 +113,12 @@ describe('useAllowlistEditor', () => {
   })
 
   it('derives rows from the live devices, sorted', () => {
-    const { result } = renderHook(() => useAllowlistEditor([two[1] as Device, two[0] as Device], 'portal-1'))
+    const { result } = renderHook(() => useAllowlistEditor([two[1] as Device, two[0] as Device], 'portal-1', true))
     expect(result.current.rows.map((r) => r.entityId)).toEqual(['light.porch', 'lock.front'])
   })
 
   it('renames by entity id, not by position', async () => {
-    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1', true))
     act(() => {
       result.current.rename('lock.front', 'Front Door')
     })
@@ -106,7 +132,7 @@ describe('useAllowlistEditor', () => {
     // Another session's edit can reorder the list underneath us. Rows are ordered
     // by sortOrder, so here the incoming array order and the row order disagree:
     // anything keyed by array position would rename the other device.
-    const { result } = renderHook(() => useAllowlistEditor([two[1] as Device, two[0] as Device], 'portal-1'))
+    const { result } = renderHook(() => useAllowlistEditor([two[1] as Device, two[0] as Device], 'portal-1', true))
     act(() => {
       result.current.rename('light.porch', 'Porch Light')
     })
@@ -123,7 +149,7 @@ describe('useAllowlistEditor', () => {
       domain: 'switch',
       supported: true,
     } as CatalogEntry
-    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1', true))
     act(() => {
       result.current.add(entry)
     })
@@ -143,7 +169,7 @@ describe('useAllowlistEditor', () => {
       domain: 'climate',
       supported: false,
     } as CatalogEntry
-    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1', true))
     act(() => {
       result.current.add(entry)
     })
@@ -154,7 +180,7 @@ describe('useAllowlistEditor', () => {
   })
 
   it('toggles an action off and on again', async () => {
-    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1', true))
     act(() => {
       result.current.toggleAction('light.porch', 'turn_off')
     })
@@ -164,7 +190,7 @@ describe('useAllowlistEditor', () => {
   })
 
   it('removes by entity id', async () => {
-    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1', true))
     act(() => {
       result.current.remove('light.porch')
     })
@@ -176,7 +202,7 @@ describe('useAllowlistEditor', () => {
   })
 
   it('reindexes sortOrder after a move so the order is contiguous', async () => {
-    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1', true))
     act(() => {
       result.current.move('lock.front', -1)
     })
@@ -189,7 +215,7 @@ describe('useAllowlistEditor', () => {
   })
 
   it('ignores a move that would fall off either end', async () => {
-    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1', true))
     act(() => {
       result.current.move('light.porch', -1)
     })
@@ -208,7 +234,7 @@ describe('useAllowlistEditor', () => {
   it('shows the change immediately, before the server answers', async () => {
     const deferred = defer<Awaited<ReturnType<typeof api.putPortalAllowlist>>>()
     vi.mocked(api.putPortalAllowlist).mockReturnValue(deferred.promise)
-    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1', true))
 
     act(() => {
       result.current.rename('light.porch', 'Porch Light')
@@ -232,7 +258,7 @@ describe('useAllowlistEditor', () => {
   // something else.
   it('adopts the value the stream delivers once the save lands', async () => {
     const { result, rerender } = renderHook(
-      ({ devices }: { devices: Device[] }) => useAllowlistEditor(devices, 'portal-1'),
+      ({ devices }: { devices: Device[] }) => useAllowlistEditor(devices, 'portal-1', true),
       { initialProps: { devices: [device()] } },
     )
 
@@ -265,7 +291,7 @@ describe('useAllowlistEditor', () => {
    */
   describe('with the stream yet to confirm', () => {
     it('does not resurrect a revoked action when the device is then renamed', async () => {
-      const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
+      const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1', true))
 
       act(() => {
         result.current.toggleAction('light.porch', 'turn_off')
@@ -286,7 +312,7 @@ describe('useAllowlistEditor', () => {
     })
 
     it('toggles the same action twice, rather than sending the same change twice', async () => {
-      const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
+      const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1', true))
 
       act(() => {
         result.current.toggleAction('light.porch', 'turn_off')
@@ -303,7 +329,7 @@ describe('useAllowlistEditor', () => {
     })
 
     it('moves a device two positions for two clicks of Move up', async () => {
-      const { result } = renderHook(() => useAllowlistEditor(three, 'portal-1'))
+      const { result } = renderHook(() => useAllowlistEditor(three, 'portal-1', true))
 
       act(() => {
         result.current.move('switch.fan', -1)
@@ -319,7 +345,7 @@ describe('useAllowlistEditor', () => {
     })
 
     it('accumulates three different edits instead of each reverting the last', async () => {
-      const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
+      const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1', true))
 
       act(() => {
         result.current.rename('light.porch', 'Porch Light')
@@ -348,7 +374,7 @@ describe('useAllowlistEditor', () => {
     })
 
     it('reverts the edit that failed, and only that edit', async () => {
-      const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
+      const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1', true))
 
       act(() => {
         result.current.toggleAction('light.porch', 'turn_off')
@@ -372,7 +398,7 @@ describe('useAllowlistEditor', () => {
 
     it('adopts the stream again as soon as it delivers a different list', async () => {
       const { result, rerender } = renderHook(
-        ({ devices }: { devices: Device[] }) => useAllowlistEditor(devices, 'portal-1'),
+        ({ devices }: { devices: Device[] }) => useAllowlistEditor(devices, 'portal-1', true),
         { initialProps: { devices: [device()] } },
       )
 
@@ -409,7 +435,7 @@ describe('useAllowlistEditor', () => {
     // here would surface as an unhandled error and the owner would see the
     // edit revert with no explanation.
     vi.mocked(api.putPortalAllowlist).mockRejectedValue(new Error('offline'))
-    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1', true))
 
     act(() => {
       result.current.rename('light.porch', 'Porch Light')
@@ -422,7 +448,7 @@ describe('useAllowlistEditor', () => {
 
   it('reverts and reports when the save fails', async () => {
     vi.mocked(api.putPortalAllowlist).mockResolvedValue({ ok: false, status: 500 })
-    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1', true))
 
     act(() => {
       result.current.rename('light.porch', 'Porch Light')
@@ -436,7 +462,7 @@ describe('useAllowlistEditor', () => {
 
   it('clears the error once it is dismissed', async () => {
     vi.mocked(api.putPortalAllowlist).mockResolvedValue({ ok: false, status: 500 })
-    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1'))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-1', true))
 
     act(() => {
       result.current.rename('light.porch', 'Porch Light')
@@ -449,8 +475,117 @@ describe('useAllowlistEditor', () => {
     expect(result.current.error).toBeNull()
   })
 
+  // Every save is a whole-allowlist PUT, and the list it is computed from comes
+  // from a live stream. Whenever that list is empty or stale — the stream is
+  // down, the portal was just switched, the snapshot has not arrived yet — a
+  // single edit would replace the portal's real allowlist with it.
+  describe('the list a save is computed from', () => {
+    it('is the portal allowlist the server holds, not an empty stream', async () => {
+      vi.mocked(api.getPortalAllowlist).mockResolvedValue(loaded(two))
+      const { result } = renderHook(() => useAllowlistEditor([], 'portal-1', true))
+      await waitFor(() => expect(result.current.ready).toBe(true))
+
+      act(() => {
+        result.current.add(fan)
+      })
+      await settled(result, 1)
+
+      expect(putBody(1).map((r) => r.entityId)).toEqual([
+        'light.porch',
+        'lock.front',
+        'switch.fan',
+      ])
+    })
+
+    it('survives the stream dropping out after it has delivered', async () => {
+      vi.mocked(api.getPortalAllowlist).mockResolvedValue(loaded(two))
+      const { result, rerender } = renderHook(
+        ({ devices }: { devices: Device[] }) => useAllowlistEditor(devices, 'portal-1', true),
+        { initialProps: { devices: two } },
+      )
+
+      // The store empties its snapshot when the EventSource goes away, so an
+      // empty frame is also what a closed stream looks like. Taking it for
+      // "this portal has no devices" is how the whole allowlist gets erased.
+      rerender({ devices: [] })
+      act(() => {
+        result.current.rename('lock.front', 'Front Door')
+      })
+      await settled(result, 1)
+
+      expect(putBody(1).map((r) => r.label)).toEqual(['Porch', 'Front Door'])
+    })
+
+    it('refuses the edit, and says why, while it is still unknown', async () => {
+      const gate = defer<Allowlist>()
+      vi.mocked(api.getPortalAllowlist).mockReturnValue(gate.promise)
+      const { result } = renderHook(() => useAllowlistEditor([], 'portal-1', true))
+
+      act(() => {
+        result.current.add(fan)
+      })
+      expect(api.putPortalAllowlist).not.toHaveBeenCalled()
+      expect(result.current.ready).toBe(false)
+      // A refusal the owner cannot see is a dead button: they retry, nothing
+      // happens, and they have no reason to wait rather than give up.
+      expect(result.current.error).not.toBeNull()
+
+      await act(async () => {
+        gate.resolve(loaded(two))
+        await gate.promise
+      })
+      act(() => {
+        result.current.add(fan)
+      })
+      await settled(result, 1)
+      expect(putBody(1)).toHaveLength(3)
+    })
+
+    it('is not fetched outside edit mode, where only an admin may ask for it', () => {
+      // A guest hitting the admin allowlist endpoint takes a 401, and the api
+      // client turns any 401 into a logout.
+      renderHook(() => useAllowlistEditor(two, 'portal-1', false))
+      expect(api.getPortalAllowlist).not.toHaveBeenCalled()
+    })
+  })
+
+  it('never writes the previous portal edits onto the portal switched to', async () => {
+    // The hook is not remounted on a portal switch, and every save is a
+    // whole-allowlist PUT. An optimistic row left over from the portal the
+    // owner just left would be sent as part of the new portal's list, which
+    // replaces it — the devices here stand in for a stream that has not
+    // delivered the new portal's snapshot yet.
+    // Mary's own allowlist shares nothing with the list the stream is still
+    // showing, which is what makes the leak visible: an edit computed from
+    // Timothy's devices would replace hers with them.
+    vi.mocked(api.getPortalAllowlist).mockResolvedValue(
+      loaded([device({ entityId: 'switch.fan', label: 'Fan', domain: 'switch', sortOrder: 0 })]),
+    )
+    const { result, rerender } = renderHook(
+      ({ portalId }: { portalId: string }) => useAllowlistEditor(two, portalId, true),
+      { initialProps: { portalId: 'timothy' } },
+    )
+
+    act(() => {
+      result.current.rename('light.porch', 'Timothy porch')
+    })
+    await settled(result, 1)
+
+    rerender({ portalId: 'mary' })
+    expect(result.current.rows.find((r) => r.entityId === 'light.porch')?.label).toBe('Porch')
+    await waitFor(() => expect(result.current.ready).toBe(true))
+
+    act(() => {
+      result.current.rename('switch.fan', 'Mary fan')
+    })
+    await settled(result, 2)
+
+    expect(vi.mocked(api.putPortalAllowlist).mock.calls[1]?.[0]).toBe('mary')
+    expect(putBody(2).map((r) => r.label)).toEqual(['Mary fan'])
+  })
+
   it('saves against the given portal id', async () => {
-    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-42'))
+    const { result } = renderHook(() => useAllowlistEditor(two, 'portal-42', true))
     act(() => {
       result.current.add({ entityId: 'switch.fan', name: 'Fan', domain: 'switch', supported: true } as CatalogEntry)
     })

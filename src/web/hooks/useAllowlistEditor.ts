@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AllowlistRow, CatalogEntry, Device } from '@shared/api.js'
 import { DOMAIN_ACTIONS, type SupportedDomain } from '@shared/devices.js'
-import { putPortalAllowlist } from '../api.js'
+import { getPortalAllowlist, putPortalAllowlist } from '../api.js'
 
 function defaultActionsFor(domain: string): readonly string[] {
   return Object.hasOwn(DOMAIN_ACTIONS, domain)
@@ -13,6 +13,11 @@ export type AllowlistEditor = {
   rows: AllowlistRow[]
   pending: boolean
   error: string | null
+  /** False while the list a save would be computed from is still unknown. */
+  ready: boolean
+  loadFailed: boolean
+  orphaned: string[]
+  reload: () => void
   add: (entity: CatalogEntry) => void
   remove: (entityId: string) => void
   rename: (entityId: string, label: string) => void
@@ -74,8 +79,19 @@ function allowlistKey(rows: AllowlistRow[]): string {
  *
  * Mutations are keyed by entity id, never by index — another session's edit can
  * reorder the list underneath, and an index would then hit the wrong device.
+ *
+ * `base` is the list a save is computed from, and null means "not known yet".
+ * That distinction is the point of it: an empty stream is indistinguishable
+ * from a portal with no devices, and a whole-list PUT computed from the wrong
+ * one erases the allowlist. `editing` gates the fetch that fills it — the
+ * endpoint is admin-only, and a guest reaching it takes a 401, which the api
+ * client turns into a logout.
  */
-export function useAllowlistEditor(devices: Device[], portalId: string): AllowlistEditor {
+export function useAllowlistEditor(
+  devices: Device[],
+  portalId: string,
+  editing: boolean,
+): AllowlistEditor {
   const [optimistic, setOptimistic] = useState<AllowlistRow[] | null>(null)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -83,14 +99,79 @@ export function useAllowlistEditor(devices: Device[], portalId: string): Allowli
   const streamRows = useMemo(() => toRows(devices), [devices])
   const streamKey = useMemo(() => allowlistKey(streamRows), [streamRows])
   const lastStreamKey = useRef(streamKey)
+  const [editingPortalId, setEditingPortalId] = useState(portalId)
+  const [base, setBase] = useState<AllowlistRow[] | null>(
+    streamRows.length > 0 ? streamRows : null,
+  )
+  const [orphaned, setOrphaned] = useState<string[]>([])
+  const [loadFailed, setLoadFailed] = useState(false)
+
+  // Same render-phase reset as PortalSettingsAccordion, for the same reason:
+  // callers render this page without a key, so a portal switch keeps the hook
+  // and its optimistic rows. Those rows describe the portal that was left, and
+  // the next save is a whole-list PUT — dropping them in an effect instead
+  // would leave a commit in which a click writes them to the new portal.
+  //
+  // `base` goes to null rather than to the stream's rows: at this render the
+  // stream still holds the list of the portal that was left.
+  if (editingPortalId !== portalId) {
+    setEditingPortalId(portalId)
+    setOptimistic(null)
+    setError(null)
+    setBase(null)
+    setOrphaned([])
+    setLoadFailed(false)
+  }
 
   useEffect(() => {
     if (streamKey === lastStreamKey.current) return
     lastStreamKey.current = streamKey
     setOptimistic(null)
-  }, [streamKey])
+    // A delivered list is the server's own answer and the freshest base there
+    // is. An empty one is not: the store empties its snapshot when the stream
+    // is torn down, so this frame arrives on every disconnect.
+    if (streamRows.length > 0) setBase(streamRows)
+  }, [streamKey, streamRows])
 
-  const rows = optimistic ?? streamRows
+  // One token per portal this hook has been pointed at, abandoned when it moves
+  // on or unmounts — the same guard PortalSettingsAccordion uses, and needed
+  // here for the same reason: a response for the portal that was left must not
+  // become the base the next save is computed from.
+  const loadTarget = useRef({ portalId, abandoned: false })
+  useEffect(() => {
+    const target = { portalId, abandoned: false }
+    loadTarget.current = target
+    return () => {
+      target.abandoned = true
+    }
+  }, [portalId])
+
+  const load = useCallback(async (): Promise<void> => {
+    const target = loadTarget.current
+    const abandoned = (): boolean => target.abandoned || target.portalId !== portalId
+    try {
+      const result = await getPortalAllowlist(portalId)
+      if (abandoned()) return
+      if (!result.ok) {
+        setLoadFailed(true)
+        return
+      }
+      setLoadFailed(false)
+      setOrphaned(result.data.orphaned)
+      // Only as a fallback. The stream is the source of truth everywhere else
+      // in this hook, and it can be ahead of this response.
+      setBase((current) => current ?? result.data.devices)
+    } catch {
+      if (!abandoned()) setLoadFailed(true)
+    }
+  }, [portalId])
+
+  useEffect(() => {
+    if (!editing) return
+    void load()
+  }, [editing, load])
+
+  const rows = optimistic ?? base ?? streamRows
 
   const commit = useCallback(
     async (next: AllowlistRow[], previous: AllowlistRow[] | null): Promise<void> => {
@@ -124,17 +205,35 @@ export function useAllowlistEditor(devices: Device[], portalId: string): Allowli
 
   const mutate = useCallback(
     (fn: (current: AllowlistRow[]) => AllowlistRow[] | null): void => {
+      // Refusing has to be said out loud. Silently dropping the edit leaves a
+      // button that does nothing, and the owner no reason to wait rather than
+      // to keep clicking it.
+      if (base === null) {
+        setError(
+          loadFailed
+            ? 'Could not load this portal’s device list, so nothing was changed'
+            : 'Still loading this portal’s device list — try that again in a moment',
+        )
+        return
+      }
       const next = fn(rows)
       if (next === null) return
       void commit(next, optimistic)
     },
-    [commit, optimistic, rows],
+    [base, commit, loadFailed, optimistic, rows],
   )
 
   return {
     rows,
     pending,
     error,
+    ready: base !== null,
+    loadFailed,
+    orphaned,
+    reload: () => {
+      setLoadFailed(false)
+      void load()
+    },
     dismissError: () => {
       setError(null)
     },

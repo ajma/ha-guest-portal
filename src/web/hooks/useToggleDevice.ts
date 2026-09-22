@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Device } from '@shared/api.js'
 import { performAction } from '../api.js'
+import { usePortalId } from '../portalContext.js'
 
 export type ToggleDevice = {
   isOn: boolean
@@ -18,6 +19,7 @@ export function useToggleDevice(device: Device, disabled: boolean): ToggleDevice
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const deviceStateRef = useRef(device.state)
+  const portalId = usePortalId()
 
   // Clear optimistic state when device state changes (any patch), on disconnect, or after timeout
   useEffect(() => {
@@ -80,7 +82,7 @@ export function useToggleDevice(device: Device, disabled: boolean): ToggleDevice
     setPending(true)
 
     try {
-      const result = await performAction(device.entityId, action)
+      const result = await performAction(device.entityId, action, portalId)
 
       if (!result.ok) {
         // Revert optimistic update

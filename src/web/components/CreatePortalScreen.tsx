@@ -2,7 +2,9 @@ import type { CSSProperties, ReactElement } from 'react'
 import { useState } from 'react'
 import type { z } from 'zod'
 import type { PortalDetailResponse } from '@shared/api.js'
+import { MAX_PORTAL_TITLE_LENGTH } from '@shared/portalTitle.js'
 import { createPortal } from '../api.js'
+import { MIN_PORTAL_PASSWORD_LENGTH, PASSWORD_RULE } from '../portalPassword.js'
 
 type PortalDetail = z.infer<typeof PortalDetailResponse>
 
@@ -72,6 +74,8 @@ const submitButton: CSSProperties = {
 
 const errorText: CSSProperties = { margin: 0, fontSize: '13px', color: 'var(--danger)' }
 
+const hintText: CSSProperties = { margin: '4px 0 0', fontSize: '12px', color: 'var(--textMuted)' }
+
 const actionsRow: CSSProperties = { display: 'flex', gap: '8px' }
 
 const cancelButton: CSSProperties = {
@@ -98,7 +102,9 @@ export function CreatePortalScreen({ onCreated, onCancel }: CreatePortalScreenPr
 
     let result: Awaited<ReturnType<typeof createPortal>>
     try {
-      result = await createPortal({ title, password })
+      // Trimmed, because the button's guard is trimmed: "  " would otherwise
+      // pass it and be sent as a title the server rejects.
+      result = await createPortal({ title: title.trim(), password })
     } catch {
       setSubmitting(false)
       setError('Could not create the portal')
@@ -108,10 +114,15 @@ export function CreatePortalScreen({ onCreated, onCancel }: CreatePortalScreenPr
     setSubmitting(false)
 
     if (!result.ok) {
+      // A 400 is the schema refusing the name or the password, which the owner
+      // can fix; anything else is a fault they can only retry. Collapsed into
+      // one message, the first reads as the second and they retry forever.
       setError(
         result.status === 409
           ? 'Could not create the portal — that password is already in use'
-          : 'Could not create the portal',
+          : result.status === 400
+            ? 'Could not create the portal — that name or password is not allowed'
+            : 'Could not create the portal',
       )
       return
     }
@@ -133,6 +144,7 @@ export function CreatePortalScreen({ onCreated, onCancel }: CreatePortalScreenPr
           style={textInput}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
+          maxLength={MAX_PORTAL_TITLE_LENGTH}
         />
       </div>
 
@@ -147,6 +159,7 @@ export function CreatePortalScreen({ onCreated, onCancel }: CreatePortalScreenPr
             style={textInput}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            minLength={MIN_PORTAL_PASSWORD_LENGTH}
           />
           <button
             type="button"
@@ -156,6 +169,7 @@ export function CreatePortalScreen({ onCreated, onCancel }: CreatePortalScreenPr
             {revealed ? 'Hide password' : 'Show password'}
           </button>
         </div>
+        <p style={hintText}>{PASSWORD_RULE}</p>
       </div>
 
       {error !== null && (
@@ -168,7 +182,9 @@ export function CreatePortalScreen({ onCreated, onCancel }: CreatePortalScreenPr
         <button
           type="button"
           style={submitButton}
-          disabled={submitting || title.trim() === '' || password.trim() === ''}
+          disabled={
+            submitting || title.trim() === '' || password.length < MIN_PORTAL_PASSWORD_LENGTH
+          }
           onClick={() => {
             void handleSubmit()
           }}

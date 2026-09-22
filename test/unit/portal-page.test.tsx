@@ -217,7 +217,10 @@ describe('Portal page', () => {
 
       await user.click(screen.getByRole('button', { name: 'Porch' }))
 
-      expect(api.performAction).toHaveBeenCalledWith('light.porch', 'turn_on')
+      // The portal id is part of the assertion because an admin's portal is
+      // not in their session: without it the server answers 400 and every
+      // tile on the page is dead.
+      expect(api.performAction).toHaveBeenCalledWith('light.porch', 'turn_on', 'portal-1')
       expect(screen.queryByRole('heading', { name: 'Porch' })).toBeNull()
     })
 
@@ -264,6 +267,41 @@ describe('Portal page', () => {
 
       await user.click(screen.getByRole('button', { name: 'Done' }))
       expect(screen.queryByRole('button', { name: /add device/i })).toBeNull()
+    })
+
+    // Kills: rendering `editor.error` only inside the tile editor. An add is
+    // made from the picker, which closes itself on the way out, so a refused or
+    // failed one had nowhere at all to be reported.
+    it('says so on the page when an add from the picker does not save', async () => {
+      const user = userEvent.setup()
+      vi.mocked(api.putPortalAllowlist).mockResolvedValue({ ok: false, status: 500 })
+      seed()
+      renderPortal('admin')
+      await enterEditMode(user)
+
+      await user.click(screen.getByRole('button', { name: /add device/i }))
+      await user.type(await screen.findByRole('combobox'), 'Heater')
+      await user.click(await screen.findByRole('option', { name: /heater/i }))
+
+      expect(screen.queryByTestId('picker-overlay')).toBeNull()
+      expect(await screen.findByText(/could not save that change/i)).toBeTruthy()
+    })
+
+    // Kills: an Add device button that is live before the portal's own allowlist
+    // is known. Every save is a whole-list PUT, so adding to a list the page has
+    // not got yet replaces the portal's allowlist with the one row.
+    it('does not offer Add device until the portal allowlist is known', async () => {
+      const user = userEvent.setup()
+      // The stream has delivered nothing and the fetch has not answered: the
+      // page cannot tell an empty portal from an unknown one.
+      vi.mocked(api.getPortalAllowlist).mockReturnValue(new Promise(() => {}))
+      renderPortal('admin')
+      await enterEditMode(user)
+
+      const ghost = screen.getByRole('button', { name: /add device/i })
+      expect((ghost as HTMLButtonElement).disabled).toBe(true)
+      // Disabled with no reason given is a dead control.
+      expect(screen.getByText(/waiting for this portal/i)).toBeTruthy()
     })
 
     // Kills: the picker expanding inside its grid cell, which is what it used

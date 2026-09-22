@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MAX_PORTAL_TITLE_LENGTH } from '@shared/portalTitle.js'
 import * as api from '../../src/web/api.js'
 import { CreatePortalScreen } from '../../src/web/components/CreatePortalScreen.js'
 
@@ -40,6 +41,56 @@ describe('CreatePortalScreen', () => {
 
     await user.click(screen.getByRole('button', { name: /show password/i }))
     expect(passwordField.getAttribute('type')).toBe('text')
+  })
+
+  it('says how long a password has to be and will not send a shorter one', async () => {
+    const user = userEvent.setup()
+    render(<CreatePortalScreen onCreated={vi.fn()} />)
+
+    expect(screen.getByText(/at least 8 characters/i)).toBeTruthy()
+
+    await user.type(screen.getByLabelText(/portal name/i), 'Timothy')
+    await user.type(screen.getByLabelText(/^password$/i), 'guest')
+
+    expect((screen.getByRole('button', { name: /create portal/i }) as HTMLButtonElement).disabled).toBe(
+      true,
+    )
+
+    await user.click(screen.getByRole('button', { name: /create portal/i }))
+    expect(api.createPortal).not.toHaveBeenCalled()
+  })
+
+  it('distinguishes a rejected name or password from a fault', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.createPortal).mockResolvedValue({ ok: false, status: 400 })
+
+    render(<CreatePortalScreen onCreated={vi.fn()} />)
+    await user.type(screen.getByLabelText(/portal name/i), 'Timothy')
+    await user.type(screen.getByLabelText(/^password$/i), 'long-enough')
+    await user.click(screen.getByRole('button', { name: /create portal/i }))
+
+    expect((await screen.findByRole('alert')).textContent).toMatch(/not allowed/i)
+  })
+
+  it('sends a trimmed title and stops one longer than the server accepts', async () => {
+    const user = userEvent.setup()
+    vi.mocked(api.createPortal).mockResolvedValue({
+      ok: true,
+      data: { id: 'p1', title: 'Timothy', theme: 'classic' as const, enabled: true, password: 'a-secret' },
+    })
+
+    render(<CreatePortalScreen onCreated={vi.fn()} />)
+
+    const titleField = screen.getByLabelText(/portal name/i)
+    expect(titleField.getAttribute('maxlength')).toBe(String(MAX_PORTAL_TITLE_LENGTH))
+
+    await user.type(titleField, '  Timothy  ')
+    await user.type(screen.getByLabelText(/^password$/i), 'a-secret')
+    await user.click(screen.getByRole('button', { name: /create portal/i }))
+
+    await waitFor(() =>
+      expect(api.createPortal).toHaveBeenCalledWith({ title: 'Timothy', password: 'a-secret' }),
+    )
   })
 
   it('shows a server error, e.g. a duplicate password, without crashing', async () => {

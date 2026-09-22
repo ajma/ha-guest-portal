@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type CSSProperties, type ReactElement
 import type { CatalogEntry, Device, Role } from '@shared/api.js'
 import type { z } from 'zod'
 import type { PortalDetailResponse } from '@shared/api.js'
-import { getPortalAllowlist, getCatalog } from '../api.js'
+import { getCatalog } from '../api.js'
 import { CreatePortalScreen } from '../components/CreatePortalScreen.js'
 import { DeploymentSettingsPanel } from '../components/DeploymentSettingsPanel.js'
 import { EntityPicker } from '../components/EntityPicker.js'
@@ -10,6 +10,7 @@ import { PortalDropdown, type PortalSummary } from '../components/PortalDropdown
 import { PortalSettingsAccordion } from '../components/PortalSettingsAccordion.js'
 import { TileEditor } from '../components/TileEditor.js'
 import { useAllowlistEditor } from '../hooks/useAllowlistEditor.js'
+import { PortalIdProvider } from '../portalContext.js'
 import { connectDeviceStore, useDeviceStore } from '../store.js'
 import { activeTheme, componentsFor } from '../themes/active.js'
 import type { DEFAULT_COMPONENTS } from '../themes/default/index.js'
@@ -316,8 +317,6 @@ export function Portal({
   const [showDeploymentSettings, setShowDeploymentSettings] = useState(false)
   const [catalog, setCatalog] = useState<CatalogEntry[] | null>(null)
   const [catalogFailed, setCatalogFailed] = useState(false)
-  const [orphaned, setOrphaned] = useState<string[]>([])
-  const [orphanCheckFailed, setOrphanCheckFailed] = useState(false)
 
   // Connect to the device store for the current portal on mount, and
   // reconnect whenever the admin switches to a different portal.
@@ -327,25 +326,13 @@ export function Portal({
   }, [portalId])
 
   const { devices, connected } = useDeviceStore()
-  const editor = useAllowlistEditor(devices, portalId)
   const isOwner = role === 'admin'
+  // The allowlist fetch lives in the editor: it needs the same response, both
+  // for the orphan flags and as the list its whole-list PUTs are computed from.
+  const editor = useAllowlistEditor(devices, portalId, isOwner && mode === 'edit')
 
   const components = componentsFor(activeTheme())
   const { Shell } = components
-
-  const loadOrphaned = useCallback(async (): Promise<void> => {
-    setOrphanCheckFailed(false)
-    try {
-      const result = await getPortalAllowlist(portalId)
-      if (!result.ok) {
-        setOrphanCheckFailed(true)
-        return
-      }
-      setOrphaned(result.data.orphaned)
-    } catch {
-      setOrphanCheckFailed(true)
-    }
-  }, [portalId])
 
   const loadCatalog = useCallback(async (): Promise<void> => {
     setCatalogFailed(false)
@@ -360,11 +347,6 @@ export function Portal({
       setCatalogFailed(true)
     }
   }, [])
-
-  useEffect(() => {
-    if (mode !== 'edit') return
-    void loadOrphaned()
-  }, [mode, loadOrphaned])
 
   function show(next: Mode): void {
     setMode(next)
@@ -426,7 +408,7 @@ export function Portal({
               key={device.entityId}
               device={device}
               components={components}
-              orphaned={orphaned.includes(device.entityId)}
+              orphaned={editor.orphaned.includes(device.entityId)}
               onEdit={setEditingId}
             />
           ) : (
@@ -440,15 +422,33 @@ export function Portal({
         )
 
   if (mode === 'edit') {
-    if (orphanCheckFailed) {
+    if (editor.loadFailed) {
       children.push(
         <div key="__orphan-error" style={panel}>
           <p style={errorText}>
             Could not check for orphaned devices — Home Assistant may be unreachable.
           </p>
           <div>
-            <button type="button" style={smallButton} onClick={() => void loadOrphaned()}>
+            <button type="button" style={smallButton} onClick={editor.reload}>
               Retry
+            </button>
+          </div>
+        </div>,
+      )
+    }
+
+    // The editor reports a refused or failed save, and the tile editor shows it
+    // — but an edit made from the picker, or one refused before any tile could
+    // be opened, has nowhere else to appear.
+    if (editor.error !== null && editingRow === undefined) {
+      children.push(
+        <div key="__editor-error" style={panel}>
+          <p role="alert" style={errorText}>
+            {editor.error}
+          </p>
+          <div>
+            <button type="button" style={smallButton} onClick={editor.dismissError}>
+              Dismiss
             </button>
           </div>
         </div>,
@@ -460,6 +460,7 @@ export function Portal({
         <button
           type="button"
           style={ghostButton}
+          disabled={!editor.ready}
           onClick={() => {
             setAdding(true)
             void loadCatalog()
@@ -467,6 +468,9 @@ export function Portal({
         >
           + Add device
         </button>
+        {!editor.ready && (
+          <p style={mutedText}>Waiting for this portal’s device list before anything is saved</p>
+        )}
       </div>,
     )
 
@@ -587,17 +591,21 @@ export function Portal({
     />
   ) : undefined
 
+  // The tiles are a theme's components, and the hooks inside them have to name
+  // this portal on every action — an admin's portal is not in their session.
   return (
-    <Shell
-      title={titleNode}
-      loggingOut={loggingOut}
-      onLogout={() => {
-        void handleLogout()
-      }}
-      belowHeader={belowHeader}
-      {...ownerActions}
-    >
-      {children}
-    </Shell>
+    <PortalIdProvider value={portalId}>
+      <Shell
+        title={titleNode}
+        loggingOut={loggingOut}
+        onLogout={() => {
+          void handleLogout()
+        }}
+        belowHeader={belowHeader}
+        {...ownerActions}
+      >
+        {children}
+      </Shell>
+    </PortalIdProvider>
   )
 }

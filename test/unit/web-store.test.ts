@@ -373,6 +373,53 @@ describe('Device store', () => {
     })
   })
 
+  describe('devices belong to the portal that was streaming them', () => {
+    const OriginalEventSource = globalThis.EventSource
+
+    beforeEach(() => {
+      globalThis.EventSource = class FakeEventSource {
+        addEventListener() {}
+        close() {}
+      } as unknown as typeof EventSource
+    })
+
+    afterEach(() => {
+      globalThis.EventSource = OriginalEventSource
+      resetStore()
+    })
+
+    it('drops the devices and the connected flag when the last caller tears down', async () => {
+      // The next portal's list arrives on its own stream, and nothing before
+      // its first snapshot says which devices belong to it. Keeping the old
+      // ones is not a cosmetic flash: the allowlist editor saves whole lists,
+      // so the previous portal's rows can be written onto the new one — and a
+      // `connected` left true renders them as live, tappable tiles to whoever
+      // logs in next on a shared tablet.
+      const store = await import('../../src/web/store.js')
+      const teardown = store.connectDeviceStore('timothy')
+      setConnected(true)
+      applyFrame({ type: 'snapshot', devices: [makeDevice('light.porch')], stale: true })
+
+      teardown()
+
+      expect(getSnapshot().devices).toEqual([])
+      expect(getSnapshot().stale).toBe(false)
+      expect(getSnapshot().connected).toBe(false)
+    })
+
+    it('keeps the devices while another caller still holds the stream', async () => {
+      const store = await import('../../src/web/store.js')
+      const teardownA = store.connectDeviceStore('timothy')
+      const teardownB = store.connectDeviceStore('timothy')
+      applyFrame({ type: 'snapshot', devices: [makeDevice('light.porch')], stale: false })
+
+      teardownA()
+
+      expect(getSnapshot().devices).toHaveLength(1)
+      teardownB()
+    })
+  })
+
   describe('portal frame', () => {
     beforeEach(() => {
       resetStore()

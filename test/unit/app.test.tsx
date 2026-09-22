@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import * as api from '../../src/web/api.js'
 import * as store from '../../src/web/store.js'
@@ -27,6 +27,36 @@ describe('App', () => {
     render(<App />)
 
     expect(await screen.findByText(/create a portal/i)).toBeTruthy()
+  })
+
+  it('leaves an admin with zero portals a way out and the integration token', async () => {
+    // A self-hosted admin lands here on first login, and this is where they
+    // find the token that pairs the Home Assistant integration. Without a
+    // header they could neither read it nor log out — clearing the cookie was
+    // the only exit.
+    vi.mocked(api.getSession).mockResolvedValue({ role: 'admin' })
+    vi.mocked(api.getPortals).mockResolvedValue({
+      ok: true,
+      data: { portals: [], lastSelectedPortalId: null },
+    })
+    vi.mocked(api.getDeploymentSettings).mockResolvedValue({
+      ok: true,
+      data: { integrationToken: 'tok-abc', deploymentId: 'dep-1' },
+    })
+    vi.mocked(api.logout).mockResolvedValue(undefined)
+
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(await screen.findByText(/create a portal/i)).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: /^settings$/i }))
+    await user.click(await screen.findByRole('button', { name: /show token/i }))
+    expect((await screen.findByTestId('integration-token')).textContent).toBe('tok-abc')
+
+    await user.click(screen.getByRole('button', { name: /close/i }))
+    await user.click(screen.getByRole('button', { name: /log out/i }))
+    await waitFor(() => expect(api.logout).toHaveBeenCalled())
   })
 
   it('selects the last-selected portal for an admin with existing portals', async () => {
@@ -171,6 +201,175 @@ describe('App', () => {
     // The overlay must actually close -- a leftover create-portal form after
     // a successful creation is the other half of the original bug's symptom.
     expect(screen.queryByRole('heading', { name: /create a portal/i })).toBeNull()
+  })
+
+  it('keeps the add-portal overlay open when a slow portal save lands', async () => {
+    // Every admin transition used to spread the render-time `state`, and
+    // handlePortalUpdated is reached after an awaited PUT. An owner who ticks
+    // the accordion's Enabled box on a slow link and then starts creating a
+    // portal had the overlay torn down under them, typed input and all, the
+    // moment the PUT resolved.
+    vi.mocked(api.getSession).mockResolvedValue({ role: 'admin' })
+    vi.mocked(api.getPortals).mockResolvedValue({
+      ok: true,
+      data: {
+        portals: [{ id: 'p1', title: 'Timothy', theme: 'classic', enabled: true }],
+        lastSelectedPortalId: 'p1',
+      },
+    })
+    vi.mocked(api.getCatalog).mockResolvedValue({ ok: true, data: [] })
+    vi.mocked(api.getPortalAllowlist).mockResolvedValue({ ok: true, data: { devices: [], orphaned: [] } })
+    vi.mocked(api.getPortal).mockResolvedValue({
+      ok: true,
+      data: { id: 'p1', title: 'Timothy', theme: 'classic', enabled: true, password: 'orig-pass' },
+    })
+    let resolvePut!: (value: Awaited<ReturnType<typeof api.updatePortal>>) => void
+    vi.mocked(api.updatePortal).mockReturnValue(
+      new Promise((resolve) => {
+        resolvePut = resolve
+      }),
+    )
+
+    const user = userEvent.setup()
+    render(<App />)
+
+    await waitFor(() =>
+      expect((screen.getByRole('combobox', { name: /portal/i }) as HTMLSelectElement).value).toBe('p1'),
+    )
+
+    await user.click(screen.getByRole('button', { name: /portal settings/i }))
+    await user.click(await screen.findByLabelText(/guests can log in/i))
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /portal/i }), '+ Add portal')
+    const overlay = within(await screen.findByTestId('add-portal-overlay'))
+    await user.type(overlay.getByLabelText(/portal name/i), 'Mary')
+
+    await act(async () => {
+      resolvePut({
+        ok: true,
+        data: { id: 'p1', title: 'Timothy', theme: 'classic', enabled: false, password: 'orig-pass' },
+      })
+    })
+
+    const stillOpen = within(screen.getByTestId('add-portal-overlay'))
+    expect(stillOpen.getByRole('heading', { name: /create a portal/i })).toBeTruthy()
+    expect((stillOpen.getByLabelText(/portal name/i) as HTMLInputElement).value).toBe('Mary')
+  })
+
+  it('keeps the newly selected portal when a slow save for the previous one lands', async () => {
+    // The same stale closure, seen from the dropdown: rename Timothy, switch
+    // to Mary while the PUT is in flight, and the response used to restore
+    // `selectedPortalId: 'timothy'` and snap the whole page back.
+    vi.mocked(api.getSession).mockResolvedValue({ role: 'admin' })
+    vi.mocked(api.getPortals).mockResolvedValue({
+      ok: true,
+      data: {
+        portals: [
+          { id: 'p1', title: 'Timothy', theme: 'classic', enabled: true },
+          { id: 'p2', title: 'Mary', theme: 'classic', enabled: true },
+        ],
+        lastSelectedPortalId: 'p1',
+      },
+    })
+    vi.mocked(api.getCatalog).mockResolvedValue({ ok: true, data: [] })
+    vi.mocked(api.getPortalAllowlist).mockResolvedValue({ ok: true, data: { devices: [], orphaned: [] } })
+    vi.mocked(api.getPortal).mockResolvedValue({
+      ok: true,
+      data: { id: 'p1', title: 'Timothy', theme: 'classic', enabled: true, password: 'orig-pass' },
+    })
+    let resolvePut!: (value: Awaited<ReturnType<typeof api.updatePortal>>) => void
+    vi.mocked(api.updatePortal).mockReturnValue(
+      new Promise((resolve) => {
+        resolvePut = resolve
+      }),
+    )
+
+    const user = userEvent.setup()
+    render(<App />)
+
+    await waitFor(() =>
+      expect((screen.getByRole('combobox', { name: /portal/i }) as HTMLSelectElement).value).toBe('p1'),
+    )
+
+    await user.click(screen.getByRole('button', { name: /portal settings/i }))
+    await user.click(await screen.findByLabelText(/guests can log in/i))
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /portal/i }), 'p2')
+
+    await act(async () => {
+      resolvePut({
+        ok: true,
+        data: { id: 'p1', title: 'Timothy', theme: 'classic', enabled: false, password: 'orig-pass' },
+      })
+    })
+
+    expect((screen.getByRole('combobox', { name: /portal/i }) as HTMLSelectElement).value).toBe('p2')
+  })
+
+  it('persists the selection when the owner picks another portal', async () => {
+    vi.mocked(api.getSession).mockResolvedValue({ role: 'admin' })
+    vi.mocked(api.getPortals).mockResolvedValue({
+      ok: true,
+      data: {
+        portals: [
+          { id: 'p1', title: 'Timothy', theme: 'classic', enabled: true },
+          { id: 'p2', title: 'Mary', theme: 'classic', enabled: true },
+        ],
+        lastSelectedPortalId: 'p1',
+      },
+    })
+    vi.mocked(api.getCatalog).mockResolvedValue({ ok: true, data: [] })
+    vi.mocked(api.getPortalAllowlist).mockResolvedValue({ ok: true, data: { devices: [], orphaned: [] } })
+
+    const user = userEvent.setup()
+    render(<App />)
+
+    await waitFor(() =>
+      expect((screen.getByRole('combobox', { name: /portal/i }) as HTMLSelectElement).value).toBe('p1'),
+    )
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /portal/i }), 'p2')
+
+    // Without this the choice survives only until the next page load, which is
+    // invisible on screen and so went uncaught.
+    await waitFor(() => expect(api.putLastSelectedPortal).toHaveBeenCalledWith('p2'))
+  })
+
+  it('ignores a persisted selection for a portal that no longer exists', async () => {
+    // Deleting the portal that was last selected leaves the stored id dangling.
+    // Trusting it renders a portal page for an id the server knows nothing
+    // about; the first portal in the list is the answer.
+    vi.mocked(api.getSession).mockResolvedValue({ role: 'admin' })
+    vi.mocked(api.getPortals).mockResolvedValue({
+      ok: true,
+      data: {
+        portals: [{ id: 'p1', title: 'Timothy', theme: 'classic', enabled: true }],
+        lastSelectedPortalId: 'deleted-portal',
+      },
+    })
+    vi.mocked(api.getCatalog).mockResolvedValue({ ok: true, data: [] })
+    vi.mocked(api.getPortalAllowlist).mockResolvedValue({ ok: true, data: { devices: [], orphaned: [] } })
+
+    render(<App />)
+
+    // The stream is what the page is actually pointed at — a `<select>` with no
+    // matching option falls back to its first one, so the dropdown alone cannot
+    // tell a dangling id from a corrected one.
+    await waitFor(() => expect(store.connectDeviceStore).toHaveBeenCalledWith('p1'))
+    expect(store.connectDeviceStore).not.toHaveBeenCalledWith('deleted-portal')
+  })
+
+  it('shows the unreachable screen when the portal list cannot be fetched', async () => {
+    // `loadAdminPortals` is detached with `void` from outside checkSession's
+    // catch, so a rejecting fetch or an unparseable body used to leave the
+    // admin on a bare "Loading..." with no retry — the state a guest is
+    // correctly spared.
+    vi.mocked(api.getSession).mockResolvedValue({ role: 'admin' })
+    vi.mocked(api.getPortals).mockRejectedValue(new Error('offline'))
+
+    render(<App />)
+
+    expect(await screen.findByRole('button', { name: /retry/i })).toBeTruthy()
   })
 
   it('flips a connected guest to the disabled screen on a live SSE frame, with no extra session fetch', async () => {

@@ -93,10 +93,13 @@ export async function getDevices(portalId?: string): Promise<ApiResult<z.infer<t
   return handleResponse(response, DevicesResponse)
 }
 
+// `portalId` is required rather than optional: an admin without it gets a flat
+// 400 from the server, and an optional parameter let every call site omit it
+// while still type-checking.
 export async function performAction(
   entityId: string,
   action: string,
-  portalId?: string,
+  portalId: string | undefined,
 ): Promise<ApiResult<void>> {
   const response = await fetch(
     apiUrl(withPortalId(`/api/devices/${entityId}/${action}`, portalId)),

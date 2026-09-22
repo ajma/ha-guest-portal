@@ -1,10 +1,22 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act, waitFor, cleanup } from '@testing-library/react'
+import type { ReactElement, ReactNode } from 'react'
 import type { Device } from '@shared/api.js'
 import { useToggleDevice } from '../../src/web/hooks/useToggleDevice.ts'
 import { useLockDevice } from '../../src/web/hooks/useLockDevice.ts'
 import { useCoverDevice } from '../../src/web/hooks/useCoverDevice.ts'
+import { PortalIdProvider } from '../../src/web/portalContext.ts'
 import * as api from '../../src/web/api.ts'
+
+// An admin's portal is never in their session, so every action has to carry it
+// in the query string. The hooks read it from the portal page's context; the
+// assertions below pin the third argument, because a two-argument call is
+// exactly the shape that made every admin tile return 400.
+const PORTAL_ID = 'timothy'
+
+function wrapper({ children }: { children: ReactNode }): ReactElement {
+  return <PortalIdProvider value={PORTAL_ID}>{children}</PortalIdProvider>
+}
 
 // Promise.withResolvers is ES2024; this project's lib is ES2022.
 function defer<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
@@ -50,11 +62,13 @@ describe('useToggleDevice', () => {
       .spyOn(api, 'performAction')
       .mockResolvedValue({ ok: true, data: undefined })
     const dev = toggleDevice()
-    const { result, unmount } = renderHook(() => useToggleDevice(dev, false))
+    const { result, unmount } = renderHook(() => useToggleDevice(dev, false), { wrapper })
     await act(async () => {
       await result.current.activate()
     })
-    await waitFor(() => expect(performActionSpy).toHaveBeenCalledWith('light.porch', 'turn_on'))
+    await waitFor(() =>
+      expect(performActionSpy).toHaveBeenCalledWith('light.porch', 'turn_on', PORTAL_ID),
+    )
     unmount()
     performActionSpy.mockRestore()
   })
@@ -64,11 +78,13 @@ describe('useToggleDevice', () => {
       .spyOn(api, 'performAction')
       .mockResolvedValue({ ok: true, data: undefined })
     const d = toggleDevice({ allowedActions: ['toggle'] })
-    const { result, unmount } = renderHook(() => useToggleDevice(d, false))
+    const { result, unmount } = renderHook(() => useToggleDevice(d, false), { wrapper })
     await act(async () => {
       await result.current.activate()
     })
-    await waitFor(() => expect(performActionSpy).toHaveBeenCalledWith('light.porch', 'toggle'))
+    await waitFor(() =>
+      expect(performActionSpy).toHaveBeenCalledWith('light.porch', 'toggle', PORTAL_ID),
+    )
     unmount()
     performActionSpy.mockRestore()
   })
@@ -189,14 +205,16 @@ describe('useLockDevice', () => {
       .spyOn(api, 'performAction')
       .mockResolvedValue({ ok: true, data: undefined })
     const dev = lockDevice()
-    const { result } = renderHook(() => useLockDevice(dev, false))
+    const { result } = renderHook(() => useLockDevice(dev, false), { wrapper })
     await act(async () => {
       await result.current.requestUnlock()
     })
     await act(async () => {
       await result.current.requestUnlock()
     })
-    await waitFor(() => expect(performActionSpy).toHaveBeenCalledWith('lock.front', 'unlock'))
+    await waitFor(() =>
+      expect(performActionSpy).toHaveBeenCalledWith('lock.front', 'unlock', PORTAL_ID),
+    )
   })
 })
 
@@ -234,11 +252,13 @@ describe('useCoverDevice', () => {
       .spyOn(api, 'performAction')
       .mockResolvedValue({ ok: true, data: undefined })
     const dev = coverDevice()
-    const { result } = renderHook(() => useCoverDevice(dev, false))
+    const { result } = renderHook(() => useCoverDevice(dev, false), { wrapper })
     await act(async () => {
       await result.current.open()
     })
-    await waitFor(() => expect(performActionSpy).toHaveBeenCalledWith('cover.garage', 'open_cover'))
+    await waitFor(() =>
+      expect(performActionSpy).toHaveBeenCalledWith('cover.garage', 'open_cover', PORTAL_ID),
+    )
   })
 
   it('calls close_cover when close is triggered', async () => {
@@ -246,12 +266,12 @@ describe('useCoverDevice', () => {
       .spyOn(api, 'performAction')
       .mockResolvedValue({ ok: true, data: undefined })
     const dev = coverDevice()
-    const { result } = renderHook(() => useCoverDevice(dev, false))
+    const { result } = renderHook(() => useCoverDevice(dev, false), { wrapper })
     await act(async () => {
       await result.current.close()
     })
     await waitFor(() =>
-      expect(performActionSpy).toHaveBeenCalledWith('cover.garage', 'close_cover'),
+      expect(performActionSpy).toHaveBeenCalledWith('cover.garage', 'close_cover', PORTAL_ID),
     )
   })
 
@@ -260,11 +280,13 @@ describe('useCoverDevice', () => {
       .spyOn(api, 'performAction')
       .mockResolvedValue({ ok: true, data: undefined })
     const dev = coverDevice()
-    const { result } = renderHook(() => useCoverDevice(dev, false))
+    const { result } = renderHook(() => useCoverDevice(dev, false), { wrapper })
     await act(async () => {
       await result.current.stop()
     })
-    await waitFor(() => expect(performActionSpy).toHaveBeenCalledWith('cover.garage', 'stop_cover'))
+    await waitFor(() =>
+      expect(performActionSpy).toHaveBeenCalledWith('cover.garage', 'stop_cover', PORTAL_ID),
+    )
   })
 
   it('sets pending state during action', async () => {

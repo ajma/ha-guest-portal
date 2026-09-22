@@ -175,9 +175,20 @@ export function connectDeviceStore(portalId: string): () => void {
     connectionRefCount--
 
     // Close EventSource on 1→0 transition
-    if (connectionRefCount === 0 && eventSource !== null) {
-      eventSource.close()
-      eventSource = null
+    if (connectionRefCount === 0) {
+      if (eventSource !== null) {
+        eventSource.close()
+        eventSource = null
+      }
+
+      // The devices in here describe the portal whose stream just closed, and
+      // only the next stream's first snapshot can say what the next portal
+      // holds. Keeping them would show one portal's devices under another's
+      // name — to the owner, whose editor then saves that whole list onto the
+      // new portal, and to the next guest on a shared tablet. `connected` goes
+      // with them: left true, those tiles render live rather than greyed.
+      snapshot = { ...snapshot, devices: [], stale: false, connected: false }
+      notifySubscribers()
     }
   }
 }

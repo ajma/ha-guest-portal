@@ -1,10 +1,11 @@
 import type { CSSProperties, ReactElement } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { z } from 'zod'
 import type { PortalDetailResponse } from '@shared/api.js'
 import { MAX_PORTAL_TITLE_LENGTH } from '@shared/portalTitle.js'
 import { isThemeId, type ThemeId } from '@shared/themes.js'
 import { deletePortal, getPortal, updatePortal } from '../api.js'
+import { MIN_PORTAL_PASSWORD_LENGTH, PASSWORD_RULE } from '../portalPassword.js'
 import { listThemes } from '../themes/registry.js'
 
 type PortalDetail = z.infer<typeof PortalDetailResponse>
@@ -78,6 +79,8 @@ const dangerButton: CSSProperties = {
 
 const errorText: CSSProperties = { margin: 0, fontSize: '13px', color: 'var(--danger)' }
 
+const hintText: CSSProperties = { margin: '4px 0 0', fontSize: '12px', color: 'var(--textMuted)' }
+
 export function PortalSettingsAccordion({
   portalId,
   onUpdated,
@@ -108,6 +111,21 @@ export function PortalSettingsAccordion({
     setError(null)
   }
 
+  // One token per portal this panel has been pointed at, abandoned when it
+  // moves on or unmounts. `applyPatch` takes the current one before its await
+  // and checks it after, the same guard the load effect gets from `cancelled`.
+  // The id is carried along because the token is replaced in an effect, a tick
+  // after the render that switched portals: a click in that window would read
+  // the token for the portal just left, whose id no longer matches its own.
+  const patchTarget = useRef({ portalId, abandoned: false })
+  useEffect(() => {
+    const target = { portalId, abandoned: false }
+    patchTarget.current = target
+    return () => {
+      target.abandoned = true
+    }
+  }, [portalId])
+
   useEffect(() => {
     if (!expanded || portal !== null) return
     let cancelled = false
@@ -129,19 +147,35 @@ export function PortalSettingsAccordion({
     }
   }, [expanded, portal, portalId])
 
-  async function applyPatch(patch: { title?: string; theme?: ThemeId; enabled?: boolean; password?: string }): Promise<void> {
+  /** Resolves true when the server took the patch. */
+  async function applyPatch(patch: { title?: string; theme?: ThemeId; enabled?: boolean; password?: string }): Promise<boolean> {
     setError(null)
+    const target = patchTarget.current
+    const abandoned = (): boolean => target.abandoned || target.portalId !== portalId
     const result = await updatePortal(portalId, patch)
     if (!result.ok) {
+      // An error about the portal that was left, shown under the name of the
+      // one now on screen, reads as a failure to save that one.
+      if (abandoned()) return false
+      // A 400 is the schema refusing the value, which the owner can change;
+      // anything else is a fault they can only retry.
       setError(
         result.status === 409
           ? 'Could not save — that password is already in use'
-          : 'Could not save that change',
+          : result.status === 400
+            ? 'Could not save — that value is not allowed'
+            : 'Could not save that change',
       )
-      return
+      return false
     }
-    setPortal(result.data)
+    // The parent's list is keyed by portal id, so it wants this answer however
+    // late it is. The fields do not: repainted with the portal that was left,
+    // they show its name and password under the new portal's heading, and the
+    // next blur PUTs those values onto it.
     onUpdated(result.data)
+    if (abandoned()) return false
+    setPortal(result.data)
+    return true
   }
 
   function commitTitle(): void {
@@ -149,9 +183,7 @@ export function PortalSettingsAccordion({
       setTitleDraft(null)
       return
     }
-    const next = titleDraft
-    setTitleDraft(null)
-    void applyPatch({ title: next })
+    void saveTitle(titleDraft)
   }
 
   function commitPassword(): void {
@@ -159,9 +191,22 @@ export function PortalSettingsAccordion({
       setPasswordDraft(null)
       return
     }
-    const next = passwordDraft
-    setPasswordDraft(null)
-    void applyPatch({ password: next })
+    if (passwordDraft.length < MIN_PORTAL_PASSWORD_LENGTH) {
+      setError(`Could not save — a password must be at least ${MIN_PORTAL_PASSWORD_LENGTH} characters`)
+      return
+    }
+    void savePassword(passwordDraft)
+  }
+
+  // Both drafts are held until the server has taken them. Cleared on the way
+  // in, a refused value disappears and the field silently shows the old one
+  // back, so the owner is told it failed but not what they typed.
+  async function saveTitle(next: string): Promise<void> {
+    if (await applyPatch({ title: next })) setTitleDraft(null)
+  }
+
+  async function savePassword(next: string): Promise<void> {
+    if (await applyPatch({ password: next })) setPasswordDraft(null)
   }
 
   async function handleDelete(): Promise<void> {
@@ -241,11 +286,13 @@ export function PortalSettingsAccordion({
                     value={passwordDraft ?? portal.password}
                     onChange={(e) => setPasswordDraft(e.target.value)}
                     onBlur={commitPassword}
+                    minLength={MIN_PORTAL_PASSWORD_LENGTH}
                   />
                   <button type="button" style={smallButton} onClick={() => setPasswordRevealed((r) => !r)}>
                     {passwordRevealed ? 'Hide password' : 'Show password'}
                   </button>
                 </div>
+                <p style={hintText}>{PASSWORD_RULE}</p>
               </div>
 
               {error !== null && (

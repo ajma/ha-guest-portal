@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { Device } from '@shared/api.js'
 import { performAction } from '../api.js'
+import { usePortalId } from '../portalContext.js'
 
 export type LockDevice = {
   isLocked: boolean
@@ -25,6 +26,7 @@ export function useLockDevice(device: Device, disabled: boolean): LockDevice {
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
   const [unlockConfirmPending, setUnlockConfirmPending] = useState(false)
+  const portalId = usePortalId()
 
   const isStale = device.state.stale
   const currentState = device.state.state
@@ -53,7 +55,7 @@ export function useLockDevice(device: Device, disabled: boolean): LockDevice {
     setPending(true)
 
     try {
-      const result = await performAction(device.entityId, action)
+      const result = await performAction(device.entityId, action, portalId)
 
       if (!result.ok) {
         setError('Action failed')

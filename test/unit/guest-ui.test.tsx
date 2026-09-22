@@ -100,7 +100,7 @@ describe('Guest UI', () => {
 
       await user.click(tile)
 
-      expect(performActionSpy).toHaveBeenCalledWith('light.living_room', 'turn_off')
+      expect(performActionSpy).toHaveBeenCalledWith('light.living_room', 'turn_off', 'p1')
     })
 
     it('shows off state and pressing calls performAction with turn_on', async () => {
@@ -132,7 +132,7 @@ describe('Guest UI', () => {
 
       await user.click(tile)
 
-      expect(performActionSpy).toHaveBeenCalledWith('switch.fan', 'turn_on')
+      expect(performActionSpy).toHaveBeenCalledWith('switch.fan', 'turn_on', 'p1')
     })
 
     it('performs optimistic update and reconciles with incoming patch', async () => {
@@ -481,7 +481,7 @@ describe('Guest UI', () => {
       await user.click(tile)
 
       // Should call toggle action, not turn_on
-      expect(performActionSpy).toHaveBeenCalledWith('light.toggle_only', 'toggle')
+      expect(performActionSpy).toHaveBeenCalledWith('light.toggle_only', 'toggle', 'p1')
     })
 
     it('does not render control when no actions allowed', () => {
@@ -529,6 +529,10 @@ describe('Guest UI', () => {
       store.setConnected(true)
 
       render(<Portal role={GUEST} portalId="p1" onLogout={async () => {}} />)
+
+      expect(screen.getByRole('button', { name: 'Open' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Stop' })).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Close' })).toBeTruthy()
     })
 
     it('renders opening state distinctly from open', () => {
@@ -591,6 +595,9 @@ describe('Guest UI', () => {
       store.setConnected(true)
 
       render(<Portal role={GUEST} portalId="p1" onLogout={async () => {}} />)
+
+      expect(screen.getByText('Closing')).toBeTruthy()
+      expect(screen.queryByText('Closed')).toBeNull()
     })
 
     it('calls performAction with correct action when buttons are clicked', async () => {
@@ -618,15 +625,15 @@ describe('Guest UI', () => {
       render(<Portal role={GUEST} portalId="p1" onLogout={async () => {}} />)
 
       await user.click(screen.getByRole('button', { name: /open/i }))
-      expect(performActionSpy).toHaveBeenCalledWith('cover.shades', 'open_cover')
+      expect(performActionSpy).toHaveBeenCalledWith('cover.shades', 'open_cover', 'p1')
 
       performActionSpy.mockClear()
       await user.click(screen.getByRole('button', { name: /stop/i }))
-      expect(performActionSpy).toHaveBeenCalledWith('cover.shades', 'stop_cover')
+      expect(performActionSpy).toHaveBeenCalledWith('cover.shades', 'stop_cover', 'p1')
 
       performActionSpy.mockClear()
       await user.click(screen.getByRole('button', { name: /close/i }))
-      expect(performActionSpy).toHaveBeenCalledWith('cover.shades', 'close_cover')
+      expect(performActionSpy).toHaveBeenCalledWith('cover.shades', 'close_cover', 'p1')
     })
 
     it('only renders buttons for allowed actions', () => {
@@ -710,7 +717,7 @@ describe('Guest UI', () => {
       fireEvent.click(lockButton)
 
       await waitFor(() => {
-        expect(performActionSpy).toHaveBeenCalledWith('lock.front_door', 'lock')
+        expect(performActionSpy).toHaveBeenCalledWith('lock.front_door', 'lock', 'p1')
       })
     })
 
@@ -748,7 +755,7 @@ describe('Guest UI', () => {
 
       // Second click on confirm - should call performAction
       await user.click(screen.getByRole('button', { name: /confirm/i }))
-      expect(performActionSpy).toHaveBeenCalledWith('lock.back_door', 'unlock')
+      expect(performActionSpy).toHaveBeenCalledWith('lock.back_door', 'unlock', 'p1')
     })
 
     it('unlock confirmation can be cancelled', async () => {
@@ -976,6 +983,8 @@ describe('Guest UI', () => {
       store.setConnected(true)
 
       render(<Portal role={GUEST} portalId="p1" onLogout={async () => {}} />)
+
+      expect(screen.getByText(/no devices available/i)).toBeTruthy()
     })
   })
 })

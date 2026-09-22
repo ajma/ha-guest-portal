@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactElement } from 'react'
 import type { z } from 'zod'
 import type { PortalDetailResponse, SessionResponse } from '@shared/api.js'
+import { DEFAULT_PORTAL_TITLE } from '@shared/portalTitle.js'
 import { getPortals, getSession, logout, putLastSelectedPortal, setUnauthorizedCallback } from './api.js'
 import { CreatePortalScreen } from './components/CreatePortalScreen.js'
+import { DeploymentSettingsPanel } from './components/DeploymentSettingsPanel.js'
 import { Portal } from './routes/Portal.js'
 import { setPortalEnabled, useDeviceStore } from './store.js'
 import { activeTheme, componentsFor } from './themes/active.js'
@@ -16,6 +18,20 @@ type Session = z.infer<typeof SessionResponse>
 // ARIA role, component or not (same workaround as portal-page.test.tsx).
 const GUEST = 'guest'
 const ADMIN = 'admin'
+
+// Matches Portal's header buttons, which this screen has no access to and
+// would look unlike if it invented its own.
+const gearButton: CSSProperties = {
+  padding: '8px 12px',
+  fontSize: '14px',
+  fontWeight: 500,
+  fontFamily: 'inherit',
+  cursor: 'pointer',
+  color: 'var(--text)',
+  backgroundColor: 'var(--surface)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--tileRadius)',
+}
 
 type AppState =
   | { kind: 'loading' }
@@ -33,8 +49,10 @@ export function App(): ReactElement {
   // Every screen App owns comes from the active theme, so nobody crosses an
   // unthemed seam. There is one portal: an owner gets Edit and Settings inside
   // it, rather than a separate page that looks nothing like what they ship.
-  const { Login, Disabled, Unreachable } = componentsFor(activeTheme())
+  const { Login, Disabled, Unreachable, Shell } = componentsFor(activeTheme())
   const [state, setState] = useState<AppState>({ kind: 'loading' })
+  const [loggingOut, setLoggingOut] = useState(false)
+  const [showDeploymentSettings, setShowDeploymentSettings] = useState(false)
   const { connected, portalEnabled } = useDeviceStore()
   const prevConnectedRef = useRef<boolean>(false)
 
@@ -48,19 +66,27 @@ export function App(): ReactElement {
   }, [])
 
   const loadAdminPortals = useCallback(async (): Promise<void> => {
-    const result = await getPortals()
-    if (!result.ok) {
+    try {
+      const result = await getPortals()
+      if (!result.ok) {
+        setState({ kind: 'unreachable' })
+        return
+      }
+
+      const { portals, lastSelectedPortalId } = result.data
+      const selected =
+        lastSelectedPortalId !== null && portals.some((p) => p.id === lastSelectedPortalId)
+          ? lastSelectedPortalId
+          : (portals[0]?.id ?? null)
+
+      setState({ kind: 'admin', portals, selectedPortalId: selected, addingPortal: false })
+    } catch {
+      // Same reasoning as checkSession, and the same screen: this runs
+      // detached with `void`, outside that try, so a transport failure or an
+      // unparseable body would otherwise be an unhandled rejection that leaves
+      // the admin on "Loading..." with nothing to press.
       setState({ kind: 'unreachable' })
-      return
     }
-
-    const { portals, lastSelectedPortalId } = result.data
-    const selected =
-      lastSelectedPortalId !== null && portals.some((p) => p.id === lastSelectedPortalId)
-        ? lastSelectedPortalId
-        : (portals[0]?.id ?? null)
-
-    setState({ kind: 'admin', portals, selectedPortalId: selected, addingPortal: false })
   }, [])
 
   const applySession = useCallback(
@@ -168,33 +194,47 @@ export function App(): ReactElement {
   }
 
   async function handleLogout(): Promise<void> {
+    setLoggingOut(true)
     await logout()
+    setLoggingOut(false)
     setState({ kind: 'logged-out' })
   }
 
+  // Every one of these transitions is built from `prev`, never from the
+  // `state` of the render that created the handler. `handlePortalUpdated` is
+  // reached after an awaited PUT, so its closure can be several states out of
+  // date by the time it runs: spreading it put back an `addingPortal: false`
+  // that unmounted a half-typed create form, and a `selectedPortalId` the
+  // owner had already moved on from. The `kind` guard lives inside the updater
+  // for the same reason — read outside, it is as stale as the rest.
   function handleSelectPortal(portalId: string): void {
-    if (state.kind !== 'admin') return
-    setState({ ...state, selectedPortalId: portalId })
+    setState((prev) => (prev.kind === 'admin' ? { ...prev, selectedPortalId: portalId } : prev))
     void putLastSelectedPortal(portalId)
   }
 
   function handlePortalCreated(portal: PortalDetail): void {
-    if (state.kind !== 'admin') return
-    const nextPortals = [...state.portals, portal]
-    setState({ ...state, portals: nextPortals, selectedPortalId: portal.id, addingPortal: false })
+    setState((prev) =>
+      prev.kind === 'admin'
+        ? {
+            ...prev,
+            portals: [...prev.portals, portal],
+            selectedPortalId: portal.id,
+            addingPortal: false,
+          }
+        : prev,
+    )
     void putLastSelectedPortal(portal.id)
   }
 
   function handlePortalUpdated(portal: PortalDetail): void {
-    if (state.kind !== 'admin') return
-    setState({
-      ...state,
-      portals: state.portals.map((p) => (p.id === portal.id ? portal : p)),
-    })
+    setState((prev) =>
+      prev.kind === 'admin'
+        ? { ...prev, portals: prev.portals.map((p) => (p.id === portal.id ? portal : p)) }
+        : prev,
+    )
   }
 
   function handlePortalDeleted(): void {
-    if (state.kind !== 'admin') return
     void loadAdminPortals()
   }
 
@@ -245,16 +285,49 @@ export function App(): ReactElement {
   }
 
   // state.kind === 'admin'
-  if (state.portals.length === 0 && !state.addingPortal) {
-    return <CreatePortalScreen onCreated={handlePortalCreated} />
-  }
-
-  if (state.selectedPortalId === null) {
-    // Should be unreachable once `portals.length > 0` (loadAdminPortals always
-    // picks a selection when the list is non-empty), but the type is nullable
-    // — fail toward the create screen rather than rendering Portal with an
-    // impossible empty portalId.
-    return <CreatePortalScreen onCreated={handlePortalCreated} />
+  //
+  // The null selection should be unreachable once `portals.length > 0`
+  // (loadAdminPortals always picks a selection when the list is non-empty), but
+  // the type is nullable — fail toward the create screen rather than rendering
+  // Portal with an impossible empty portalId.
+  //
+  // In a Shell, because this screen is where a self-hosted admin lands on their
+  // first login: bare, it has no logout and no way to reach the integration
+  // token they need to pair the Home Assistant integration, and clearing the
+  // cookie is the only way off it. The title is the deployment default — there
+  // is no portal yet to name it.
+  if (state.portals.length === 0 || state.selectedPortalId === null) {
+    return (
+      <Shell
+        title={DEFAULT_PORTAL_TITLE}
+        loggingOut={loggingOut}
+        onLogout={() => {
+          void handleLogout()
+        }}
+        headerActions={
+          <button
+            type="button"
+            aria-label="Settings"
+            style={gearButton}
+            onClick={() => setShowDeploymentSettings(true)}
+          >
+            ⚙
+          </button>
+        }
+      >
+        {showDeploymentSettings ? (
+          <DeploymentSettingsPanel
+            onClose={() => setShowDeploymentSettings(false)}
+            onLogout={() => {
+              void handleLogout()
+            }}
+            loggingOut={loggingOut}
+          />
+        ) : (
+          <CreatePortalScreen onCreated={handlePortalCreated} />
+        )}
+      </Shell>
+    )
   }
 
   return (
@@ -264,10 +337,14 @@ export function App(): ReactElement {
       onLogout={handleLogout}
       portals={state.portals}
       onSelectPortal={handleSelectPortal}
-      onAddPortal={() => setState({ ...state, addingPortal: true })}
+      onAddPortal={() =>
+        setState((prev) => (prev.kind === 'admin' ? { ...prev, addingPortal: true } : prev))
+      }
       addingPortal={state.addingPortal}
       onPortalCreated={handlePortalCreated}
-      onCancelAddPortal={() => setState({ ...state, addingPortal: false })}
+      onCancelAddPortal={() =>
+        setState((prev) => (prev.kind === 'admin' ? { ...prev, addingPortal: false } : prev))
+      }
       onPortalUpdated={handlePortalUpdated}
       onPortalDeleted={handlePortalDeleted}
     />

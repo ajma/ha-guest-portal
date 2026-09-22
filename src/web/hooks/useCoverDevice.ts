@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Device } from '@shared/api.js'
 import { performAction } from '../api.js'
+import { usePortalId } from '../portalContext.js'
 
 export type CoverDevice = {
   isStale: boolean
@@ -21,6 +22,7 @@ type CoverAction = 'open_cover' | 'close_cover' | 'stop_cover'
 export function useCoverDevice(device: Device, disabled: boolean): CoverDevice {
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const portalId = usePortalId()
 
   const isStale = device.state.stale
   const currentState = device.state.state
@@ -37,7 +39,7 @@ export function useCoverDevice(device: Device, disabled: boolean): CoverDevice {
     setPending(true)
 
     try {
-      const result = await performAction(device.entityId, action)
+      const result = await performAction(device.entityId, action, portalId)
 
       if (!result.ok) {
         setError('Action failed')
