@@ -23,7 +23,6 @@ export const SessionResponse = z.discriminatedUnion('role', [
 ])
 
 // Device state and device schemas
-export type DeviceState = z.infer<typeof DeviceStateSchema>
 const DeviceStateSchema = z.object({
   state: z.string(),
   attributes: z.record(z.string(), z.unknown()),

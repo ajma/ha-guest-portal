@@ -9,7 +9,7 @@ import { IntegrationEnabledRequest, IntegrationStateResponse } from '../../share
  * against an add-on too old to speak its protocol, rather than failing on a
  * missing field. Bump when the shape of /api/integration/state changes.
  */
-export const INTEGRATION_API_VERSION = '2.0.0'
+const INTEGRATION_API_VERSION = '2.0.0'
 
 function tokenMatches(supplied: string, expected: string): boolean {
   // Hash both sides so timingSafeEqual always sees equal-length buffers.

@@ -50,7 +50,7 @@ function getClientIp(c: HonoContext, cfg: Config): string {
  * portal of its own — they act on whichever portal `?portalId=` names, since
  * one admin identity reaches every portal.
  */
-export function resolvePortalId(c: HonoContext, session: SessionData): string | null {
+function resolvePortalId(c: HonoContext, session: SessionData): string | null {
   if (session.role === 'guest') return session.portalId
   const fromQuery = c.req.query('portalId')
   return fromQuery ?? null

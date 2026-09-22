@@ -29,10 +29,12 @@ function webRootFor(deps: Deps): string {
 }
 
 /**
- * The portal title is owner-supplied text going into two HTML contexts — a
- * double-quoted attribute and element text. Escaping these five characters
- * covers both. `&` must be replaced first, or the escapes introduced by the
- * later replacements would themselves be re-escaped.
+ * Two untrusted values reach the served HTML, in two different contexts: the
+ * base href, which comes off the `x-ingress-path` header and lands in
+ * double-quoted attributes, and the portal title, which is owner-supplied and
+ * lands in element text. Escaping these five characters covers both contexts.
+ * `&` must be replaced first, or the escapes introduced by the later
+ * replacements would themselves be re-escaped.
  */
 function escapeHtml(value: string): string {
   return value
@@ -72,8 +74,8 @@ function themeAndTitleFor(
  * The theme lands on <html> rather than in a <meta> so the CSS variable block
  * keyed off [data-theme] applies during HTML parse, before React loads. That is
  * what makes the portal render themed on first paint with no API call. The
- * title rides along for the same reason, and because guests need it while
- * having no admin endpoint to read it from.
+ * <title> rewrite below rides along for the same reason: it sets the browser
+ * tab title on first paint with no API call either.
  *
  * Returns null when index.html is missing (an unbuilt checkout).
  */
@@ -96,15 +98,15 @@ function renderIndexHtml(deps: Deps, baseHref: string, session: SessionData | nu
       () => `<html data-theme="${theme}" data-ingress-base="${escapedBase}"`,
     )
 
-  // The two title-bearing replacements take a *function*, not a string. A
-  // string replacement expands `$&`, `` $` `` and `$'`, and escaping does not
-  // defuse them — `$&` escapes to `$&amp;`, which still starts `$&` — so a
-  // title containing one would splice the matched tag into its own attribute.
+  // The title-bearing replacement takes a *function*, not a string. A string
+  // replacement expands `$&`, `` $` `` and `$'`, and escaping does not defuse
+  // them — `$&` escapes to `$&amp;`, which still starts `$&` — so a title
+  // containing one would splice surrounding markup into the title text: `$&`
+  // the matched <title> element itself, `` $` `` everything before it (the
+  // doctype, <html>, the whole <head>), `$'` everything after.
   if (title !== null) {
     const escapedTitle = escapeHtml(title)
-    html2 = html2
-      .replace(/<html([^>]*)>/i, (_full, attrs: string) => `<html${attrs} data-portal-title="${escapedTitle}">`)
-      .replace(/<title>[^<]*<\/title>/i, () => `<title>${escapedTitle}</title>`)
+    html2 = html2.replace(/<title>[^<]*<\/title>/i, () => `<title>${escapedTitle}</title>`)
   }
 
   return html2

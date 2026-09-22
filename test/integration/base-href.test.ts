@@ -232,11 +232,11 @@ describe('Base href injection', () => {
     const res = await fetch(baseUrl, { headers: { cookie } })
     const html = await res.text()
     expect(html).toContain('data-theme="tiles"')
-    expect(html).toContain(`data-portal-title="Timothy"`)
+    expect(html).toContain('<title>Timothy</title>')
   })
 
   it('escapes a hostile portal title rather than emitting it raw', async () => {
-    // The title is owner-supplied text written into two HTML contexts. This
+    // The title is owner-supplied text written into the <title> element. This
     // is the only injection surface `renderIndexHtml` adds beyond the base
     // href already covered above.
     portals.create({ title: '"><script>alert(1)</script>', password: 'hostile-title-pass' })
@@ -245,11 +245,6 @@ describe('Base href injection', () => {
     const res = await fetch(baseUrl, { headers: { cookie } })
     const html = await res.text()
     expect(html).not.toContain('<script>alert(1)</script>')
-    expect(html).not.toContain('data-portal-title="">')
-    // Necessary but not sufficient on their own: dropping only the quote
-    // replacement still escapes the tag while closing the attribute early —
-    // the whole expected value is what proves the attribute survived intact.
-    expect(html).toContain('data-portal-title="&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;"')
     expect(html).toContain('<title>&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;</title>')
   })
 
@@ -262,25 +257,24 @@ describe('Base href injection', () => {
 
     const res = await fetch(baseUrl, { headers: { cookie } })
     const html = await res.text()
-    expect(html).toContain('data-portal-title="Tom &amp; Jerry&#39;s &quot;Place&quot;"')
     expect(html).toContain('<title>Tom &amp; Jerry&#39;s &quot;Place&quot;</title>')
     expect(html).not.toContain('Tom & Jerry')
     expect(html).not.toContain('&amp;quot;')
   })
 
   it('treats $-sequences in the portal title as text, not replacement patterns', async () => {
-    // `String.prototype.replace` expands `$&` and `` $` `` inside a *string*
-    // replacement, and escaping does not defuse them: `$&` escapes to
-    // `$&amp;`, which still begins `$&`. Only a function replacer disables
-    // the expansion — without one the matched `<html` tag would land inside
-    // its own attribute value.
+    // `String.prototype.replace` expands `$&`, `` $` `` and `$'` inside a
+    // *string* replacement, and escaping does not defuse them: `$&` escapes
+    // to `$&amp;`, which still begins `$&`. Only a function replacer disables
+    // the expansion — without one, `` $` `` would splice everything before
+    // the matched <title> tag — the doctype, <html>, and <head> — into the
+    // title text.
     portals.create({ title: '$& $` Bay', password: 'dollar-title-pass' })
     const cookie = await loginAs('dollar-title-pass')
 
     const res = await fetch(baseUrl, { headers: { cookie } })
     const html = await res.text()
-    expect(html).toContain('data-portal-title="$&amp; $` Bay"')
     expect(html).toContain('<title>$&amp; $` Bay</title>')
-    expect(html).not.toMatch(/data-portal-title="[^"]*<(html|!DOCTYPE)/i)
+    expect(html).not.toMatch(/<title>[^<]*<(head|html|!DOCTYPE)/i)
   })
 })
