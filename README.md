@@ -1,6 +1,6 @@
 # Home Assistant Guest Portal
 
-A LAN-only web app that exposes a curated subset of Home Assistant devices to guests via a shared password. Designed for short-term rentals and vacation homes.
+A LAN-only web app that exposes a curated subset of Home Assistant devices to guests, behind a password. Each portal has its own password, and you can run more than one. Designed for short-term rentals and vacation homes.
 
 ## Prerequisites
 
@@ -48,12 +48,20 @@ No Home Assistant token is needed — the Supervisor provides it automatically. 
 
 ### Home Assistant Integration (optional)
 
-A companion custom integration exposes the portal to Home Assistant as:
+A companion custom integration exposes **each portal** to Home Assistant as
+its own device, grouped under one "Guest Portal" hub device, with two
+entities:
 
-- `switch.guest_portal` — turn the guest portal on and off from HA, a dashboard,
-  or an automation
-- `sensor.guest_portal_last_interaction` — a timestamp updated whenever a guest
-  logs in or operates a device
+- a **switch**, to turn that portal's guest side on and off from HA, a
+  dashboard, or an automation
+- a **sensor**, a timestamp updated whenever a guest of that portal logs in or
+  operates a device
+
+Entity IDs are derived from each portal's name, not fixed: a portal named
+"Barn" gets `switch.barn` and `sensor.barn_last_interaction`. That derivation
+happens once, when the portal's entities are first created — renaming the
+portal afterward does not update the entity IDs (or the device name shown in
+Home Assistant) to match.
 
 #### Install
 
@@ -80,23 +88,24 @@ The integration requires **Python 3.14.2+**, which is satisfied by Home Assistan
 #### Notification automation
 
 The sensor's attributes describe what happened, using the same shape for both
-kinds of interaction:
+kinds of interaction. Substitute your portal's own entity ID — below,
+"Barn" — for `sensor.barn_last_interaction`:
 
 ```yaml
 automation:
-  - alias: Notify when a guest uses the portal
+  - alias: Notify when a guest uses the Barn portal
     triggers:
       - trigger: state
-        entity_id: sensor.guest_portal_last_interaction
+        entity_id: sensor.barn_last_interaction
     conditions:
       - condition: template
-        value_template: "{{ state_attr('sensor.guest_portal_last_interaction', 'kind') == 'action' }}"
+        value_template: "{{ state_attr('sensor.barn_last_interaction', 'kind') == 'action' }}"
     actions:
       - action: notify.mobile_app_my_phone
         data:
           message: >-
-            Guest used {{ state_attr('sensor.guest_portal_last_interaction', 'label') }}
-            ({{ state_attr('sensor.guest_portal_last_interaction', 'action') }})
+            Guest used {{ state_attr('sensor.barn_last_interaction', 'label') }}
+            ({{ state_attr('sensor.barn_last_interaction', 'action') }})
 ```
 
 Attributes: `kind` (`action` or `login`), `target_entity_id`, `label`, `action`,
@@ -188,30 +197,86 @@ docker run -d \
 
 Replace `192.168.1.10` with your server's LAN IP address.
 
+## Upgrading from a single-portal version
+
+**The database is not compatible with earlier versions, and shipping a
+migration is a deliberate non-goal.** This version changed the database from
+one shared portal to many independently-passworded ones, and the schema
+changed incompatibly to match.
+
+If you start this version against an old database without deleting it
+first, **it will not fail loudly.** It boots normally, your existing portal's
+name, theme, and entire device allowlist silently disappear from the UI
+(you land on the create-portal screen, as on a fresh install), and creating
+a new portal succeeds — right up until you view its device list or a guest
+tries to log in, at which point you get a raw `no such column: portal_id`
+server error on every device read and write.
+
+**To upgrade correctly:**
+
+1. Stop the add-on or container.
+2. Delete the database file — `/data/portal.db` for an add-on install, or the
+   equivalent file in your Docker volume or bind mount.
+3. Start it again. You land on the create-portal screen, exactly as on a
+   fresh install, and re-create each portal you had before with a new
+   password — passwords are not recoverable from the deleted database.
+4. **Re-pair the Home Assistant integration.** Deleting the database also
+   regenerates the deployment id and the integration token, so the existing
+   integration entry no longer matches. Add-on installs rediscover
+   themselves automatically after a restart; Docker Compose installs must
+   remove and re-add the integration with the new token (see `DOCS.md`).
+
+See `DOCS.md`'s "Upgrading from a single-portal version" section for the
+full walkthrough.
+
+### If it won't start after upgrading
+
+Two configuration states now make the server refuse to start rather than run
+broken, and an upgrade is the most likely time to hit either:
+
+- **`ADMIN_PASSWORD` shorter than 8 characters** — logs `Invalid
+  configuration: ✖ Too small: expected string to have >=8 characters → at
+  ADMIN_PASSWORD`. Set it to at least 8 characters (in the add-on's
+  `admin_password` option, or your `.env`).
+- **`ADMIN_PASSWORD` equal to some portal's password** — logs `ADMIN_PASSWORD
+  is also the guest password for "<portal name>" (<portal id>). A guest of
+  that portal would be logged in as admin over every portal. Change
+  ADMIN_PASSWORD, or change that portal's password.` This is deliberate: were
+  the server to start anyway, a guest logging into that one portal would get
+  an admin session over every portal, not just the one their password was
+  for. Change `admin_password`, or that portal's password, and restart.
+
 ## First-Run Setup
 
 1. Navigate to `http://<your-server-ip>:9123` in a web browser
-2. Log in using the admin password you configured
-3. Click **Edit** in the header. There is no separate admin page — you edit the
-   portal itself, and guests see neither button
-4. Click the **+ Add device** tile at the end of the grid and choose an entity
-   from your Home Assistant instance
+2. Log in using the admin password you configured. A fresh database has no
+   portals yet, so you land straight on a create-portal screen — there is no
+   separate admin page
+3. Give the portal a name and set its password (at least 8 characters), then
+   create it
+4. Click **Edit** in the header, then the **+ Add device** tile at the end of
+   the grid, and choose an entity from your Home Assistant instance
 5. Tap the new device's tile to set a friendly label and tick which actions are
    permitted (e.g., unlock but not lock). A device with nothing ticked is
    visible to guests but inert
 6. Click **Done**. Every change saved as you made it; there is no Save button
    and no undo
-7. Optionally click **Settings** to name the portal and pick one of the three
-   guest portal themes (see `DOCS.md`)
-8. Share the guest portal URL and guest password with your guests
+7. Optionally expand **▸ Portal settings** below the header to rename the
+   portal or pick one of the three guest portal themes (see `DOCS.md`)
+8. Share the portal's URL and its password with your guests:
+   - URL: `http://<your-server-ip>:9123`
+   - Password: the password you set when you created the portal
 
-Guests can now control only the devices you've explicitly allowed.
+Guests can now control only the devices you've explicitly allowed. To add a
+second portal, use **+ Add portal** at the bottom of the portal switcher in
+the header (see `DOCS.md`).
 
 ## Theme Previews (development)
 
-The committed theme previews in `src/web/theme-previews/` double as the admin
-picker's thumbnails **and** as Playwright's visual-regression baselines, and CI
-compares them inside the Playwright container. Regenerate them with
+The committed theme previews in `src/web/theme-previews/` are Playwright's
+visual-regression baselines (the theme picker itself is plain radio buttons,
+not thumbnails), and CI compares them inside the Playwright container.
+Regenerate them with
 `pnpm previews:update:ci`, which runs in that same container.
 `pnpm previews:update` regenerates them with whatever fonts this machine has,
 which is useful for looking at a change and wrong for committing one.
@@ -251,7 +316,7 @@ added by hand, in the last step below, only after a real pull has succeeded.
 **Do this in order.** Steps 4 and 6 are the two a skim will miss, and skipping
 either produces a release that looks green and installs for nobody:
 
-1. Bump `version:` in `config.yaml` (currently `0.2.0`).
+1. Bump `version:` in `config.yaml` (currently `0.0.1`).
 2. Commit the bump, then tag the commit `v<version>`, matching `config.yaml`
    exactly:
    ```bash
@@ -311,8 +376,9 @@ This portal is designed for deployment on a trusted home network behind a router
 
 - **Shared passwords**: one per portal for its guests (device control), and one deployment-wide for admins (portal and device management)
 - **Server-side allowlist**: Only explicitly approved entities and actions are permitted
-- **Kill-switch**: the guest surface can be disabled from the portal's Settings
-  panel or from Home Assistant, without affecting an owner's own access
+- **Kill-switch**: each portal's guest surface can be disabled from its own
+  **▸ Portal settings** accordion or from Home Assistant, without affecting
+  an owner's own access
 - **Token isolation**: The Home Assistant access token never reaches a browser
 - **Network isolation**: Bind to a LAN interface only; no TLS (relies on physical network boundary)
 - **Session cookies**: HttpOnly, SameSite=Lax (no Secure flag — this is plain HTTP on LAN)

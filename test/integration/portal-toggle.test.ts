@@ -508,6 +508,9 @@ describe('Portal toggle', () => {
 
     portals.delete(timothy.id)
 
+    // The portal frame must go out before the stream closes, same as the
+    // disable path: a client still listening learns why before the drop.
+    expect(await waitForFrame(timothyStream.frames, 'portal')).toBe(true)
     await expect(timothyStream.closed()).resolves.toBe(true)
     expect(maryStream.isClosed()).toBe(false)
 

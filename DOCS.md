@@ -1,6 +1,6 @@
 # Home Assistant Guest Portal Add-On
 
-A LAN-only web app that exposes a curated subset of Home Assistant devices to guests via a shared password. Designed for short-term rentals and vacation homes.
+A LAN-only web app that exposes a curated subset of Home Assistant devices to guests, behind a password. Each portal has its own password, and you can run more than one. Designed for short-term rentals and vacation homes.
 
 ## Installation
 
@@ -26,7 +26,9 @@ The add-on has one option, and it is optional:
 ### `admin_password` (optional)
 Password for administrators to configure portals from outside Home Assistant.
 - Must be at least 8 characters if set
-- Must differ from every portal's password
+- Must differ from every portal's password — if it collides with one, the
+  add-on refuses to start rather than silently handing that portal's guests
+  an admin session (see **If the add-on won't start** below)
 - Leave it empty to allow admin access only through the Home Assistant sidebar
 
 Example configuration:
@@ -55,13 +57,108 @@ The add-on listens on port 9123 inside the container. To change the port exposed
 
 The container port (right side) must remain 9123 and should not be modified.
 
-**Upgrade note:** If your saved configuration still contains a `port:` line from an earlier version, remove it — the option no longer exists.
+**Upgrade note:** If your saved configuration still contains a `port:` line
+from an earlier version, remove it — the option no longer exists. The same
+goes for a leftover `guest_password:` line: it no longer exists either, and
+the Supervisor will accept and then silently ignore it (with a log warning)
+rather than fail, so it is easy to miss.
+
+## Upgrading from a single-portal version
+
+**The database is not compatible with earlier versions, and there is no
+migration.** This is deliberate, not an oversight: this release changed the
+database from one shared portal to many independently-passworded ones, and
+the schema changed incompatibly to match. Upgrading in place does not fail
+loudly — it fails quietly, later, and that is the actual problem this section
+exists to prevent.
+
+If you upgrade without deleting the database, here is exactly what happens:
+
+1. The add-on **starts normally**. No warning, no error — the log looks
+   healthy.
+2. Your existing portal's name, theme, on/off state, and **entire device
+   allowlist silently disappear** from the UI. You land on the create-portal
+   screen, as if this were a fresh install. The old data is still in the
+   file, it is just unreachable by the new schema.
+3. You create a portal. **This succeeds.**
+4. The moment you view its device list, add a device, or a guest tries to log
+   in, you get a raw server error (`no such column: portal_id`). Every device
+   read and write on that portal fails the same way.
+
+**To upgrade correctly:**
+
+1. Stop the add-on.
+2. Delete the database file: `/data/portal.db` inside the add-on (delete it
+   over the Samba share, or with a one-off `rm` in the add-on's Terminal if
+   you have that add-on installed), or the equivalent file in your Docker
+   volume/bind mount for a Docker install.
+3. Start the add-on. You will land on the create-portal screen, exactly as on
+   a fresh install.
+4. Re-create each portal you had before, with a new password for each —
+   passwords are not recoverable from the deleted database.
+5. **Re-pair the Home Assistant integration.** Deleting the database also
+   regenerates the deployment id and the integration token, so the existing
+   integration entry no longer matches. Add-on installations rediscover
+   themselves automatically after a restart; Docker Compose installations
+   must remove and re-add the integration with the new token (shown under the
+   gear icon's **Settings** panel — see below).
+
+There is nothing to back up and restore: this is a clean re-creation of every
+portal, not a data migration.
+
+## If the add-on won't start
+
+Two configuration mistakes make the add-on refuse to start rather than run
+in a broken state. Both are deliberate fail-fast checks, and both are fixed
+from the add-on's own **Configuration** page — you do not need to touch the
+database for either of these.
+
+**`admin_password` is too short.** Outside the add-on (Docker/Compose) this
+surfaces as a startup log naming the environment variable rather than the
+option you set:
+```
+Fatal error: Error: Invalid configuration:
+✖ Too small: expected string to have >=8 characters
+  → at ADMIN_PASSWORD
+```
+Fix: set `ADMIN_PASSWORD` (or the add-on's `admin_password` option) to at
+least 8 characters.
+
+**`admin_password` collides with a portal's password.** The add-on refuses to
+start with:
+```
+Fatal error: Error: ADMIN_PASSWORD is also the guest password for "<portal
+name>" (<portal id>). A guest of that portal would be logged in as admin
+over every portal. Change ADMIN_PASSWORD, or change that portal's password.
+```
+This is not cosmetic: if the two passwords matched and the add-on started
+anyway, a guest logging into that one portal would be logged in as an admin
+with full control over every portal, not just the one they were given a
+password for. Fix: change `admin_password` in the add-on's options, or
+change that portal's password from its **▸ Portal settings** accordion (see
+below) — either one clears the collision.
 
 ## Editing the portal
 
 Open the portal from your Home Assistant sidebar and you land on the same page
-your guests see, with two extra buttons in the header: **Edit** and **Settings**.
-Guests never see either one — for a guest the buttons are absent, not greyed out.
+your guests see, with two extra buttons in the header: **Edit** and a **⚙**
+gear, plus — where your guest sees a plain title — a portal switcher. Guests
+never see any of these three — for a guest they are absent, not greyed out.
+
+### Switching portals, and adding one
+
+The title in the header is not just a label: for an owner it is a dropdown
+listing every portal you have, with the one you are looking at selected.
+Choosing a different name switches straight to that portal.
+
+At the bottom of that same dropdown is **+ Add portal** — the only way to
+create a second (or third, or fourth) portal. Choosing it opens the same
+create-portal screen a brand-new install shows: a name and a password (at
+least 8 characters), and a **Create portal** button that is disabled until
+both are filled in. The portal it creates is enabled immediately, with an
+empty device list, and every portal's password must be unique — trying to
+reuse one already in use, whether another portal's or `admin_password`
+itself, is refused.
 
 ### Edit
 
@@ -89,12 +186,45 @@ again under its new name.
 
 Click **Done** when you have finished.
 
-### Settings
+### Settings (the gear icon)
 
-**Settings** opens a panel over the portal holding three things: the portal's
-name, the theme, and the switch that turns the guest side on and off. Each is
-described in its own section below. Close the panel when you are done — as with
-editing, nothing here needs saving.
+The **⚙** button is not where a portal's own name, theme, on/off switch, or
+password live — that surprises anyone coming from an earlier version, where
+it was. It opens a small panel with:
+
+- the **integration token**, revealed with a **Show token** button, for
+  pairing the Home Assistant integration by hand in a Docker Compose install
+  (add-on installs are discovered automatically and never need it)
+- the **deployment id**
+- a **Log out** button
+
+Close the panel when you are done.
+
+### Portal settings (the name, theme, on/off switch, and password)
+
+Below the header, and above the device grid, is a collapsed row reading
+**▸ Portal settings**. Click it to expand the current portal's own settings:
+
+- **Portal name** — a text field. It saves when you click or tab away from
+  it; there is no Enter-to-save and no Save button.
+- **Theme** — three radio buttons, one per theme (see **Choosing a theme**
+  below).
+- **Enabled** — a checkbox. Unticking it is the guest kill-switch (see
+  **Turning the guest portal on and off** below).
+- **Password** — this portal's guest password, with a **Show password** /
+  **Hide password** button. Changing it takes effect immediately and signs
+  out every guest currently using that portal (see below).
+- **Delete portal** — asks you to confirm, then removes the portal and its
+  entire device list. This cannot be undone.
+
+Collapse it again with the same **▸ Portal settings** row (now **▾**) when
+you are done — as with editing, nothing here needs a separate save.
+
+**Rotating a portal's password signs its guests out immediately.** The
+moment you save a new password, every guest session for that portal is
+revoked and their connection is dropped — they will need the new password to
+get back in. This is deliberate: an old password should stop working the
+instant you change it, not the next time someone happens to reload.
 
 ### Two things worth knowing before you start
 
@@ -114,20 +244,21 @@ is the one change you cannot simply make again.
 
 ## Naming the portal
 
-**Settings** has a **Portal name** field. The name you type appears in the portal
-header and in the browser tab, for your guests and for you.
+Expand **▸ Portal settings** below the header and edit the **Portal name**
+field. The name you type appears in that portal's header and in the browser
+tab, for your guests and for you.
 
-Press Enter, or click outside the field, to save it. Clearing the field restores
-the default name, `Guest Portal` — the header is never left blank. Names are
-limited to 60 characters.
+It saves as soon as you click or tab away from the field — there is no
+Enter-to-save. Clearing the field restores the default name, `Guest Portal` —
+the header is never left blank. Names are limited to 60 characters.
 
 A guest who already has the portal open keeps the old name until their next page
 load. The setting survives add-on restarts and updates.
 
 ## Turning the guest portal on and off
 
-Click **Settings** in the portal header. The **Guest Portal** switch at the
-bottom of the panel turns the guest side on and off. Turning it off:
+Expand **▸ Portal settings** below the header. The **Enabled** checkbox turns
+that portal's guest side on and off. Unticking it:
 
 - refuses guest logins, even with the correct password
 - blocks guests who are already signed in, and drops their live updates
@@ -141,8 +272,8 @@ The setting survives add-on restarts and updates.
 
 ## Choosing a theme
 
-**Settings** has a **Theme** picker showing three small pictures of the portal.
-Click one to change how the guest portal looks. The three are:
+Expand **▸ Portal settings** below the header. Three radio buttons, one per
+theme, change how that guest portal looks:
 
 - **Classic** — the look of Home Assistant itself. Each device is a wide row: a
   round icon on the left, the device's name and what it is doing next to it, and
@@ -161,8 +292,9 @@ Click one to change how the guest portal looks. The three are:
 
 The theme applies to everything a guest sees: the login screen, the device list,
 and the "temporarily unavailable" message shown while the portal is switched off.
-Your own Edit and Settings panels follow it too — they take their colours from
-whichever theme you have chosen, so they never look pasted on top of the portal.
+Your own Edit mode, the device editor, and the **▸ Portal settings** accordion
+follow it too — they take their colours from whichever theme you have chosen for
+that portal, so they never look pasted on top of the portal.
 
 Whichever you choose, it switches between a light and a dark appearance on its
 own, following whatever the guest's phone or laptop is already set to. There is
@@ -181,7 +313,8 @@ The portal supports two ways to access it:
 After installing the add-on, a "Home Assistant Guest Portal" entry appears in your Home Assistant sidebar. Click it to open the portal **with admin privileges, no password required**. This uses Home Assistant's ingress feature and authenticates you automatically.
 
 From there, click **Edit** to choose which devices guests can access, or
-**Settings** to name the portal, pick a theme, or turn the guest side off.
+expand **▸ Portal settings** to name the portal, pick a theme, rotate its
+password, or turn the guest side off.
 
 ### Guest Access via Direct Port
 
@@ -242,7 +375,7 @@ guests reach the portal over an `https://` address.
    guests are allowed to use (e.g. unlock but not lock). Until you tick
    something the device is visible to guests but does nothing
 6. Click **Done**. There is no Save button — every change saved as you made it
-7. Optionally click **Settings** to rename the portal or choose a theme
+7. Optionally expand **▸ Portal settings** to rename the portal or choose a theme
 8. Share the direct port URL and the portal's password with your guests:
    - URL: `http://homeassistant.local:9123` (or your LAN IP)
    - Password: The password you set when you created the portal

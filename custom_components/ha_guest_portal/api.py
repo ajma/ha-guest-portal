@@ -86,8 +86,15 @@ def _parse_portal_summary(raw: Any) -> PortalSummary:
 def portal_version_too_old(version: str) -> bool:
     """Whether a reported add-on version predates the contract we can read.
 
-    A version that cannot be compared at all counts as too old, so the user
-    gets the "update the add-on" repair issue rather than a traceback.
+    The `except` below is unreachable as the code stands. Every caller passes a
+    `DeploymentState.version`, and `_parse_version` has already rejected
+    anything `AwesomeVersion` cannot parse: an absent key becomes "0.0.0", and
+    a present-but-unusable one is raised as a malformed payload there instead.
+
+    It is kept because this function is public and takes a bare string, so a
+    caller that has not been through `_parse_version` should get the "update
+    the add-on" repair issue rather than a traceback. Anyone adding such a
+    caller is making this branch live rather than writing a new one.
     """
     try:
         return AwesomeVersion(version) < AwesomeVersion(MIN_PORTAL_VERSION)

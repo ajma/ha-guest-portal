@@ -225,6 +225,15 @@ export function useAllowlistEditor(
     // write only fires when `portalId` genuinely changed — which changes
     // `load`'s identity and re-runs the fetching effect, so the load being
     // abandoned is never one anybody still wants.
+    //
+    // Known caveat: this mutates the ref during render, and React can start a
+    // render for another portal and then discard it without committing. If
+    // that happens, this line has already fired, and the portal that stayed
+    // current is left with its in-flight load marked abandoned even though
+    // nothing else about it changed. That does not hand it another portal's
+    // data — `load()` just stops adopting the response — it wedges into a
+    // permanent "still loading" state that only `reload()` clears. Fails
+    // safe, not free, and that's accepted.
     loadTarget.current.abandoned = true
   }
 
