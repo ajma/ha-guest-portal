@@ -112,6 +112,39 @@ export function App(): ReactElement {
     writeThemeId(themeId)
   }, [themeId])
 
+  // The tab title's sibling to `themeId` above: a guest's is on their
+  // session, an admin's is on whichever portal is selected, and both can
+  // change without a reload (switching portals, renaming in settings).
+  // `null`, not a fallback name, for every other state -- see the effect
+  // below for why.
+  let pageTitle: string | null
+  if (state.kind === 'guest') {
+    pageTitle = state.session.portalTitle
+  } else if (state.kind === 'admin') {
+    const selected = state.portals.find((p) => p.id === state.selectedPortalId)
+    pageTitle = selected?.title ?? DEFAULT_PORTAL_TITLE
+  } else {
+    pageTitle = null
+  }
+
+  // Unlike `writeThemeId` above, this is a plain `useEffect`, not
+  // `useLayoutEffect`, and deliberately so: `data-theme` has to beat paint
+  // because it drives the CSS variables the page is painted with, but
+  // `document.title` is browser chrome that paints on its own schedule --
+  // blocking the commit for it buys nothing.
+  //
+  // `null` means "do not write", not "write nothing in particular": the
+  // `loading` / `logged-out` / `unreachable` states have no portal to name,
+  // and resetting the tab there would clobber the server's correct
+  // first-paint title the instant this effect first runs -- `loading` runs
+  // before `getSession()` has even resolved. Consequence, accepted: an owner
+  // who switches to "Cabin" and then logs out keeps "Cabin" in the tab until
+  // the next reload, same as the theme above.
+  useEffect(() => {
+    if (pageTitle === null) return
+    document.title = pageTitle
+  }, [pageTitle])
+
   // Every screen App owns comes from the active theme, so nobody crosses an
   // unthemed seam. There is one portal: an owner gets Edit and Settings inside
   // it, rather than a separate page that looks nothing like what they ship.

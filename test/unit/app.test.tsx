@@ -305,6 +305,118 @@ describe('App', () => {
     })
   })
 
+  describe('live tab title updates', () => {
+    // `document.title` is process-global mutable state, exactly like
+    // `data-theme` above. Seeded to something deliberately wrong here so a
+    // test cannot pass by the title simply never having been touched.
+    beforeEach(() => {
+      document.title = 'stale-title-should-be-overwritten'
+    })
+
+    afterEach(() => {
+      document.title = ''
+    })
+
+    it('updates the tab when the owner renames the selected portal in settings', async () => {
+      vi.mocked(api.getSession).mockResolvedValue({ role: 'admin' })
+      vi.mocked(api.getPortals).mockResolvedValue({
+        ok: true,
+        data: {
+          portals: [{ id: 'p1', title: 'Timothy', theme: 'classic', enabled: true }],
+          lastSelectedPortalId: 'p1',
+        },
+      })
+      vi.mocked(api.getCatalog).mockResolvedValue({ ok: true, data: [] })
+      vi.mocked(api.getPortalAllowlist).mockResolvedValue({ ok: true, data: { devices: [], orphaned: [] } })
+      vi.mocked(api.getPortal).mockResolvedValue({
+        ok: true,
+        data: { id: 'p1', title: 'Timothy', theme: 'classic', enabled: true, password: 'orig-pass' },
+      })
+      vi.mocked(api.updatePortal).mockResolvedValue({
+        ok: true,
+        data: { id: 'p1', title: 'Cabin Retreat', theme: 'classic', enabled: true, password: 'orig-pass' },
+      })
+
+      const user = userEvent.setup()
+      render(<App />)
+
+      await waitFor(() =>
+        expect((screen.getByRole('combobox', { name: /portal/i }) as HTMLSelectElement).value).toBe('p1'),
+      )
+
+      await user.click(screen.getByRole('button', { name: /portal settings/i }))
+      const titleField = await screen.findByLabelText(/portal name/i)
+      await user.clear(titleField)
+      await user.type(titleField, 'Cabin Retreat')
+      await user.tab()
+
+      await waitFor(() => expect(api.updatePortal).toHaveBeenCalledWith('p1', { title: 'Cabin Retreat' }))
+
+      expect(document.title).toBe('Cabin Retreat')
+    })
+
+    it('updates the tab when the owner switches to a different portal in the dropdown', async () => {
+      vi.mocked(api.getSession).mockResolvedValue({ role: 'admin' })
+      vi.mocked(api.getPortals).mockResolvedValue({
+        ok: true,
+        data: {
+          portals: [
+            { id: 'p1', title: 'Beach House', theme: 'classic', enabled: true },
+            { id: 'p2', title: 'Cabin', theme: 'classic', enabled: true },
+          ],
+          lastSelectedPortalId: 'p1',
+        },
+      })
+      vi.mocked(api.getCatalog).mockResolvedValue({ ok: true, data: [] })
+      vi.mocked(api.getPortalAllowlist).mockResolvedValue({ ok: true, data: { devices: [], orphaned: [] } })
+      vi.mocked(api.putLastSelectedPortal).mockResolvedValue({ ok: true, data: undefined })
+
+      const user = userEvent.setup()
+      render(<App />)
+
+      await waitFor(() =>
+        expect((screen.getByRole('combobox', { name: /portal/i }) as HTMLSelectElement).value).toBe('p1'),
+      )
+
+      await user.selectOptions(screen.getByRole('combobox', { name: /portal/i }), 'Cabin')
+
+      await waitFor(() =>
+        expect((screen.getByRole('combobox', { name: /portal/i }) as HTMLSelectElement).value).toBe('p2'),
+      )
+      expect(document.title).toBe('Cabin')
+    })
+
+    it('gives a guest their portal name in the tab after logging in, with no reload', async () => {
+      // Mirrors the theme login test above: the pre-login document genuinely
+      // has no title override (themeAndTitleFor with no session returns
+      // `title: null`, src/server/app.ts:57), so the tab reads whatever
+      // `index.html` shipped until login runs, in-page, with no reload.
+      vi.mocked(api.getSession).mockResolvedValue(null)
+      vi.mocked(api.login).mockResolvedValue({
+        ok: true,
+        data: {
+          role: 'guest',
+          portalId: 'p1',
+          portalTitle: 'Beach House',
+          portalTheme: 'classic',
+          portalEnabled: true,
+        },
+      })
+
+      const user = userEvent.setup()
+      render(<App />)
+
+      const passwordField = await screen.findByLabelText(/password/i)
+
+      await user.type(passwordField, 'guest-pass')
+      await user.click(screen.getByRole('button', { name: /log in/i }))
+
+      await waitFor(() => expect(screen.getByTestId('guest-screen')).toBeTruthy())
+
+      expect(document.title).toBe('Beach House')
+    })
+  })
+
   it('adds the new portal to the dropdown and selects it after using + Add portal', async () => {
     // Portal.tsx's add-portal overlay used to call both onPortalCreated and
     // onCancelAddPortal back to back, each building its next state from the
