@@ -19,14 +19,16 @@ export function Shell({
         <h1 className="text-3xl font-bold text-[var(--text)]">{title}</h1>
         <div className="flex items-center gap-2">
           {headerActions}
-          <button
-            type="button"
-            onClick={onLogout}
-            disabled={loggingOut}
-            className="px-4 py-2 text-sm font-medium text-[var(--text)] bg-[var(--surface)] border border-[var(--border)] rounded-[var(--tileRadius)] disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {loggingOut ? 'Logging out...' : 'Log out'}
-          </button>
+          {onLogout !== undefined && (
+            <button
+              type="button"
+              onClick={onLogout}
+              disabled={loggingOut}
+              className="px-4 py-2 text-sm font-medium text-[var(--text)] bg-[var(--surface)] border border-[var(--border)] rounded-[var(--tileRadius)] disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loggingOut ? 'Logging out...' : 'Log out'}
+            </button>
+          )}
         </div>
       </div>
 

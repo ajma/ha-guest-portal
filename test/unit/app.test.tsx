@@ -38,9 +38,10 @@ describe('App', () => {
 
   it('leaves an admin with zero portals a way out and the integration token', async () => {
     // A self-hosted admin lands here on first login, and this is where they
-    // find the token that pairs the Home Assistant integration. Without a
-    // header they could neither read it nor log out — clearing the cookie was
-    // the only exit.
+    // find the token that pairs the Home Assistant integration. The header
+    // itself carries no logout button for an admin (see the next test) --
+    // the gear is the only route, into the settings panel below, and this
+    // pins that the whole path still ends in a real logout call.
     vi.mocked(api.getSession).mockResolvedValue({ role: 'admin' })
     vi.mocked(api.getPortals).mockResolvedValue({
       ok: true,
@@ -61,9 +62,36 @@ describe('App', () => {
     await user.click(await screen.findByRole('button', { name: /show token/i }))
     expect((await screen.findByTestId('integration-token')).textContent).toBe('tok-abc')
 
-    await user.click(screen.getByRole('button', { name: /close/i }))
-    await user.click(screen.getByRole('button', { name: /log out/i }))
+    // Log out from inside the still-open panel, not after Close: once Close
+    // is clicked there is no logout control left on this screen at all
+    // (that is exactly what the next test pins), so clicking Close first
+    // would leave nothing for `/log out/i` to find.
+    await user.click(await screen.findByRole('button', { name: /log out/i }))
     await waitFor(() => expect(api.logout).toHaveBeenCalled())
+  })
+
+  // Kills: App.tsx passing onLogout to the zero-portal Shell unconditionally,
+  // and the CSS-only fake fix (hiding the header button instead of not
+  // rendering it) -- `hidden: true` and the markup check both see through
+  // that, where a bare `queryByRole` would not.
+  it('shows no header logout on the zero-portal admin screen, but keeps the gear', async () => {
+    vi.mocked(api.getSession).mockResolvedValue({ role: 'admin' })
+    vi.mocked(api.getPortals).mockResolvedValue({
+      ok: true,
+      data: { portals: [], lastSelectedPortalId: null },
+    })
+
+    render(<App />)
+
+    expect(await screen.findByText(/create a portal/i)).toBeTruthy()
+
+    // Settings still present: proves the header logout button was
+    // specifically removed, not that the whole header failed to render.
+    expect(screen.getByRole('button', { name: /^settings$/i })).toBeTruthy()
+
+    expect(screen.queryByRole('button', { name: /log out/i })).toBeNull()
+    expect(screen.queryByRole('button', { name: /log out/i, hidden: true })).toBeNull()
+    expect(document.body.textContent).not.toContain('Log out')
   })
 
   it('selects the last-selected portal for an admin with existing portals', async () => {

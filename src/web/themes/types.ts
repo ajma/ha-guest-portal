@@ -8,7 +8,13 @@ import type { ThemeTokens } from './tokens.js'
 export type TileProps = { device: Device; disabled: boolean }
 export type ShellProps = {
   children: ReactElement | ReactElement[]
-  onLogout: () => void
+  /**
+   * Guest-only. A Shell MUST render its logout control only when this is
+   * present, and render none at all when it is absent — an admin reaches
+   * logout through `headerActions`' Settings instead. `test/unit/shell-contract.test.tsx`
+   * enforces both halves for every registered theme.
+   */
+  onLogout?: () => void
   loggingOut: boolean
   /** The owner-configured portal name. Never hardcode a title in a Shell. */
   title: ReactNode

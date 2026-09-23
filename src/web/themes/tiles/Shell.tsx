@@ -29,14 +29,16 @@ export function Shell({
         </h1>
         <div className="flex items-center gap-2">
           {headerActions}
-          <button
-            type="button"
-            onClick={onLogout}
-            disabled={loggingOut}
-            className="rounded-full bg-[var(--surface)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--text)] shadow-[var(--shadow)] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {loggingOut ? 'Logging out...' : 'Log out'}
-          </button>
+          {onLogout !== undefined && (
+            <button
+              type="button"
+              onClick={onLogout}
+              disabled={loggingOut}
+              className="rounded-full bg-[var(--surface)] px-3.5 py-1.5 text-[13px] font-medium text-[var(--text)] shadow-[var(--shadow)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {loggingOut ? 'Logging out...' : 'Log out'}
+            </button>
+          )}
         </div>
       </header>
 

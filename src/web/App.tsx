@@ -396,19 +396,17 @@ export function App(): ReactElement {
   // the type is nullable — fail toward the create screen rather than rendering
   // Portal with an impossible empty portalId.
   //
-  // In a Shell, because this screen is where a self-hosted admin lands on their
-  // first login: bare, it has no logout and no way to reach the integration
-  // token they need to pair the Home Assistant integration, and clearing the
-  // cookie is the only way off it. The title is the deployment default — there
+  // In a Shell, because this screen is where a self-hosted admin lands on
+  // their first login: bare, it would have no way to reach the ⚙, and the ⚙
+  // is this admin's only route to both the integration token they need to
+  // pair the Home Assistant integration and to logout — the header's own
+  // logout button is guest-only. The title is the deployment default — there
   // is no portal yet to name it.
   if (state.portals.length === 0 || state.selectedPortalId === null) {
     return (
       <Shell
         title={DEFAULT_PORTAL_TITLE}
         loggingOut={loggingOut}
-        onLogout={() => {
-          void handleLogout()
-        }}
         headerActions={
           <button
             type="button"

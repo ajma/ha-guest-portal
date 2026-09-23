@@ -631,9 +631,7 @@ export function Portal({
       <Shell
         title={titleNode}
         loggingOut={loggingOut}
-        onLogout={() => {
-          void handleLogout()
-        }}
+        {...(!isOwner && { onLogout: () => { void handleLogout() } })}
         belowHeader={belowHeader}
         {...ownerActions}
       >

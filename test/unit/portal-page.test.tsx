@@ -156,6 +156,59 @@ describe('Portal page', () => {
       expect(api.getPortalAllowlist).not.toHaveBeenCalled()
       expect(api.getCatalog).not.toHaveBeenCalled()
     })
+
+    // Guards against over-hiding: the fix below removes the header logout for
+    // admins, and a broken condition could just as easily remove it for
+    // guests too. This is the case above ('asks no admin endpoint on a guest
+    // page') restated with the full three-part presence check, so a future
+    // reader doesn't have to infer "guest keeps it" from a `waitFor` side
+    // effect.
+    it('a guest still sees the header logout button', () => {
+      seed()
+      renderPortal('guest')
+
+      expect(screen.getByRole('button', { name: /log out/i })).toBeTruthy()
+    })
+
+    // Kills: Portal.tsx passing onLogout to the Shell unconditionally (an
+    // admin would keep the header button), and the CSS-only fake fix (hiding
+    // it with `display: none` rather than not rendering it) -- the `hidden:
+    // true` query and the markup check both see through that, where a bare
+    // `queryByRole` would not.
+    it('shows an admin no header logout, but still Edit and Settings', () => {
+      seed()
+      renderPortal('admin')
+
+      // Edit and Settings still present: this proves the header logout button
+      // was specifically removed, not that the whole header failed to render.
+      expect(editButton()).toBeTruthy()
+      expect(screen.getByRole('button', { name: 'Settings' })).toBeTruthy()
+
+      expect(screen.queryByRole('button', { name: /log out/i })).toBeNull()
+      expect(screen.queryByRole('button', { name: /log out/i, hidden: true })).toBeNull()
+      // Scoped to the header, not `document.body`: opening the settings
+      // overlay (covered below) puts a real "Log out" string on the page, and
+      // this assertion must still hold with the header alone, closed.
+      const header = screen.getByRole('heading', { level: 1 }).closest('div, header')
+      expect(header?.textContent).not.toContain('Log out')
+    })
+
+    // Kills: removing the header logout button leaving the admin with no way
+    // to log out at all -- the settings overlay is the escape hatch the whole
+    // design rests on, so it must still work end to end: open it, and its own
+    // logout control still calls through to the real handler.
+    it('an admin can still reach logout through the Settings overlay', async () => {
+      const user = userEvent.setup()
+      const onLogout = vi.fn().mockResolvedValue(undefined)
+      seed()
+      render(<Portal role={ADMIN} portalId="portal-1" theme="classic" onLogout={onLogout} />)
+
+      await user.click(screen.getByRole('button', { name: 'Settings' }))
+      const logoutButton = await screen.findByRole('button', { name: /log out/i })
+      await user.click(logoutButton)
+
+      await waitFor(() => expect(onLogout).toHaveBeenCalledOnce())
+    })
   })
 
   describe('Portal identity in the header', () => {
