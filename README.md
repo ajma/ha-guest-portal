@@ -1,95 +1,257 @@
 # Home Assistant Guest Portal
 
-A LAN-only web app that exposes a curated subset of Home Assistant devices to guests, behind a password. Each portal has its own password, and you can run more than one. Designed for short-term rentals and vacation homes.
+**Give your guests the porch light, the front door and the garage — without
+giving them your Home Assistant.**
 
-## Prerequisites
+Guest Portal is a small web page you share with the people staying at your
+place. They open it on their phone, type the password you gave them, and see
+just the devices you picked, with just the buttons you allowed. Unlock the
+front door, yes. Lock it, maybe. Open your Home Assistant dashboard, never.
 
-### 1. Create a Non-Admin Home Assistant User
+It was built for short-term rentals and vacation homes, but it works just as
+well for a house-sitter, a dog walker, or visiting family.
 
-**Important**: Do not use an admin or owner account. Home Assistant cannot scope long-lived access tokens to specific entities. This portal enforces the allowlist server-side, but using a non-admin account provides defense in depth if the portal is compromised.
+<table>
+  <tr>
+    <td align="center"><img src="src/web/theme-previews/classic.png" alt="The Classic theme: a list of rows, each with a round icon, the device name and state, and buttons underneath" width="280"><br><b>Classic</b></td>
+    <td align="center"><img src="src/web/theme-previews/tiles.png" alt="The Tiles theme: large rounded squares, with the locked front door tile flooded green" width="280"><br><b>Tiles</b></td>
+    <td align="center"><img src="src/web/theme-previews/cards.png" alt="The Cards theme: pale cards, each with a large circular badge that acts as the button" width="280"><br><b>Cards</b></td>
+  </tr>
+</table>
 
-1. In Home Assistant, go to Settings → People
-2. Create a new user (e.g., "Guest Portal Service")
-3. Do not grant Administrator or Owner privileges
-4. Create a long-lived access token for this user
-5. Save the token securely — you will need it for `HA_TOKEN`
+## What you get
 
-### 2. Use a LAN IP Address for Home Assistant
+- **A page with only what guests need.** You choose each device and each
+  action on it. A lock can allow "unlock" without allowing "lock"; a
+  garage door can open without being closable.
+- **More than one portal.** Run a "Guest House" and a "Barn" side by side,
+  each with its own password, its own devices and its own look. The password
+  a guest types decides which portal they land on.
+- **Three themes**, each switching between light and dark to match the guest's
+  phone.
+- **A kill switch.** Turn a portal off when guests check out, from the portal
+  itself or from a Home Assistant automation. Your own access keeps working.
+- **Live updates.** When someone switches the porch light on, every open
+  portal shows it within a second or two.
+- **Home Assistant knows what's happening.** The optional companion
+  integration gives each portal an on/off switch and a "last interaction"
+  sensor, so you can get a notification when a guest unlocks the door.
+- **An app-like home screen icon** for guests who want to keep it handy.
+- **Your Home Assistant stays private.** Guests never see its address, and
+  its access token never leaves the server.
 
-**Do not use `homeassistant.local`** or other mDNS hostnames. mDNS does not resolve inside Docker containers. The application will reject `.local` hostnames with an explanatory error.
+> **Good to know:** Guest Portal is meant for your home network. It serves
+> plain `http://` and shares one password per portal, so keep it off the
+> public internet — no port forwarding. See [Security, in plain
+> words](#security-in-plain-words).
 
-Use your Home Assistant server's LAN IP address (e.g., `http://192.168.1.100:8123`) for `HA_BASE_URL`.
+## Getting started
 
-## Installation
+There are two ways to install it. Pick the one that matches how you run Home
+Assistant:
 
-### Home Assistant Add-On
+| You run… | Use |
+|---|---|
+| **Home Assistant OS** or **Supervised** (you have an Add-on Store) | [The add-on](#option-1-the-home-assistant-add-on-easiest) — easiest, no tokens or config files |
+| **Home Assistant Container**, or anything else | [Docker Compose](#option-2-docker-compose) |
 
-**For HA OS or HA Supervised installations only** (HA Container does not support add-ons).
+### Option 1: The Home Assistant add-on (easiest)
 
-1. Copy this repository into `/addons/ha-guest-portal/` on your Home Assistant host — either manually over the Samba share add-on, or with `scripts/deploy-to-ha.sh` (copy `scripts/.env.deploy.example` to `scripts/.env.deploy` first)
-2. Refresh the Add-on Store (Settings → Add-ons → ⋮ → Check for updates) or restart the Supervisor
-3. Install "Home Assistant Guest Portal" from the Local add-ons section
-4. Optionally set `admin_password` (≥8 characters) — only needed for admin access from outside the Home Assistant sidebar. Guest passwords are not configured here: each portal carries its own, set when you create it in the UI
-5. Start the add-on
+1. **Copy this repository onto your Home Assistant host**, into
+   `/addons/ha-guest-portal/`. The Samba share add-on is the easiest way to
+   reach that folder. (If you're working from a clone of this repo,
+   `scripts/deploy-to-ha.sh` can upload it for you — copy
+   `scripts/.env.deploy.example` to `scripts/.env.deploy` and fill it in
+   first.)
+2. In Home Assistant, go to **Settings → Add-ons → Add-on Store**, open the
+   **⋮** menu and choose **Check for updates**.
+3. Find **Guest Portal** under **Local add-ons** and install it.
+4. *Optional:* set an `admin_password` (at least 8 characters). You only need
+   one if you want to manage portals from outside the Home Assistant sidebar.
+   Guest passwords don't go here — you'll create those in the portal itself.
+5. Start the add-on.
 
-#### Accessing the Portal
+That's it. No Home Assistant token is needed; the Supervisor provides one.
 
-The add-on supports two access methods:
+**Where to find it afterwards:**
 
-- **Admin access via HA sidebar**: After starting the add-on, click "Home Assistant Guest Portal" in your Home Assistant sidebar. This opens the portal with admin privileges automatically (no password required).
+- **You:** click **Guest Portal** in the Home Assistant sidebar. You're signed
+  in as the admin automatically.
+- **Your guests:** `http://homeassistant.local:9123` (or your Home Assistant's
+  IP address instead of `homeassistant.local`). They sign in with their
+  portal's password.
 
-- **Guest access via direct port**: Share the LAN address with guests: `http://homeassistant.local:9123` (or your HA instance IP). Guests log in with their own portal's password, which is what decides the portal they land on.
+To use a port other than 9123 for guests, change it under the add-on's
+**Configuration → Network** panel. Leave the container-side port at 9123.
 
-- **Add to home screen**: guests can keep the portal as an icon that opens without browser chrome, and it explains itself instead of showing a browser error when it cannot be reached — browsers require an `https://` address for this, so on a plain LAN address only iOS adds the icon. See `DOCS.md`.
+Now [set up your first portal](#set-up-your-first-portal).
 
-To change the published port, use the add-on's **Configuration → Network** panel in the Home Assistant UI. The container port must remain 9123.
+### Option 2: Docker Compose
 
-No Home Assistant token is needed — the Supervisor provides it automatically. See `DOCS.md` for detailed add-on documentation.
+This runs the portal as its own container next to Home Assistant. It takes
+two bits of preparation in Home Assistant first.
 
-### Home Assistant Integration (optional)
+**1. Create a Home Assistant user just for the portal.** Go to **Settings →
+People**, add a user (for example "Guest Portal Service"), and make sure it is
+**not** an administrator or owner. Then sign in as that user and create a
+**long-lived access token** from its profile page. Keep the token handy.
 
-A companion custom integration exposes **each portal** to Home Assistant as
-its own device, grouped under one "Guest Portal" hub device, with two
-entities:
+<details>
+<summary>Why a separate, non-admin user?</summary>
 
-- a **switch**, to turn that portal's guest side on and off from HA, a
-  dashboard, or an automation
-- a **sensor**, a timestamp updated whenever a guest of that portal logs in or
-  operates a device
+Home Assistant can't limit a token to certain devices — every token can reach
+everything its user can. The portal enforces your device list itself, but
+giving it a non-admin user means that even if the portal were compromised,
+the token couldn't be used to change your Home Assistant setup.
 
-Entity IDs are derived from each portal's name, not fixed: a portal named
-"Barn" gets `switch.barn` and `sensor.barn_last_interaction`. That derivation
-happens once, when the portal's entities are first created — renaming the
-portal afterward does not update the entity IDs (or the device name shown in
-Home Assistant) to match.
+</details>
 
-#### Install
+**2. Find your Home Assistant's IP address**, like `192.168.1.100`. Use the
+IP address, not `homeassistant.local`: `.local` names don't resolve inside a
+Docker container, so the portal refuses them and tells you why.
 
-Via HACS: add `https://github.com/ajma/ha-guest-portal` as a custom repository
-of type *Integration*, install "Home Assistant Guest Portal", and restart Home
-Assistant.
+**3. Configure and start the portal:**
 
-Manually: copy `custom_components/ha_guest_portal/` into your Home Assistant
-`config/custom_components/` directory and restart.
+```bash
+git clone https://github.com/ajma/ha-guest-portal.git
+cd ha-guest-portal
+cp .env.example .env
+```
 
-#### Set up
+Edit `.env`:
 
-**Add-on installations:** the add-on announces itself to the Supervisor, so after
-restarting Home Assistant you will find "Home Assistant Guest Portal" waiting
-under Settings → Devices & Services. Click **Configure**. No credentials needed.
+```bash
+# Your Home Assistant, by IP address
+HA_BASE_URL=http://192.168.1.100:8123
+HA_TOKEN=your-long-lived-access-token
 
-**Docker Compose installations:** go to Settings → Devices & Services → Add
-Integration → Home Assistant Guest Portal, and enter the host, port, and the
-integration token shown in the portal's **Settings** panel under "Show token".
+# How you sign in as the admin. At least 8 characters, and different from
+# every portal's password.
+ADMIN_PASSWORD=your-secure-admin-password
+```
 
-The integration requires **Python 3.14.2+**, which is satisfied by Home Assistant
-2026.9 and newer.
+Then open `docker-compose.yml` and replace `192.168.1.10` with **the IP
+address of the machine running the portal**. This keeps it listening on your
+home network only. Start it:
 
-#### Notification automation
+```bash
+docker compose up -d
+```
 
-The sensor's attributes describe what happened, using the same shape for both
-kinds of interaction. Substitute your portal's own entity ID — below,
-"Barn" — for `sensor.barn_last_interaction`:
+Open `http://<that-ip>:9123`, sign in with your `ADMIN_PASSWORD`, and
+[set up your first portal](#set-up-your-first-portal).
+
+<details>
+<summary>Where the data lives, and backups</summary>
+
+Everything is in one SQLite file, stored in a Docker volume named
+`portal-data`. To find it on the host:
+
+```bash
+docker volume inspect portal-data --format '{{ .Mountpoint }}'
+```
+
+**Prefer a normal folder?** Replace `portal-data:/data` in
+`docker-compose.yml` with `./data:/data`. The container runs as uid 1000, so
+give that user the folder first — otherwise SQLite fails with "unable to open
+database file":
+
+```bash
+mkdir -p ./data
+sudo chown 1000:1000 ./data
+```
+
+</details>
+
+<details>
+<summary>Running with plain <code>docker run</code> instead</summary>
+
+```bash
+docker build -t ha-guest-portal .
+docker volume create portal-data
+
+docker run -d \
+  --name ha-guest-portal \
+  --restart unless-stopped \
+  -p 192.168.1.10:9123:9123 \
+  -v portal-data:/data \
+  --env-file .env \
+  ha-guest-portal
+```
+
+Replace `192.168.1.10` with your server's IP address. To use a folder instead
+of a volume, prepare it as above and pass `-v ./data:/data`.
+
+</details>
+
+## Set up your first portal
+
+A fresh install has no portals yet, so the first thing you see is a
+**create-portal** screen.
+
+1. **Name it and give it a password** (at least 8 characters). The password is
+   what you'll give your guests.
+2. **Add devices.** Click **Edit** in the header, then the **+ Add device**
+   tile, and pick something from your Home Assistant.
+3. **Decide what guests may do.** Tap the new tile to give it a friendly name
+   and tick the actions you want to allow. A new device starts with *nothing*
+   allowed, so a lock can never be openable before you've decided it should
+   be.
+4. Click **Done**.
+5. *Optional:* open **▸ Portal settings** under the header to rename the
+   portal, pick a theme, or change its password.
+
+There's no Save button — every change takes effect the moment you make it,
+and guests see it right away.
+
+**Then share two things with your guests:**
+
+- the address — `http://homeassistant.local:9123` for the add-on, or
+  `http://<server-ip>:9123` for Docker
+- the portal's password
+
+Want a second portal? Click the portal name in the header and choose
+**+ Add portal**.
+
+For a full tour of editing, themes, the kill switch, password changes and
+home screen icons, see **[DOCS.md](DOCS.md)**.
+
+## Optional: The Home Assistant integration
+
+The companion integration brings each portal into Home Assistant as its own
+device, with:
+
+- a **switch** to turn that portal on and off — from a dashboard, a voice
+  assistant, or an automation (say, at checkout time)
+- a **sensor** that updates whenever a guest signs in or uses a device
+
+Home Assistant hears about each interaction within about 10 seconds. It
+needs Home Assistant **2026.9 or newer**.
+
+### Install it
+
+- **With HACS:** add `https://github.com/ajma/ha-guest-portal` as a custom
+  repository of type *Integration*, install **Home Assistant Guest Portal**,
+  and restart Home Assistant.
+- **By hand:** copy `custom_components/ha_guest_portal/` into your Home
+  Assistant's `config/custom_components/` folder and restart.
+
+### Connect it
+
+- **Using the add-on:** Home Assistant finds it for you. After the restart,
+  look under **Settings → Devices & Services** for **Home Assistant Guest
+  Portal** waiting to be configured, and click **Configure**. No credentials
+  needed.
+- **Using Docker:** go to **Settings → Devices & Services → Add Integration →
+  Home Assistant Guest Portal**, and enter the portal's host, port, and
+  integration token. You'll find the token in the portal: click the **⚙** gear,
+  then **Show token**.
+
+Each portal's entities are named after the portal when they're first created.
+A portal called "Barn" gets `switch.barn` and `sensor.barn_last_interaction`.
+Renaming the portal later doesn't rename them, or the device.
+
+### Example: get a notification when a guest uses a device
 
 ```yaml
 automation:
@@ -108,303 +270,133 @@ automation:
             ({{ state_attr('sensor.barn_last_interaction', 'action') }})
 ```
 
-Attributes: `kind` (`action` or `login`), `target_entity_id`, `label`, `action`,
-and `ok`. The three device attributes are `null` when `kind` is `login`.
-
-Home Assistant learns about an interaction within about 10 seconds.
-
-### Docker Compose (Recommended)
-
-1. Clone this repository or download the files
-2. Copy `.env.example` to `.env`:
-   ```bash
-   cp .env.example .env
-   ```
-
-3. Edit `.env` with your configuration:
-   ```bash
-   # Home Assistant connection - use LAN IP, not .local hostname
-   HA_BASE_URL=http://192.168.1.100:8123
-   HA_TOKEN=your-long-lived-access-token
-
-   # Required outside the add-on: with no Home Assistant sidebar to authenticate
-   # through, this is the only way to reach admin and create the first portal.
-   # ≥8 characters, and must differ from every portal's password.
-   ADMIN_PASSWORD=your-secure-admin-password
-
-   # Optional settings
-   PORT=9123
-   DB_PATH=/data/portal.db
-   # TRUST_PROXY=loopback
-   ```
-
-4. Edit `docker-compose.yml` and replace `192.168.1.10` with your server's actual LAN IP address
-
-5. Start the service:
-   ```bash
-   docker compose up -d
-   ```
-
-6. Open the portal and log in with `ADMIN_PASSWORD`. A fresh database has no
-   portals, so you land on the create-portal screen; each portal you create
-   gets its own guest password there.
-
-The database is stored in a Docker named volume (`portal-data`). Named volumes are initialized with the image's ownership (uid 1000), so they work on any host regardless of your user's uid.
-
-To locate the volume's path on the host (for backups):
-```bash
-docker volume inspect portal-data --format '{{ .Mountpoint }}'
-```
-
-#### Using a Bind Mount Instead (Optional)
-
-If you prefer the database in a specific host directory, replace `portal-data:/data` in `docker-compose.yml` with `./data:/data`. The container runs as uid 1000, so you must prepare the directory first:
-
-```bash
-mkdir -p ./data
-sudo chown 1000:1000 ./data
-```
-
-A bind mount carries the host directory's ownership into the container. If the host directory is not owned by uid 1000, SQLite will fail with "unable to open database file".
-
-### Docker (Standalone)
-
-Using a named volume (recommended):
-```bash
-docker build -t ha-guest-portal .
-
-docker volume create portal-data
-
-docker run -d \
-  --name ha-guest-portal \
-  --restart unless-stopped \
-  -p 192.168.1.10:9123:9123 \
-  -v portal-data:/data \
-  --env-file .env \
-  ha-guest-portal
-```
-
-Using a bind mount (requires `mkdir -p ./data && sudo chown 1000:1000 ./data` first):
-```bash
-docker run -d \
-  --name ha-guest-portal \
-  --restart unless-stopped \
-  -p 192.168.1.10:9123:9123 \
-  -v ./data:/data \
-  --env-file .env \
-  ha-guest-portal
-```
-
-Replace `192.168.1.10` with your server's LAN IP address.
+The sensor's attributes are `kind` (`action` or `login`), `target_entity_id`,
+`label`, `action`, and `ok`. For a login, the three device attributes are
+`null`.
 
 ## Upgrading from a single-portal version
 
-**The database is not compatible with earlier versions, and shipping a
-migration is a deliberate non-goal.** This version changed the database from
-one shared portal to many independently-passworded ones, and the schema
-changed incompatibly to match.
+> [!WARNING]
+> **This version can't read the old database, and it won't tell you.** Earlier
+> versions had one shared portal; this one has many, and the database changed
+> to match. There is no migration.
 
-If you start this version against an old database without deleting it
-first, **it will not fail loudly.** It boots normally, your existing portal's
-name, theme, and entire device allowlist silently disappear from the UI
-(you land on the create-portal screen, as on a fresh install), and creating
-a new portal succeeds — right up until you view its device list or a guest
-tries to log in, at which point you get a raw `no such column: portal_id`
-server error on every device read and write.
+If you upgrade without clearing the old database, everything *looks* fine:
+the portal starts, your old portal seems to have vanished, and you can create
+a new one. Then the first time you open its device list, or a guest signs in,
+you get a `no such column: portal_id` error.
 
-**To upgrade correctly:**
+**To upgrade cleanly:**
 
 1. Stop the add-on or container.
-2. Delete the database file — `/data/portal.db` for an add-on install, or the
-   equivalent file in your Docker volume or bind mount.
-3. Start it again. You land on the create-portal screen, exactly as on a
-   fresh install, and re-create each portal you had before with a new
-   password — passwords are not recoverable from the deleted database.
-4. **Re-pair the Home Assistant integration.** Deleting the database also
-   regenerates the deployment id and the integration token, so the existing
-   integration entry no longer matches. Add-on installs rediscover
-   themselves automatically after a restart; Docker Compose installs must
-   remove and re-add the integration with the new token (see `DOCS.md`).
+2. Delete the database file — `/data/portal.db` in the add-on, or the same
+   file in your Docker volume or folder.
+3. Start it again and re-create your portals. Old passwords can't be
+   recovered, so each one gets a new password.
+4. **Re-pair the Home Assistant integration**, because deleting the database
+   also resets the integration token. The add-on is rediscovered
+   automatically after a restart; with Docker, remove the integration and add
+   it again with the new token.
 
-See `DOCS.md`'s "Upgrading from a single-portal version" section for the
-full walkthrough.
+[DOCS.md](DOCS.md#upgrading-from-a-single-portal-version) walks through it in
+more detail.
 
-### If it won't start after upgrading
+## Troubleshooting
 
-Two configuration states now make the server refuse to start rather than run
-broken, and an upgrade is the most likely time to hit either:
+**The portal won't start, and the log mentions `ADMIN_PASSWORD`.** It refuses
+to start in two cases, both on purpose:
 
-- **`ADMIN_PASSWORD` shorter than 8 characters** — logs `Invalid
-  configuration: ✖ Too small: expected string to have >=8 characters → at
-  ADMIN_PASSWORD`. Set it to at least 8 characters (in the add-on's
-  `admin_password` option, or your `.env`).
-- **`ADMIN_PASSWORD` equal to some portal's password** — logs `ADMIN_PASSWORD
-  is also the guest password for "<portal name>" (<portal id>). A guest of
-  that portal would be logged in as admin over every portal. Change
-  ADMIN_PASSWORD, or change that portal's password.` This is deliberate: were
-  the server to start anyway, a guest logging into that one portal would get
-  an admin session over every portal, not just the one their password was
-  for. Change `admin_password`, or that portal's password, and restart.
+- **The admin password is under 8 characters.** The log says `Too small:
+  expected string to have >=8 characters → at ADMIN_PASSWORD`. Make it longer
+  — in the add-on's `admin_password` option, or in `.env`.
+- **The admin password matches a portal's password.** The log says
+  `ADMIN_PASSWORD is also the guest password for "<portal name>"`. If the
+  portal started anyway, that portal's guests would be signed in as admin
+  over *every* portal. Change either password and restart.
 
-## First-Run Setup
+**A device shows as unavailable, with a red outline in Edit mode.** It was
+renamed or removed in Home Assistant, so the portal can't find it any more.
+Remove that tile and add the device again under its new name.
 
-1. Navigate to `http://<your-server-ip>:9123` in a web browser
-2. Log in using the admin password you configured. A fresh database has no
-   portals yet, so you land straight on a create-portal screen — there is no
-   separate admin page
-3. Give the portal a name and set its password (at least 8 characters), then
-   create it
-4. Click **Edit** in the header, then the **+ Add device** tile at the end of
-   the grid, and choose an entity from your Home Assistant instance
-5. Tap the new device's tile to set a friendly label and tick which actions are
-   permitted (e.g., unlock but not lock). A device with nothing ticked is
-   visible to guests but inert
-6. Click **Done**. Every change saved as you made it; there is no Save button
-   and no undo
-7. Optionally expand **▸ Portal settings** below the header to rename the
-   portal or pick one of the three guest portal themes (see `DOCS.md`)
-8. Share the portal's URL and its password with your guests:
-   - URL: `http://<your-server-ip>:9123`
-   - Password: the password you set when you created the portal
+**Guests can't install the portal as an app on Android.** Browsers only offer
+to install web apps from an `https://` address, and the portal serves plain
+`http://`. iPhones and iPads can still add a home screen icon. To get the full
+experience everywhere, put the portal behind a reverse proxy with HTTPS. See
+[DOCS.md](DOCS.md#add-the-portal-to-your-home-screen).
 
-Guests can now control only the devices you've explicitly allowed. To add a
-second portal, use **+ Add portal** at the bottom of the portal switcher in
-the header (see `DOCS.md`).
+**Devices say "Unknown".** The portal has lost its live connection to Home
+Assistant, so it can't tell what state anything is in. It keeps retrying on
+its own, and guests' buttons still work in the meantime. If it never comes
+back and you're using Docker, check that `HA_BASE_URL` is right and that
+`HA_TOKEN` is still valid — the portal stops retrying once Home Assistant
+rejects its token.
 
-## Theme Previews (development)
+## Security, in plain words
 
-The committed theme previews in `src/web/theme-previews/` are Playwright's
-visual-regression baselines (the theme picker itself is plain radio buttons,
-not thumbnails), and CI compares them inside the Playwright container.
-Regenerate them with
-`pnpm previews:update:ci`, which runs in that same container.
-`pnpm previews:update` regenerates them with whatever fonts this machine has,
-which is useful for looking at a change and wrong for committing one.
+Guest Portal assumes it lives on a home network you trust, behind a router
+that doesn't forward any ports to it.
 
-`previews:update:ci` is the authoritative command. It pulls
-`mcr.microsoft.com/playwright:v1.63.0-noble` (~2 GB the first time), which must
-stay in step with both `@playwright/test` in `package.json` and the `container:`
-image in `.github/workflows/ci.yml`; if those three ever disagree, CI compares
-baselines against a different browser build and the comparison means nothing.
+**What it does to keep things safe:**
 
-Its `docker run` flags are load-bearing, so do not trim them:
+- **Guests only get what you allowed.** The device list and allowed actions
+  are enforced by the server, not just hidden in the page.
+- **Your Home Assistant token never reaches a browser.**
+- **A portal password never opens the admin view.** Managing portals takes
+  the Home Assistant sidebar or the admin password.
+- **Each portal can be switched off instantly**, and changing a portal's
+  password signs out everyone using the old one.
+- **It listens only on your home network** — the Docker setup binds it to one
+  LAN address on purpose.
 
-- `--user "$(id -u):$(id -g)"` with `-e HOME=/tmp` — without these the container
-  runs as root and every file it writes into the bind mount (the PNGs, `dist/`,
-  anything pnpm touches) comes back root-owned and unremovable.
-- `corepack enable --install-directory /tmp/bin` — a plain `corepack enable`
-  writes its shims next to the `node` binary, which is `/usr/bin` in that image
-  and not writable by a non-root user.
-- `--ipc=host` — Playwright's own recommendation for running Chromium in
-  Docker; the default 64 MB `/dev/shm` can crash the browser mid-run.
+**What it deliberately doesn't do, so you can decide what to expose:**
 
-If the three `preview:` tests fail in CI but pass locally, the container is the
-authority: run `pnpm previews:update:ci` and commit the regenerated PNGs. Do
-**not** raise the tolerances in `test/e2e/theme-previews.spec.ts`. They are tight
-on purpose — what they guard is a low-saturation tint, and a looser threshold
-was measured to let a green-to-purple repaint of a lock tile's icon through
-undetected.
+- **Passwords are shared.** Anyone with a portal's password can use every
+  device on that portal, including locks. Only add devices you're
+  comfortable letting any guest of that portal control.
+- **No HTTPS.** Traffic is plain HTTP, protected only by being on your home
+  network. Session cookies are HttpOnly and SameSite=Lax, but can't be marked
+  Secure without HTTPS.
+- **Home Assistant tokens can't be limited to certain devices.** That's why
+  the Docker setup uses a non-admin user.
+- **Whoever controls the host controls the portal.** Anyone who can run
+  `docker inspect` on the host can read the token and admin password, and the
+  database holds every portal's password. For the add-on, anyone who can
+  change the add-on's configuration has the same reach.
 
-## Publishing a Release (maintainers)
+## Reference
 
-`.github/workflows/publish.yml` builds and pushes per-architecture images to
-ghcr.io whenever a `v*` tag is pushed, and `.github/workflows/ci.yml` runs
-lint, typecheck, unit and end-to-end tests on every push. Neither workflow
-touches `config.yaml`'s `image:` key — that key does not exist yet, and it is
-added by hand, in the last step below, only after a real pull has succeeded.
+### Environment variables (Docker)
 
-**Do this in order.** Steps 4 and 6 are the two a skim will miss, and skipping
-either produces a release that looks green and installs for nobody:
+| Variable | Required | Default | What it's for |
+|----------|----------|---------|---------------|
+| `HA_BASE_URL` | Yes | — | Your Home Assistant's address, by IP (not `.local`) |
+| `HA_TOKEN` | Yes | — | Long-lived access token from a non-admin Home Assistant user |
+| `ADMIN_PASSWORD` | Outside the add-on | — | Admin sign-in password. At least 8 characters, and different from every portal's password. Optional in the add-on, where the Home Assistant sidebar signs you in; with neither, the portal refuses to start, since no one could create a portal |
+| `PORT` | No | `9123` | Port to listen on |
+| `DB_PATH` | No | `/data/portal.db` | Where the SQLite database lives |
+| `HA_WS_URL` | No | — | Override the WebSocket address (advanced) |
+| `TRUST_PROXY` | No | — | Trust proxy headers, e.g. `loopback` |
 
-1. Bump `version:` in `config.yaml` (currently `0.0.1`).
-2. Commit the bump, then tag the commit `v<version>`, matching `config.yaml`
-   exactly:
-   ```bash
-   git commit -am "chore: bump version to 0.3.0"
-   git tag v0.3.0
-   ```
-   `publish.yml` checks the tag against `config.yaml` and refuses to build on
-   a mismatch.
-3. Push the tag **by name** and wait for **both** matrix legs — `amd64` and
-   `aarch64` — to go green in the Actions tab. A half-published release is
-   one architecture short, not broken-looking: nothing about it says the
-   other image is missing.
-   ```bash
-   git push origin v0.3.0
-   ```
-   Push the one tag, not `git push --tags`. This repository carries local
-   housekeeping tags (`pre-trailer-rewrite`) that point at pre-rewrite
-   history; `--tags` would publish that history alongside the release, and
-   republishing it is not something a later commit can undo.
-4. **Make the ghcr package public.** A package first pushed by `GITHUB_TOKEN`
-   is **private by default, even from a public repository.** Until this is
-   done once, by hand, in the repository's package settings, every pull
-   — including the Supervisor's — fails with an authentication error that
-   looks nothing like the cause. This is the most common way this kind of
-   pipeline looks green and ships something nobody can install. Do not skip
-   it.
-5. Confirm it worked, from a machine that is not the runner:
-   ```bash
-   docker pull ghcr.io/ajma/ha-guest-portal/amd64-ha-guest-portal:0.3.0
-   docker pull ghcr.io/ajma/ha-guest-portal/aarch64-ha-guest-portal:0.3.0
-   ```
-6. **Only after both pulls succeed**, add to `config.yaml`:
-   ```yaml
-   image: ghcr.io/ajma/ha-guest-portal/{arch}-ha-guest-portal
-   ```
-   `{arch}` is literal — the Supervisor substitutes it at pull time. The
-   moment this key exists, the Supervisor stops building the add-on locally
-   and only pulls; adding it before a real pull has succeeded turns a failed
-   publish from an inconvenience into an uninstallable add-on with a manifest
-   error the user can do nothing about.
+### Health check
 
-## Environment Variables
+`GET /api/health` needs no sign-in and returns:
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `HA_BASE_URL` | Yes | — | Home Assistant base URL (use LAN IP, not `.local`) |
-| `HA_TOKEN` | Yes | — | Long-lived access token from a non-admin HA user |
-| `ADMIN_PASSWORD` | Outside the add-on | — | Admin login password (≥8 characters, must differ from every portal's password). Optional in add-on mode, where the Home Assistant sidebar already authenticates admins; without either, the server refuses to start, since no one could create a portal |
-| `PORT` | No | 9123 | HTTP port to listen on |
-| `DB_PATH` | No | `/data/portal.db` | SQLite database path |
-| `HA_WS_URL` | No | — | Override WebSocket URL (advanced) |
-| `TRUST_PROXY` | No | — | Trust proxy headers (e.g., `loopback`) |
-
-## Security Model
-
-This portal is designed for deployment on a trusted home network behind a router with no inbound port forwarding.
-
-- **Shared passwords**: one per portal for its guests (device control), and one deployment-wide for admins (portal and device management)
-- **Server-side allowlist**: Only explicitly approved entities and actions are permitted
-- **Kill-switch**: each portal's guest surface can be disabled from its own
-  **▸ Portal settings** accordion or from Home Assistant, without affecting
-  an owner's own access
-- **Token isolation**: The Home Assistant access token never reaches a browser
-- **Network isolation**: Bind to a LAN interface only; no TLS (relies on physical network boundary)
-- **Session cookies**: HttpOnly, SameSite=Lax (no Secure flag — this is plain HTTP on LAN)
-
-## Accepted Risks
-
-- **Shared credentials**: Anyone with a portal's guest password can operate every device that portal exposes, including locks. Do not expose devices you cannot afford to have controlled by any guest of that portal.
-- **Entity renaming**: If you rename an entity in Home Assistant, the portal's allowlist entry becomes orphaned and the device will appear as unavailable. Edit mode flags the orphaned tile; remove it there and add the device again.
-- **No per-entity token scoping**: Home Assistant's long-lived access tokens cannot be scoped to specific entities. The portal enforces the allowlist in application code. Use a non-admin HA user account to limit blast radius.
-- **Environment variable exposure**: Anyone with access to the Docker daemon on the host can read the Home Assistant token and the admin password via `docker inspect`, and the database holds every portal's password. Treat host access as equivalent to full access to the portal and all exposed devices.
-
-## Monitoring
-
-The service exposes a healthcheck endpoint at `GET /api/health` (no authentication required). It returns:
 ```json
-{
-  "ok": true,
-  "haStale": false
-}
+{ "ok": true, "haStale": false }
 ```
 
-- `ok: true` means the process is running
-- `haStale: true` means the WebSocket to Home Assistant is disconnected (devices can still be controlled via REST)
+`ok: true` means the portal is running. `haStale: true` means its live
+connection to Home Assistant has dropped (devices can still be operated).
+The Docker health check uses this endpoint, and deliberately stays healthy
+when `haStale` is true — restarting the portal wouldn't fix Home Assistant's
+connection.
 
-The Docker `HEALTHCHECK` uses this endpoint. A stale HA connection does not fail the healthcheck because restarting the container does not fix HA connectivity.
+## Contributing
+
+Development setup, the theme-preview baselines, and the release checklist are
+in **[CONTRIBUTING.md](CONTRIBUTING.md)**.
 
 ## Support
 
-This software is provided as-is. For Home Assistant issues, consult the [Home Assistant documentation](https://www.home-assistant.io/docs/).
+This software is provided as-is. For help with Home Assistant itself, see the
+[Home Assistant documentation](https://www.home-assistant.io/docs/).

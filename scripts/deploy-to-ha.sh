@@ -2,8 +2,9 @@
 set -euo pipefail
 
 # Pushes this repo to the Home Assistant Supervisor's addons Samba share, so
-# Supervisor picks it up as a local add-on (see README.md "Home Assistant
-# Add-On" install steps). Uses smbclient directly rather than a local mount.
+# Supervisor picks it up as a local add-on (see README.md "Option 1: The Home
+# Assistant add-on" install steps). Uses smbclient directly rather than a local
+# mount.
 #
 # Config comes from environment variables, optionally loaded from
 # scripts/.env.deploy (gitignored, see scripts/.env.deploy.example):
