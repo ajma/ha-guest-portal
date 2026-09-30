@@ -195,6 +195,18 @@ describe('config.yaml add-on options', () => {
     expect(runtimeFromMatch).toBeTruthy()
   })
 
+  it('Dockerfile installs jq, which run.sh needs to read options.json', () => {
+    // run.sh's add-on branch parses /data/options.json with jq, and node:24-alpine
+    // does not ship it — a container without this line starts, logs nothing
+    // unusual, and exits 127 the moment the Supervisor runs it. CI cannot catch
+    // that on its own: the check job installs jq so the end-to-end run.sh tests
+    // can execute the real script, which means jq is present there whether or
+    // not the image would have had it. This is the assertion that keeps the
+    // runtime dependency honest.
+    const dockerfile = readFileSync(dockerfilePath, 'utf-8')
+    expect(dockerfile).toMatch(/^RUN apk add --no-cache .*\bjq\b/m)
+  })
+
   it('Dockerfile has no USER directive (add-on runs as root, compose sets user)', () => {
     const dockerfile = readFileSync(dockerfilePath, 'utf-8')
     // The Dockerfile should not contain a USER directive
