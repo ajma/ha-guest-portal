@@ -64,6 +64,21 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      # run.sh parses /data/options.json with jq in add-on mode, and the three
+      # "run.sh executed end-to-end" tests in test/unit/addon-config.test.ts
+      # execute the real script rather than regex over its text. The Playwright
+      # image has no jq (confirmed by running it: `command -v jq` finds
+      # nothing), so those three exited 127 — command not found — while passing
+      # on any developer machine, because the test inherits process.env.PATH
+      # and a workstation has /usr/bin/jq.
+      #
+      # This installs the same dependency the runtime image already installs at
+      # Dockerfile:42, so the test environment can run the script the container
+      # will actually run. No sudo: this job is a container and runs as root,
+      # unlike the python job below on a plain runner.
+      - name: Install jq for the run.sh tests
+        run: apt-get update && apt-get install -y --no-install-recommends jq
+
       - name: Lint
         # Zero warnings, not just zero errors. The repo has held that line and
         # a warning here is how it stops being held.
@@ -113,7 +128,16 @@ jobs:
       # actions/setup-python. Both inputs are pinned rather than left to
       # "latest": pyproject.toml requires python>=3.14.2, and 0.12.17 /
       # 3.14.6 are the versions this job was verified against locally.
-      - uses: astral-sh/setup-uv@v10
+      #
+      # The ref is a full release tag, NOT `@v10`. astral-sh stopped publishing
+      # moving major tags after v7: `git/matching-refs/tags/v` on this
+      # repository returns v1 through v7 and nothing above it, while releases
+      # run to v10.2.0. `@v10` therefore does not resolve and the job dies at
+      # "Prepare all required actions", before a single step runs — which is
+      # exactly how this job came to be red from the day it was added. Bump
+      # this to a real release tag, never to a bare major. Dependabot's
+      # github-actions ecosystem keeps it current.
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           version: '0.12.17'
           python-version: '3.14.6'
