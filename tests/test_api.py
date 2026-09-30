@@ -9,7 +9,30 @@ from custom_components.ha_guest_portal.api import (
     PortalConnectionError,
 )
 
-pytestmark = pytest.mark.enable_socket()
+
+@pytest.fixture(autouse=True)
+def _real_sockets(socket_enabled):
+    """Let this module's stub aiohttp server bind a real port.
+
+    The obvious spelling, `pytestmark = pytest.mark.enable_socket()`, is a
+    coin toss. pytest-socket honours that marker from its `pytest_runtest_setup`
+    hook, and pytest-homeassistant-custom-component disables sockets from its
+    own implementation of *the same hook*. pluggy calls hook implementations in
+    reverse registration order, so whichever plugin is registered first runs
+    last and wins — and registration order comes from entry-point enumeration,
+    which is filesystem order in site-packages. It is not a property of this
+    repository at all. pytest-socket happens to land before the Home Assistant
+    plugin on a typical workstation (marker wins, tests pass) and after it on a
+    GitHub runner (blocker wins, every test here errors with
+    HASocketBlockedError on socket.socket).
+
+    The `socket_enabled` fixture re-enables sockets from a *fixture body*,
+    which pytest sets up strictly after every `pytest_runtest_setup` hook has
+    run. That ordering is guaranteed rather than incidental, so this holds
+    whichever order the two plugins happen to load in. Verified both ways with
+    PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 and explicit -p ordering.
+    """
+
 
 STATE = {
     "deploymentId": "dep-1",
