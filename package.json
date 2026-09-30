@@ -18,7 +18,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "previews:update": "pnpm build && playwright test -g \"preview:\" --update-snapshots",
-    "previews:update:ci": "docker run --rm --ipc=host --user \"$(id -u):$(id -g)\" -e HOME=/tmp -v \"$PWD\":/w -w /w mcr.microsoft.com/playwright:v1.63.0-noble sh -c 'mkdir -p /tmp/bin && corepack enable --install-directory /tmp/bin && export PATH=/tmp/bin:$PATH && pnpm install --frozen-lockfile && pnpm build && pnpm exec playwright test -g \"preview:\" --update-snapshots'",
+    "previews:update:ci": "docker run --rm --ipc=host --user \"$(id -u):$(id -g)\" -e HOME=/tmp -e CI=true -v \"$PWD\":/w -w /w mcr.microsoft.com/playwright:v1.63.0-noble sh -c 'mkdir -p /tmp/bin && corepack enable --install-directory /tmp/bin && export PATH=/tmp/bin:$PATH && pnpm install --frozen-lockfile && pnpm build && pnpm exec playwright test -g \"preview:\" --update-snapshots'",
     "lint": "biome lint .",
     "format": "biome format --write ."
   },

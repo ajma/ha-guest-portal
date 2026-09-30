@@ -62,6 +62,15 @@ Its `docker run` flags are load-bearing, so do not trim them:
   and not writable by a non-root user.
 - `--ipc=host` — Playwright's own recommendation for running Chromium in
   Docker; the default 64 MB `/dev/shm` can crash the browser mid-run.
+- `-e CI=true` — the bind-mounted `node_modules/` was installed by the host, so
+  the container's `pnpm install` wants to purge and rebuild it. Interactively
+  pnpm asks first; with no TTY it instead aborts with
+  `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` and the whole command fails
+  before Playwright starts. `CI=true` is pnpm's own documented answer.
+
+After this command runs, your host `node_modules/` is the one the container
+installed. Run `CI=true pnpm install --frozen-lockfile` to put it back —
+without `CI=true` that reinstall hits the same no-TTY abort.
 
 If the three `preview:` tests fail in CI but pass locally, the container is the
 authority: run `pnpm previews:update:ci` and commit the regenerated PNGs. Do
